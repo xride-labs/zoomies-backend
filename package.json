@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Zoomies Backend API with Express, Prisma, and Auth.js",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only --esm src/server.ts",
     "build": "npm run prisma:generate && tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",

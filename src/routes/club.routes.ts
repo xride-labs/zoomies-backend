@@ -20,6 +20,7 @@ import {
   idParamSchema,
   updateMemberRoleSchema,
 } from "../validators/schemas.js";
+import { sendClubJoinEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -381,6 +382,11 @@ router.post(
 
     const club = await prisma.club.findUnique({
       where: { id },
+      include: {
+        owner: {
+          select: { id: true, name: true, email: true },
+        },
+      },
     });
 
     if (!club) {
@@ -425,6 +431,19 @@ router.post(
       where: { id },
       data: { memberCount: { increment: 1 } },
     });
+
+    // if (club.owner?.email && club.owner.id !== session.user.id) {
+    //   const memberName = membership.user?.name || "A new member";
+    //   try {
+    //     await sendClubJoinEmail({
+    //       to: club.owner.email,
+    //       clubName: club.name,
+    //       memberName,
+    //     });
+    //   } catch (error) {
+    //     console.warn("[Email] Club join email failed:", error);
+    //   }
+    // }
 
     ApiResponse.created(res, { membership }, "Joined club successfully");
   }),

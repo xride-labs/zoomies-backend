@@ -21,6 +21,7 @@ import {
   joinRideSchema,
   updateParticipantStatusSchema,
 } from "../validators/schemas.js";
+import { sendRideJoinRequestEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -401,6 +402,11 @@ router.post(
 
     const ride = await prisma.ride.findUnique({
       where: { id },
+      include: {
+        creator: {
+          select: { id: true, name: true, email: true },
+        },
+      },
     });
 
     if (!ride) {
@@ -444,6 +450,20 @@ router.post(
         },
       },
     });
+
+    // if (ride.creator?.email && ride.creator.id !== session.user.id) {
+    //   const requesterName = participant.user?.name || "A rider";
+    //   try {
+    //     await sendRideJoinRequestEmail({
+    //       to: ride.creator.email,
+    //       rideTitle: ride.title,
+    //       requesterName,
+    //       message: req.body?.message,
+    //     });
+    //   } catch (error) {
+    //     console.warn("[Email] Ride join request email failed:", error);
+    //   }
+    // }
 
     ApiResponse.created(res, { participant }, "Join request submitted");
   }),

@@ -65,6 +65,11 @@ export const resetPasswordSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number"),
 });
 
+export const verifyEmailSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  token: z.string().min(1, "Token is required"),
+});
+
 // ========================================
 // User Schemas
 // ========================================

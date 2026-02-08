@@ -14,8 +14,11 @@ import {
   sendOtpSchema,
   verifyOtpSchema,
   updateProfileSchema,
+  verifyEmailSchema,
 } from "../validators/schemas.js";
 import { z } from "zod";
+import { randomBytes } from "node:crypto";
+import { sendVerificationEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -115,7 +118,70 @@ router.post(
       },
     });
 
+    const verificationToken = randomBytes(32).toString("hex");
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await prisma.verificationToken.create({
+      data: {
+        identifier: email,
+        token: verificationToken,
+        expires: verificationExpires,
+        type: "email",
+      },
+    });
+
+    try {
+      await sendVerificationEmail({
+        to: email,
+        name: user.name,
+        token: verificationToken,
+      });
+    } catch (error) {
+      console.warn("[Email] Verification email failed:", error);
+    }
+
     ApiResponse.created(res, { user }, "User registered successfully");
+  }),
+);
+
+/**
+ * POST /api/auth/verify-email
+ * Verify email address using token
+ */
+router.post(
+  "/verify-email",
+  validateBody(verifyEmailSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { email, token } = req.body;
+
+    const verificationToken = await prisma.verificationToken.findFirst({
+      where: {
+        identifier: email,
+        token,
+        type: "email",
+        expires: { gt: new Date() },
+      },
+    });
+
+    if (!verificationToken) {
+      return ApiResponse.error(
+        res,
+        "Invalid or expired verification token",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    await prisma.user.update({
+      where: { email },
+      data: { emailVerified: new Date() },
+    });
+
+    await prisma.verificationToken.delete({
+      where: { id: verificationToken.id },
+    });
+
+    ApiResponse.success(res, null, "Email verified successfully");
   }),
 );
 

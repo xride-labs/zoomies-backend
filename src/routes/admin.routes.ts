@@ -92,20 +92,20 @@ router.get(
         newRidesLast7Days: recentRides,
       },
       breakdown: {
-        usersByRole: usersByRole.reduce(
-          (acc, item) => {
-            acc[item.role] = item._count.role;
-            return acc;
-          },
-          {} as Record<string, number>,
-        ),
-        ridesByStatus: ridesByStatus.reduce(
-          (acc, item) => {
-            acc[item.status] = item._count.status;
-            return acc;
-          },
-          {} as Record<string, number>,
-        ),
+        usersByRole: (() => {
+          const result: Record<string, number> = {};
+          for (const item of usersByRole) {
+            result[item.role] = item._count.role;
+          }
+          return result;
+        })(),
+        ridesByStatus: (() => {
+          const result: Record<string, number> = {};
+          for (const item of ridesByStatus) {
+            result[item.status] = item._count.status;
+          }
+          return result;
+        })(),
       },
     });
   }),

@@ -7,8 +7,28 @@ import {
   isValidPhoneNumber,
 } from "../lib/twilio.js";
 import { requireAuth, getCurrentSession } from "../config/auth.js";
+import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import { validateBody, asyncHandler } from "../middlewares/validation.js";
+import {
+  registerSchema,
+  sendOtpSchema,
+  verifyOtpSchema,
+  updateProfileSchema,
+} from "../validators/schemas.js";
+import { z } from "zod";
 
 const router = Router();
+
+// Change password schema (local to this file)
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z
+    .string()
+    .min(8, "New password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
+});
 
 /**
  * @swagger
@@ -57,13 +77,11 @@ const router = Router();
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.post("/register", async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/register",
+  validateBody(registerSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { email, password, name } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -71,9 +89,11 @@ router.post("/register", async (req: Request, res: Response) => {
     });
 
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ error: "User with this email already exists" });
+      return ApiResponse.conflict(
+        res,
+        "User with this email already exists",
+        ErrorCode.ALREADY_EXISTS,
+      );
     }
 
     // Hash password
@@ -90,19 +110,14 @@ router.post("/register", async (req: Request, res: Response) => {
         id: true,
         email: true,
         name: true,
+        role: true,
         createdAt: true,
       },
     });
 
-    res.status(201).json({
-      message: "User registered successfully",
-      user,
-    });
-  } catch (error) {
-    console.error("Registration error:", error);
-    res.status(500).json({ error: "Failed to register user" });
-  }
-});
+    ApiResponse.created(res, { user }, "User registered successfully");
+  }),
+);
 
 /**
  * @swagger
@@ -143,18 +158,17 @@ router.post("/register", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.post("/send-otp", async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/send-otp",
+  validateBody(sendOtpSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { phone } = req.body;
 
-    if (!phone) {
-      return res.status(400).json({ error: "Phone number is required" });
-    }
-
     if (!isValidPhoneNumber(phone)) {
-      return res.status(400).json({
-        error:
+      return ApiResponse.validationError(res, {
+        phone: [
           "Invalid phone number format. Use E.164 format (e.g., +1234567890)",
+        ],
       });
     }
 
@@ -184,20 +198,25 @@ router.post("/send-otp", async (req: Request, res: Response) => {
     const sent = await sendOTPViaSMS(phone, otp);
 
     if (!sent && process.env.NODE_ENV !== "development") {
-      return res.status(500).json({ error: "Failed to send OTP" });
+      return ApiResponse.error(
+        res,
+        "Failed to send OTP",
+        500,
+        ErrorCode.EXTERNAL_SERVICE_ERROR,
+      );
     }
 
-    res.json({
-      message: "OTP sent successfully",
-      expiresAt,
-      // Only include OTP in development for testing
-      ...(process.env.NODE_ENV === "development" && { otp }),
-    });
-  } catch (error) {
-    console.error("Send OTP error:", error);
-    res.status(500).json({ error: "Failed to send OTP" });
-  }
-});
+    ApiResponse.success(
+      res,
+      {
+        expiresAt,
+        // Only include OTP in development for testing
+        ...(process.env.NODE_ENV === "development" && { otp }),
+      },
+      "OTP sent successfully",
+    );
+  }),
+);
 
 /**
  * @swagger
@@ -243,15 +262,11 @@ router.post("/send-otp", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.post("/verify-otp", async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/verify-otp",
+  validateBody(verifyOtpSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { phone, otp } = req.body;
-
-    if (!phone || !otp) {
-      return res
-        .status(400)
-        .json({ error: "Phone number and OTP are required" });
-    }
 
     // Find the verification token
     const verificationToken = await prisma.verificationToken.findFirst({
@@ -264,26 +279,27 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     });
 
     if (!verificationToken) {
-      return res.status(400).json({ error: "Invalid or expired OTP" });
+      return ApiResponse.error(
+        res,
+        "Invalid or expired OTP",
+        400,
+        ErrorCode.INVALID_CREDENTIALS,
+      );
     }
 
     // Don't delete the token here - it will be used during sign-in
-    res.json({
-      message: "OTP verified successfully",
-      verified: true,
-    });
-  } catch (error) {
-    console.error("Verify OTP error:", error);
-    res.status(500).json({ error: "Failed to verify OTP" });
-  }
-});
+    ApiResponse.success(res, { verified: true }, "OTP verified successfully");
+  }),
+);
 
 /**
  * GET /api/auth/me
  * Get current authenticated user
  */
-router.get("/me", requireAuth, async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/me",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
 
     const user = await prisma.user.findUnique({
@@ -298,30 +314,44 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
         emailVerified: true,
         bio: true,
         location: true,
+        role: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return ApiResponse.notFound(
+        res,
+        "User not found",
+        ErrorCode.USER_NOT_FOUND,
+      );
     }
 
-    res.json({ user });
-  } catch (error) {
-    console.error("Get user error:", error);
-    res.status(500).json({ error: "Failed to get user" });
-  }
-});
+    ApiResponse.success(res, { user });
+  }),
+);
 
 /**
  * PATCH /api/auth/me
  * Update current user profile
  */
-router.patch("/me", requireAuth, async (req: Request, res: Response) => {
-  try {
+router.patch(
+  "/me",
+  requireAuth,
+  validateBody(updateProfileSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const { name, bio, location, image } = req.body;
+    const {
+      name,
+      bio,
+      location,
+      bikeType,
+      bikeOwned,
+      experienceLevel,
+      levelOfActivity,
+      bloodType,
+    } = req.body;
 
     const user = await prisma.user.update({
       where: { id: session.user.id },
@@ -329,7 +359,11 @@ router.patch("/me", requireAuth, async (req: Request, res: Response) => {
         ...(name !== undefined && { name }),
         ...(bio !== undefined && { bio }),
         ...(location !== undefined && { location }),
-        ...(image !== undefined && { image }),
+        ...(bikeType !== undefined && { bikeType }),
+        ...(bikeOwned !== undefined && { bikeOwned }),
+        ...(experienceLevel !== undefined && { experienceLevel }),
+        ...(levelOfActivity !== undefined && { levelOfActivity }),
+        ...(bloodType !== undefined && { bloodType }),
       },
       select: {
         id: true,
@@ -339,19 +373,18 @@ router.patch("/me", requireAuth, async (req: Request, res: Response) => {
         phone: true,
         bio: true,
         location: true,
+        bikeType: true,
+        bikeOwned: true,
+        experienceLevel: true,
+        levelOfActivity: true,
+        bloodType: true,
         updatedAt: true,
       },
     });
 
-    res.json({
-      message: "Profile updated successfully",
-      user,
-    });
-  } catch (error) {
-    console.error("Update user error:", error);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
+    ApiResponse.success(res, { user }, "Profile updated successfully");
+  }),
+);
 
 /**
  * POST /api/auth/change-password
@@ -360,46 +393,44 @@ router.patch("/me", requireAuth, async (req: Request, res: Response) => {
 router.post(
   "/change-password",
   requireAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const session = (req as any).session;
-      const { currentPassword, newPassword } = req.body;
+  validateBody(changePasswordSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { currentPassword, newPassword } = req.body;
 
-      if (!currentPassword || !newPassword) {
-        return res
-          .status(400)
-          .json({ error: "Current password and new password are required" });
-      }
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+    });
 
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-      });
-
-      if (!user || !user.password) {
-        return res
-          .status(400)
-          .json({ error: "User does not have a password set" });
-      }
-
-      // Verify current password
-      const isValid = await bcrypt.compare(currentPassword, user.password);
-      if (!isValid) {
-        return res.status(400).json({ error: "Current password is incorrect" });
-      }
-
-      // Hash and update new password
-      const hashedPassword = await bcrypt.hash(newPassword, 12);
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data: { password: hashedPassword },
-      });
-
-      res.json({ message: "Password changed successfully" });
-    } catch (error) {
-      console.error("Change password error:", error);
-      res.status(500).json({ error: "Failed to change password" });
+    if (!user || !user.password) {
+      return ApiResponse.error(
+        res,
+        "User does not have a password set",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
     }
-  },
+
+    // Verify current password
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+      return ApiResponse.error(
+        res,
+        "Current password is incorrect",
+        400,
+        ErrorCode.INVALID_CREDENTIALS,
+      );
+    }
+
+    // Hash and update new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: { password: hashedPassword },
+    });
+
+    ApiResponse.success(res, null, "Password changed successfully");
+  }),
 );
 
 export default router;

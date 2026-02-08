@@ -1,6 +1,22 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAuth } from "../config/auth.js";
+import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import {
+  validateBody,
+  validateQuery,
+  validateParams,
+  asyncHandler,
+} from "../middlewares/validation.js";
+import { requireOwnershipOrAdmin } from "../middlewares/rbac.js";
+import {
+  createListingSchema,
+  updateListingSchema,
+  listingQuerySchema,
+  idParamSchema,
+  createReviewSchema,
+  paginationSchema,
+} from "../validators/schemas.js";
 
 const router = Router();
 
@@ -73,21 +89,17 @@ router.use(requireAuth);
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/", async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const category = req.query.category as string;
-    const minPrice = req.query.minPrice
-      ? parseFloat(req.query.minPrice as string)
-      : undefined;
-    const maxPrice = req.query.maxPrice
-      ? parseFloat(req.query.maxPrice as string)
-      : undefined;
+router.get(
+  "/",
+  validateQuery(listingQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit, category, minPrice, maxPrice, condition, status } =
+      req.query as any;
     const skip = (page - 1) * limit;
 
-    const where: any = { status: "ACTIVE" };
+    const where: any = { status: status || "ACTIVE" };
     if (category) where.category = category;
+    if (condition) where.condition = condition;
     if (minPrice !== undefined || maxPrice !== undefined) {
       where.price = {};
       if (minPrice !== undefined) where.price.gte = minPrice;
@@ -100,24 +112,23 @@ router.get("/", async (req: Request, res: Response) => {
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
+        include: {
+          seller: {
+            select: { id: true, name: true, image: true },
+          },
+        },
       }),
       prisma.marketplaceListing.count({ where }),
     ]);
 
-    res.json({
-      listings,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    ApiResponse.paginated(res, listings, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
-  } catch (error) {
-    console.error("Get listings error:", error);
-    res.status(500).json({ error: "Failed to get listings" });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -170,11 +181,12 @@ router.get("/", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/my-listings", async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/my-listings",
+  validateQuery(paginationSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const { page, limit } = req.query as any;
     const skip = (page - 1) * limit;
 
     const where = { sellerId: session.user.id };
@@ -189,20 +201,14 @@ router.get("/my-listings", async (req: Request, res: Response) => {
       prisma.marketplaceListing.count({ where }),
     ]);
 
-    res.json({
-      listings,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    ApiResponse.paginated(res, listings, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
-  } catch (error) {
-    console.error("Get my listings error:", error);
-    res.status(500).json({ error: "Failed to get listings" });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -238,24 +244,41 @@ router.get("/my-listings", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/:id", async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/:id",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const listing = await prisma.marketplaceListing.findUnique({
       where: { id },
+      include: {
+        seller: {
+          select: { id: true, name: true, image: true, reputationScore: true },
+        },
+        reviews: {
+          include: {
+            reviewer: {
+              select: { id: true, name: true, image: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
+      },
     });
 
     if (!listing) {
-      return res.status(404).json({ error: "Listing not found" });
+      return ApiResponse.notFound(
+        res,
+        "Listing not found",
+        ErrorCode.LISTING_NOT_FOUND,
+      );
     }
 
-    res.json({ listing });
-  } catch (error) {
-    console.error("Get listing error:", error);
-    res.status(500).json({ error: "Failed to get listing" });
-  }
-});
+    ApiResponse.success(res, { listing });
+  }),
+);
 
 /**
  * @swagger
@@ -322,46 +345,70 @@ router.get("/:id", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.post("/", async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/",
+  validateBody(createListingSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const { title, description, price, currency, images, category, condition } =
-      req.body;
-
-    if (!title || price === undefined) {
-      return res.status(400).json({ error: "Title and price are required" });
-    }
+    const {
+      title,
+      description,
+      price,
+      currency,
+      images,
+      category,
+      subcategory,
+      specifications,
+      condition,
+    } = req.body;
 
     const listing = await prisma.marketplaceListing.create({
       data: {
         title,
         description,
         price,
-        currency: currency || "USD",
+        currency: currency || "INR",
         images: images || [],
         category,
+        subcategory,
+        specifications,
         condition,
         sellerId: session.user.id,
       },
+      include: {
+        seller: {
+          select: { id: true, name: true, image: true },
+        },
+      },
     });
 
-    res.status(201).json({
-      message: "Listing created successfully",
-      listing,
+    // Update user role to SELLER if not already higher
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true },
     });
-  } catch (error) {
-    console.error("Create listing error:", error);
-    res.status(500).json({ error: "Failed to create listing" });
-  }
-});
+
+    if (user && user.role === "USER") {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { role: "SELLER" },
+      });
+    }
+
+    ApiResponse.created(res, { listing }, "Listing created successfully");
+  }),
+);
 
 /**
  * PATCH /api/marketplace/:id
  * Update a listing
  */
-router.patch("/:id", async (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session;
+router.patch(
+  "/:id",
+  validateParams(idParamSchema),
+  validateBody(updateListingSchema),
+  requireOwnershipOrAdmin("listing"),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const {
       title,
@@ -370,24 +417,11 @@ router.patch("/:id", async (req: Request, res: Response) => {
       currency,
       images,
       category,
+      subcategory,
+      specifications,
       condition,
       status,
     } = req.body;
-
-    // Check if listing exists and user is the seller
-    const existingListing = await prisma.marketplaceListing.findUnique({
-      where: { id },
-    });
-
-    if (!existingListing) {
-      return res.status(404).json({ error: "Listing not found" });
-    }
-
-    if (existingListing.sellerId !== session.user.id) {
-      return res
-        .status(403)
-        .json({ error: "You can only update your own listings" });
-    }
 
     const listing = await prisma.marketplaceListing.update({
       where: { id },
@@ -398,54 +432,112 @@ router.patch("/:id", async (req: Request, res: Response) => {
         ...(currency !== undefined && { currency }),
         ...(images !== undefined && { images }),
         ...(category !== undefined && { category }),
+        ...(subcategory !== undefined && { subcategory }),
+        ...(specifications !== undefined && { specifications }),
         ...(condition !== undefined && { condition }),
         ...(status !== undefined && { status }),
       },
+      include: {
+        seller: {
+          select: { id: true, name: true, image: true },
+        },
+      },
     });
 
-    res.json({
-      message: "Listing updated successfully",
-      listing,
-    });
-  } catch (error) {
-    console.error("Update listing error:", error);
-    res.status(500).json({ error: "Failed to update listing" });
-  }
-});
+    ApiResponse.success(res, { listing }, "Listing updated successfully");
+  }),
+);
 
 /**
  * DELETE /api/marketplace/:id
  * Delete a listing
  */
-router.delete("/:id", async (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session;
+router.delete(
+  "/:id",
+  validateParams(idParamSchema),
+  requireOwnershipOrAdmin("listing"),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    // Check if listing exists and user is the seller
-    const existingListing = await prisma.marketplaceListing.findUnique({
-      where: { id },
+    // Delete reviews first
+    await prisma.review.deleteMany({
+      where: { listingId: id },
     });
-
-    if (!existingListing) {
-      return res.status(404).json({ error: "Listing not found" });
-    }
-
-    if (existingListing.sellerId !== session.user.id) {
-      return res
-        .status(403)
-        .json({ error: "You can only delete your own listings" });
-    }
 
     await prisma.marketplaceListing.delete({
       where: { id },
     });
 
-    res.json({ message: "Listing deleted successfully" });
-  } catch (error) {
-    console.error("Delete listing error:", error);
-    res.status(500).json({ error: "Failed to delete listing" });
-  }
-});
+    ApiResponse.success(res, null, "Listing deleted successfully");
+  }),
+);
+
+/**
+ * POST /api/marketplace/:id/reviews
+ * Add a review to a listing
+ */
+router.post(
+  "/:id/reviews",
+  validateParams(idParamSchema),
+  validateBody(createReviewSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const { rating, comment } = req.body;
+
+    // Check if listing exists
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+    });
+
+    if (!listing) {
+      return ApiResponse.notFound(
+        res,
+        "Listing not found",
+        ErrorCode.LISTING_NOT_FOUND,
+      );
+    }
+
+    // Can't review own listing
+    if (listing.sellerId === session.user.id) {
+      return ApiResponse.error(
+        res,
+        "You cannot review your own listing",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    // Check if already reviewed
+    const existingReview = await prisma.review.findUnique({
+      where: {
+        listingId_reviewerId: { listingId: id, reviewerId: session.user.id },
+      },
+    });
+
+    if (existingReview) {
+      return ApiResponse.conflict(
+        res,
+        "You have already reviewed this listing",
+      );
+    }
+
+    const review = await prisma.review.create({
+      data: {
+        listingId: id,
+        reviewerId: session.user.id,
+        rating,
+        comment,
+      },
+      include: {
+        reviewer: {
+          select: { id: true, name: true, image: true },
+        },
+      },
+    });
+
+    ApiResponse.created(res, { review }, "Review added successfully");
+  }),
+);
 
 export default router;

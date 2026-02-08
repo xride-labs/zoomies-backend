@@ -14,10 +14,14 @@ import {
   rideRoutes,
   clubRoutes,
   marketplaceRoutes,
+  adminRoutes,
+  mediaRoutes,
 } from "./routes/index.js";
+import { initializeScheduledJobs } from "./jobs/scheduler.js";
+import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5000;
 
 // Trust proxy (required for secure cookies behind reverse proxies)
 app.set("trust proxy", true);
@@ -77,8 +81,8 @@ app.get("/health", (req: Request, res: Response) => {
   });
 });
 
-// Auth.js middleware - handles /auth/* routes
-app.use("/auth/*", authHandler);
+// Auth.js middleware - handles /auth routes
+app.use("/auth", authHandler);
 
 // API Routes
 app.use("/api/auth", authRoutes);
@@ -86,19 +90,18 @@ app.use("/api/users", userRoutes);
 app.use("/api/rides", rideRoutes);
 app.use("/api/clubs", clubRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/media", mediaRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
-  res.status(404).json({ error: "Not Found" });
+  ApiResponse.notFound(res, "Endpoint not found", ErrorCode.NOT_FOUND);
 });
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({
-    error: "Internal Server Error",
-    ...(process.env.NODE_ENV === "development" && { message: err.message }),
-  });
+  ApiResponse.internalError(res, "An unexpected error occurred", err);
 });
 
 // Start server
@@ -111,6 +114,9 @@ async function startServer() {
     } catch (mongoError) {
       console.warn("⚠️  MongoDB connection failed, continuing without MongoDB");
     }
+
+    // Initialize scheduled background jobs
+    initializeScheduledJobs();
 
     app.listen(PORT, () => {
       console.log(`
@@ -142,6 +148,8 @@ async function startServer() {
 ║   - GET  /api/rides                                        ║
 ║   - GET  /api/clubs                                        ║
 ║   - GET  /api/marketplace                                  ║
+║   - GET  /api/admin (requires admin role)                  ║
+║   - POST /api/media (file uploads)                         ║
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
       `);

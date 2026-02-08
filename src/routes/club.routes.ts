@@ -1,6 +1,25 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAuth } from "../config/auth.js";
+import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import {
+  validateBody,
+  validateQuery,
+  validateParams,
+  asyncHandler,
+} from "../middlewares/validation.js";
+import {
+  requireOwnershipOrAdmin,
+  requireClubMembership,
+  UserRole,
+} from "../middlewares/rbac.js";
+import {
+  createClubSchema,
+  updateClubSchema,
+  clubQuerySchema,
+  idParamSchema,
+  updateMemberRoleSchema,
+} from "../validators/schemas.js";
 
 const router = Router();
 
@@ -58,36 +77,47 @@ router.use(requireAuth);
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/", async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+router.get(
+  "/",
+  validateQuery(clubQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit, isPublic, verified, search } = req.query as any;
     const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (isPublic !== undefined) where.isPublic = isPublic;
+    if (verified !== undefined) where.verified = verified;
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [clubs, total] = await Promise.all([
       prisma.club.findMany({
-        where: { isPublic: true },
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
+        include: {
+          owner: {
+            select: { id: true, name: true, image: true },
+          },
+          _count: { select: { members: true } },
+        },
       }),
-      prisma.club.count({ where: { isPublic: true } }),
+      prisma.club.count({ where }),
     ]);
 
-    res.json({
-      clubs,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    ApiResponse.paginated(res, clubs, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
-  } catch (error) {
-    console.error("Get clubs error:", error);
-    res.status(500).json({ error: "Failed to get clubs" });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -123,24 +153,42 @@ router.get("/", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/:id", async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/:id",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const club = await prisma.club.findUnique({
       where: { id },
+      include: {
+        owner: {
+          select: { id: true, name: true, image: true },
+        },
+        members: {
+          include: {
+            user: {
+              select: { id: true, name: true, image: true },
+            },
+          },
+          orderBy: { joinedAt: "desc" },
+          take: 20,
+        },
+        _count: { select: { members: true } },
+      },
     });
 
     if (!club) {
-      return res.status(404).json({ error: "Club not found" });
+      return ApiResponse.notFound(
+        res,
+        "Club not found",
+        ErrorCode.CLUB_NOT_FOUND,
+      );
     }
 
-    res.json({ club });
-  } catch (error) {
-    console.error("Get club error:", error);
-    res.status(500).json({ error: "Failed to get club" });
-  }
-});
+    ApiResponse.success(res, { club });
+  }),
+);
 
 /**
  * @swagger
@@ -194,113 +242,308 @@ router.get("/:id", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.post("/", async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/",
+  validateBody(createClubSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const { name, description, image, isPublic } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ error: "Club name is required" });
-    }
+    const {
+      name,
+      description,
+      location,
+      clubType,
+      isPublic,
+      image,
+      coverImage,
+    } = req.body;
 
     const club = await prisma.club.create({
       data: {
         name,
         description,
+        location,
+        clubType,
         image,
+        coverImage,
         isPublic: isPublic ?? true,
         ownerId: session.user.id,
       },
+      include: {
+        owner: {
+          select: { id: true, name: true, image: true },
+        },
+      },
     });
 
-    res.status(201).json({
-      message: "Club created successfully",
-      club,
+    // Add owner as FOUNDER member
+    await prisma.clubMember.create({
+      data: {
+        clubId: club.id,
+        userId: session.user.id,
+        role: "FOUNDER",
+      },
     });
-  } catch (error) {
-    console.error("Create club error:", error);
-    res.status(500).json({ error: "Failed to create club" });
-  }
-});
+
+    // Update user role to CLUB_OWNER if not already admin
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true },
+    });
+
+    if (user && user.role !== "SUPER_ADMIN" && user.role !== "ADMIN") {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { role: "CLUB_OWNER" },
+      });
+    }
+
+    ApiResponse.created(res, { club }, "Club created successfully");
+  }),
+);
 
 /**
  * PATCH /api/clubs/:id
  * Update a club
  */
-router.patch("/:id", async (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session;
+router.patch(
+  "/:id",
+  validateParams(idParamSchema),
+  validateBody(updateClubSchema),
+  requireOwnershipOrAdmin("club"),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, description, image, isPublic } = req.body;
-
-    // Check if club exists and user is the owner
-    const existingClub = await prisma.club.findUnique({
-      where: { id },
-    });
-
-    if (!existingClub) {
-      return res.status(404).json({ error: "Club not found" });
-    }
-
-    if (existingClub.ownerId !== session.user.id) {
-      return res
-        .status(403)
-        .json({ error: "You can only update your own clubs" });
-    }
+    const {
+      name,
+      description,
+      location,
+      clubType,
+      isPublic,
+      image,
+      coverImage,
+    } = req.body;
 
     const club = await prisma.club.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
+        ...(location !== undefined && { location }),
+        ...(clubType !== undefined && { clubType }),
         ...(image !== undefined && { image }),
+        ...(coverImage !== undefined && { coverImage }),
         ...(isPublic !== undefined && { isPublic }),
+      },
+      include: {
+        owner: {
+          select: { id: true, name: true, image: true },
+        },
       },
     });
 
-    res.json({
-      message: "Club updated successfully",
-      club,
-    });
-  } catch (error) {
-    console.error("Update club error:", error);
-    res.status(500).json({ error: "Failed to update club" });
-  }
-});
+    ApiResponse.success(res, { club }, "Club updated successfully");
+  }),
+);
 
 /**
  * DELETE /api/clubs/:id
  * Delete a club
  */
-router.delete("/:id", async (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session;
+router.delete(
+  "/:id",
+  validateParams(idParamSchema),
+  requireOwnershipOrAdmin("club"),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    // Check if club exists and user is the owner
-    const existingClub = await prisma.club.findUnique({
-      where: { id },
+    // Delete members first
+    await prisma.clubMember.deleteMany({
+      where: { clubId: id },
     });
-
-    if (!existingClub) {
-      return res.status(404).json({ error: "Club not found" });
-    }
-
-    if (existingClub.ownerId !== session.user.id) {
-      return res
-        .status(403)
-        .json({ error: "You can only delete your own clubs" });
-    }
 
     await prisma.club.delete({
       where: { id },
     });
 
-    res.json({ message: "Club deleted successfully" });
-  } catch (error) {
-    console.error("Delete club error:", error);
-    res.status(500).json({ error: "Failed to delete club" });
-  }
-});
+    ApiResponse.success(res, null, "Club deleted successfully");
+  }),
+);
+
+/**
+ * POST /api/clubs/:id/join
+ * Join a club
+ */
+router.post(
+  "/:id/join",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const club = await prisma.club.findUnique({
+      where: { id },
+    });
+
+    if (!club) {
+      return ApiResponse.notFound(
+        res,
+        "Club not found",
+        ErrorCode.CLUB_NOT_FOUND,
+      );
+    }
+
+    if (!club.isPublic) {
+      return ApiResponse.forbidden(
+        res,
+        "This club is private. Request an invitation from the owner.",
+      );
+    }
+
+    // Check if already a member
+    const existing = await prisma.clubMember.findUnique({
+      where: { clubId_userId: { clubId: id, userId: session.user.id } },
+    });
+
+    if (existing) {
+      return ApiResponse.conflict(res, "You are already a member of this club");
+    }
+
+    const membership = await prisma.clubMember.create({
+      data: {
+        clubId: id,
+        userId: session.user.id,
+        role: "MEMBER",
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, image: true },
+        },
+      },
+    });
+
+    // Update member count
+    await prisma.club.update({
+      where: { id },
+      data: { memberCount: { increment: 1 } },
+    });
+
+    ApiResponse.created(res, { membership }, "Joined club successfully");
+  }),
+);
+
+/**
+ * DELETE /api/clubs/:id/leave
+ * Leave a club
+ */
+router.delete(
+  "/:id/leave",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const membership = await prisma.clubMember.findUnique({
+      where: { clubId_userId: { clubId: id, userId: session.user.id } },
+    });
+
+    if (!membership) {
+      return ApiResponse.notFound(res, "You are not a member of this club");
+    }
+
+    if (membership.role === "FOUNDER") {
+      return ApiResponse.error(
+        res,
+        "Club founders cannot leave. Transfer ownership or delete the club.",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    await prisma.clubMember.delete({
+      where: { clubId_userId: { clubId: id, userId: session.user.id } },
+    });
+
+    // Update member count
+    await prisma.club.update({
+      where: { id },
+      data: { memberCount: { decrement: 1 } },
+    });
+
+    ApiResponse.success(res, null, "Left club successfully");
+  }),
+);
+
+/**
+ * PATCH /api/clubs/:id/members/:userId
+ * Update member role
+ */
+router.patch(
+  "/:id/members/:userId",
+  validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
+  validateBody(updateMemberRoleSchema),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, userId } = req.params;
+    const { role } = req.body;
+
+    const membership = await prisma.clubMember.update({
+      where: { clubId_userId: { clubId: id, userId } },
+      data: { role },
+      include: {
+        user: {
+          select: { id: true, name: true, image: true },
+        },
+      },
+    });
+
+    ApiResponse.success(res, { membership }, `Member role updated to ${role}`);
+  }),
+);
+
+/**
+ * DELETE /api/clubs/:id/members/:userId
+ * Remove a member from club
+ */
+router.delete(
+  "/:id/members/:userId",
+  validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id, userId } = req.params;
+
+    if (userId === session.user.id) {
+      return ApiResponse.error(
+        res,
+        "You cannot remove yourself. Use the leave endpoint instead.",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    const membership = await prisma.clubMember.findUnique({
+      where: { clubId_userId: { clubId: id, userId } },
+    });
+
+    if (!membership) {
+      return ApiResponse.notFound(res, "Member not found");
+    }
+
+    if (membership.role === "FOUNDER") {
+      return ApiResponse.forbidden(res, "Cannot remove the club founder");
+    }
+
+    await prisma.clubMember.delete({
+      where: { clubId_userId: { clubId: id, userId } },
+    });
+
+    // Update member count
+    await prisma.club.update({
+      where: { id },
+      data: { memberCount: { decrement: 1 } },
+    });
+
+    ApiResponse.success(res, null, "Member removed successfully");
+  }),
+);
 
 export default router;

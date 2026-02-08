@@ -1,6 +1,18 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAuth } from "../config/auth.js";
+import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import {
+  validateQuery,
+  validateParams,
+  asyncHandler,
+} from "../middlewares/validation.js";
+import { requireRole, requireAdmin, UserRole } from "../middlewares/rbac.js";
+import {
+  userQuerySchema,
+  idParamSchema,
+  updateUserRoleSchema,
+} from "../validators/schemas.js";
 
 const router = Router();
 
@@ -58,44 +70,54 @@ router.use(requireAuth);
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/", async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+router.get(
+  "/",
+  validateQuery(userQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit, role, search } = req.query as any;
     const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (role) where.role = role;
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { username: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         skip,
         take: limit,
+        where,
         select: {
           id: true,
           email: true,
+          username: true,
           name: true,
           image: true,
           bio: true,
           location: true,
+          role: true,
+          ridesCompleted: true,
+          experienceLevel: true,
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
       }),
-      prisma.user.count(),
+      prisma.user.count({ where }),
     ]);
 
-    res.json({
-      users,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    ApiResponse.paginated(res, users, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
-  } catch (error) {
-    console.error("Get users error:", error);
-    res.status(500).json({ error: "Failed to get users" });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -131,8 +153,10 @@ router.get("/", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/:id", async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/:id",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const user = await prisma.user.findUnique({
@@ -140,23 +164,137 @@ router.get("/:id", async (req: Request, res: Response) => {
       select: {
         id: true,
         email: true,
+        username: true,
         name: true,
         image: true,
         bio: true,
         location: true,
+        role: true,
+        bikeType: true,
+        bikeOwned: true,
+        ridesCompleted: true,
+        experienceLevel: true,
+        levelOfActivity: true,
+        xpPoints: true,
+        reputationScore: true,
         createdAt: true,
+        _count: {
+          select: {
+            createdRides: true,
+            createdClubs: true,
+            followers: true,
+            following: true,
+          },
+        },
       },
     });
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return ApiResponse.notFound(
+        res,
+        "User not found",
+        ErrorCode.USER_NOT_FOUND,
+      );
     }
 
-    res.json({ user });
-  } catch (error) {
-    console.error("Get user error:", error);
-    res.status(500).json({ error: "Failed to get user" });
-  }
-});
+    ApiResponse.success(res, { user });
+  }),
+);
+
+/**
+ * PATCH /api/users/:id/role
+ * Update user role (admin only)
+ */
+router.patch(
+  "/:id/role",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    const validRoles = [
+      "SUPER_ADMIN",
+      "ADMIN",
+      "CLUB_OWNER",
+      "USER",
+      "RIDER",
+      "SELLER",
+    ];
+    if (!validRoles.includes(role)) {
+      return ApiResponse.validationError(res, {
+        role: [`Invalid role. Must be one of: ${validRoles.join(", ")}`],
+      });
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { role },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+      },
+    });
+
+    ApiResponse.success(res, { user }, "User role updated successfully");
+  }),
+);
+
+/**
+ * GET /api/users/:id/rides
+ * Get rides created by a user
+ */
+router.get(
+  "/:id/rides",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [rides, total] = await Promise.all([
+      prisma.ride.findMany({
+        where: { creatorId: id },
+        skip,
+        take: Number(limit),
+        orderBy: { createdAt: "desc" },
+        include: {
+          _count: { select: { participants: true } },
+        },
+      }),
+      prisma.ride.count({ where: { creatorId: id } }),
+    ]);
+
+    ApiResponse.paginated(res, rides, {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    });
+  }),
+);
+
+/**
+ * GET /api/users/:id/clubs
+ * Get clubs created by a user
+ */
+router.get(
+  "/:id/clubs",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const clubs = await prisma.club.findMany({
+      where: { ownerId: id },
+      include: {
+        _count: { select: { members: true } },
+      },
+    });
+
+    ApiResponse.success(res, { clubs });
+  }),
+);
 
 export default router;

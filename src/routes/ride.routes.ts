@@ -1,6 +1,26 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAuth } from "../config/auth.js";
+import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import {
+  validateBody,
+  validateQuery,
+  validateParams,
+  asyncHandler,
+} from "../middlewares/validation.js";
+import {
+  requireOwnershipOrAdmin,
+  requireRole,
+  UserRole,
+} from "../middlewares/rbac.js";
+import {
+  createRideSchema,
+  updateRideSchema,
+  rideQuerySchema,
+  idParamSchema,
+  joinRideSchema,
+  updateParticipantStatusSchema,
+} from "../validators/schemas.js";
 
 const router = Router();
 
@@ -64,14 +84,22 @@ router.use(requireAuth);
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/", async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const status = req.query.status as string;
+router.get(
+  "/",
+  validateQuery(rideQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit, status, experienceLevel, startDate, endDate } =
+      req.query as any;
     const skip = (page - 1) * limit;
 
-    const where = status ? { status: status as any } : {};
+    const where: any = {};
+    if (status) where.status = status;
+    if (experienceLevel) where.experienceLevel = experienceLevel;
+    if (startDate || endDate) {
+      where.scheduledAt = {};
+      if (startDate) where.scheduledAt.gte = new Date(startDate);
+      if (endDate) where.scheduledAt.lte = new Date(endDate);
+    }
 
     const [rides, total] = await Promise.all([
       prisma.ride.findMany({
@@ -79,24 +107,24 @@ router.get("/", async (req: Request, res: Response) => {
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
+        include: {
+          creator: {
+            select: { id: true, name: true, image: true },
+          },
+          _count: { select: { participants: true } },
+        },
       }),
       prisma.ride.count({ where }),
     ]);
 
-    res.json({
-      rides,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    ApiResponse.paginated(res, rides, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
-  } catch (error) {
-    console.error("Get rides error:", error);
-    res.status(500).json({ error: "Failed to get rides" });
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -132,24 +160,39 @@ router.get("/", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.get("/:id", async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/:id",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const ride = await prisma.ride.findUnique({
       where: { id },
+      include: {
+        creator: {
+          select: { id: true, name: true, image: true },
+        },
+        participants: {
+          include: {
+            user: {
+              select: { id: true, name: true, image: true },
+            },
+          },
+        },
+      },
     });
 
     if (!ride) {
-      return res.status(404).json({ error: "Ride not found" });
+      return ApiResponse.notFound(
+        res,
+        "Ride not found",
+        ErrorCode.RIDE_NOT_FOUND,
+      );
     }
 
-    res.json({ ride });
-  } catch (error) {
-    console.error("Get ride error:", error);
-    res.status(500).json({ error: "Failed to get ride" });
-  }
-});
+    ApiResponse.success(res, { ride });
+  }),
+);
 
 /**
  * @swagger
@@ -213,24 +256,24 @@ router.get("/:id", async (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
-router.post("/", async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/",
+  validateBody(createRideSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const {
       title,
       description,
       startLocation,
       endLocation,
+      experienceLevel,
+      xpRequired,
+      pace,
       distance,
       duration,
       scheduledAt,
+      keepPermanently,
     } = req.body;
-
-    if (!title || !startLocation) {
-      return res
-        .status(400)
-        .json({ error: "Title and start location are required" });
-    }
 
     const ride = await prisma.ride.create({
       data: {
@@ -238,56 +281,59 @@ router.post("/", async (req: Request, res: Response) => {
         description,
         startLocation,
         endLocation,
+        experienceLevel,
+        xpRequired,
+        pace,
         distance,
         duration,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        keepPermanently: keepPermanently || false,
         creatorId: session.user.id,
+      },
+      include: {
+        creator: {
+          select: { id: true, name: true, image: true },
+        },
       },
     });
 
-    res.status(201).json({
-      message: "Ride created successfully",
-      ride,
+    // Automatically add creator as participant
+    await prisma.rideParticipant.create({
+      data: {
+        rideId: ride.id,
+        userId: session.user.id,
+        status: "ACCEPTED",
+      },
     });
-  } catch (error) {
-    console.error("Create ride error:", error);
-    res.status(500).json({ error: "Failed to create ride" });
-  }
-});
+
+    ApiResponse.created(res, { ride }, "Ride created successfully");
+  }),
+);
 
 /**
  * PATCH /api/rides/:id
  * Update a ride
  */
-router.patch("/:id", async (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session;
+router.patch(
+  "/:id",
+  validateParams(idParamSchema),
+  validateBody(updateRideSchema),
+  requireOwnershipOrAdmin("ride"),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const {
       title,
       description,
       startLocation,
       endLocation,
+      experienceLevel,
+      xpRequired,
+      pace,
       distance,
       duration,
       scheduledAt,
-      status,
+      keepPermanently,
     } = req.body;
-
-    // Check if ride exists and user is the creator
-    const existingRide = await prisma.ride.findUnique({
-      where: { id },
-    });
-
-    if (!existingRide) {
-      return res.status(404).json({ error: "Ride not found" });
-    }
-
-    if (existingRide.creatorId !== session.user.id) {
-      return res
-        .status(403)
-        .json({ error: "You can only update your own rides" });
-    }
 
     const ride = await prisma.ride.update({
       where: { id },
@@ -296,58 +342,172 @@ router.patch("/:id", async (req: Request, res: Response) => {
         ...(description !== undefined && { description }),
         ...(startLocation !== undefined && { startLocation }),
         ...(endLocation !== undefined && { endLocation }),
+        ...(experienceLevel !== undefined && { experienceLevel }),
+        ...(xpRequired !== undefined && { xpRequired }),
+        ...(pace !== undefined && { pace }),
         ...(distance !== undefined && { distance }),
         ...(duration !== undefined && { duration }),
         ...(scheduledAt !== undefined && {
           scheduledAt: new Date(scheduledAt),
         }),
-        ...(status !== undefined && { status }),
+        ...(keepPermanently !== undefined && { keepPermanently }),
+      },
+      include: {
+        creator: {
+          select: { id: true, name: true, image: true },
+        },
       },
     });
 
-    res.json({
-      message: "Ride updated successfully",
-      ride,
-    });
-  } catch (error) {
-    console.error("Update ride error:", error);
-    res.status(500).json({ error: "Failed to update ride" });
-  }
-});
+    ApiResponse.success(res, { ride }, "Ride updated successfully");
+  }),
+);
 
 /**
  * DELETE /api/rides/:id
  * Delete a ride
  */
-router.delete("/:id", async (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session;
+router.delete(
+  "/:id",
+  validateParams(idParamSchema),
+  requireOwnershipOrAdmin("ride"),
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    // Check if ride exists and user is the creator
-    const existingRide = await prisma.ride.findUnique({
-      where: { id },
+    // Delete participants first
+    await prisma.rideParticipant.deleteMany({
+      where: { rideId: id },
     });
-
-    if (!existingRide) {
-      return res.status(404).json({ error: "Ride not found" });
-    }
-
-    if (existingRide.creatorId !== session.user.id) {
-      return res
-        .status(403)
-        .json({ error: "You can only delete your own rides" });
-    }
 
     await prisma.ride.delete({
       where: { id },
     });
 
-    res.json({ message: "Ride deleted successfully" });
-  } catch (error) {
-    console.error("Delete ride error:", error);
-    res.status(500).json({ error: "Failed to delete ride" });
-  }
-});
+    ApiResponse.success(res, null, "Ride deleted successfully");
+  }),
+);
+
+/**
+ * POST /api/rides/:id/join
+ * Request to join a ride
+ */
+router.post(
+  "/:id/join",
+  validateParams(idParamSchema),
+  validateBody(joinRideSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+    });
+
+    if (!ride) {
+      return ApiResponse.notFound(
+        res,
+        "Ride not found",
+        ErrorCode.RIDE_NOT_FOUND,
+      );
+    }
+
+    if (ride.status !== "PLANNED") {
+      return ApiResponse.error(
+        res,
+        "Cannot join a ride that has already started or ended",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    // Check if already a participant
+    const existing = await prisma.rideParticipant.findUnique({
+      where: { rideId_userId: { rideId: id, userId: session.user.id } },
+    });
+
+    if (existing) {
+      return ApiResponse.conflict(
+        res,
+        "You have already requested to join this ride",
+      );
+    }
+
+    const participant = await prisma.rideParticipant.create({
+      data: {
+        rideId: id,
+        userId: session.user.id,
+        status: "REQUESTED",
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, image: true },
+        },
+      },
+    });
+
+    ApiResponse.created(res, { participant }, "Join request submitted");
+  }),
+);
+
+/**
+ * PATCH /api/rides/:id/participants/:userId
+ * Update participant status (accept/decline)
+ */
+router.patch(
+  "/:id/participants/:userId",
+  validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
+  validateBody(updateParticipantStatusSchema),
+  requireOwnershipOrAdmin("ride"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, userId } = req.params;
+    const { status } = req.body;
+
+    const participant = await prisma.rideParticipant.update({
+      where: { rideId_userId: { rideId: id, userId } },
+      data: { status },
+      include: {
+        user: {
+          select: { id: true, name: true, image: true },
+        },
+      },
+    });
+
+    ApiResponse.success(
+      res,
+      { participant },
+      `Participant ${status.toLowerCase()}`,
+    );
+  }),
+);
+
+/**
+ * DELETE /api/rides/:id/leave
+ * Leave a ride
+ */
+router.delete(
+  "/:id/leave",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const participant = await prisma.rideParticipant.findUnique({
+      where: { rideId_userId: { rideId: id, userId: session.user.id } },
+    });
+
+    if (!participant) {
+      return ApiResponse.notFound(
+        res,
+        "You are not a participant in this ride",
+      );
+    }
+
+    await prisma.rideParticipant.delete({
+      where: { rideId_userId: { rideId: id, userId: session.user.id } },
+    });
+
+    ApiResponse.success(res, null, "Left ride successfully");
+  }),
+);
 
 export default router;

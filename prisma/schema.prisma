@@ -3,7 +3,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -116,10 +115,45 @@ model VerificationToken {
 
 // User roles for role-based access control
 enum UserRole {
-  ADMIN      // System administrator
-  USER       // Regular user (default)
-  RIDER      // Active motorcycle rider
-  SELLER     // Marketplace seller
+  SUPER_ADMIN  // Full platform access (web only)
+  ADMIN        // System administrator (web only)
+  CLUB_OWNER   // Club creator/manager (web + mobile)
+  USER         // Regular user (default, mobile only)
+  RIDER        // Active motorcycle rider (mobile only)
+  SELLER       // Marketplace seller (mobile only)
+}
+
+// Media model for tracking uploaded files
+model Media {
+  id          String   @id @default(cuid())
+  publicId    String   @unique @map("public_id") // Cloudinary public ID
+  url         String
+  secureUrl   String   @map("secure_url")
+  thumbnailUrl String? @map("thumbnail_url")
+  type        MediaType
+  format      String?
+  width       Int?
+  height      Int?
+  bytes       Int?
+  duration    Float?   // For videos, in seconds
+  folder      String   // Cloudinary folder
+  
+  // Polymorphic associations
+  userId      String?  @map("user_id")
+  clubId      String?  @map("club_id")
+  rideId      String?  @map("ride_id")
+  listingId   String?  @map("listing_id")
+  postId      String?  @map("post_id")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("media")
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
 }
 
 enum RideStatus {
@@ -156,7 +190,15 @@ model Ride {
   distance      Float?
   duration      Int?    // in minutes
   scheduledAt   DateTime? @map("scheduled_at")
+  endedAt       DateTime? @map("ended_at") // When ride actually ended
   status        RideStatus @default(PLANNED)
+  
+  // Lifecycle management
+  keepPermanently Boolean @default(false) @map("keep_permanently") // Prevent auto-deletion
+  
+  // Route data (for GPS tracking)
+  routeData   String?  @map("route_data") // JSON string of waypoints
+  images      String[] // Array of image URLs
 
   // Chat fields
   chatGroupId String? @map("chat_group_id")
@@ -165,6 +207,9 @@ model Ride {
   // Creator relation
   creatorId   String   @map("creator_id")
   creator     User     @relation("RideCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  
+  // Club relation (optional - for club-organized rides)
+  clubId      String?  @map("club_id")
   
   // Participants relation
   participants RideParticipant[]

@@ -24,7 +24,7 @@ This API uses **Auth.js (NextAuth)** for authentication with multiple providers:
 - **Phone OTP** - SMS verification via Twilio
 
 ### Base URL
-- Development: \`http://localhost:3001\`
+- Development: \`http://localhost:5000\`
 - Production: \`https://api.zoomies.app\`
 
 ### Authentication Flow

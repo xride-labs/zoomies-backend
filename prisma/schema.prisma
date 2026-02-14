@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url     = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 // Auth.js required models
@@ -43,56 +43,56 @@ model Session {
 
 model User {
   id            String    @id @default(cuid())
-  username     String?   @unique
+  username      String?   @unique
   name          String?
   email         String?   @unique
-  bloodType    String?   @map("blood_type")
+  bloodType     String?   @map("blood_type")
   emailVerified DateTime? @map("email_verified")
   image         String?
-  password      String?   // For credentials provider
+  password      String? // For credentials provider
   phone         String?   @unique // For mobile OTP
   phoneVerified DateTime? @map("phone_verified")
-  
+
   // Profile fields
-  bio           String?
-  location      String?
-  ridesCompleted Int?      @map("rides_completed")
-  bikeType      String?   @map("bike_type")
-  bikeOwned    String?   @map("bike_owned") // e.g., "Yamaha YZF-R3"
-  bikeOwnerSince DateTime? @map("bike_owner_since")
-  bikeOdometer  Int?      // in kilometers
-  bikeModifications String? @map("bike_modifications") // e.g., JSON string of modifications
-  bikeOwnerAge   Int?      @map("bike_owner_age") // in years
-  xpPoints      Int?      @map("xp_points") // Experience points
-  experienceLevel String? @map("experience_level") // e.g., Beginner, Intermediate, Expert
-  levelOfActivity String? @map("level_of_activity") // e.g., Casual, Regular, Enthusiast
-  reputationScore Float?   @map("reputation_score") // e.g., 4.5 out of 5
-  affiliations  String?   // e.g., Clubs or groups the user is part of (as a JSON string)
-  reminders     String?   // e.g., JSON string of reminder settings
+  bio               String?
+  location          String?
+  ridesCompleted    Int?      @map("rides_completed")
+  bikeType          String?   @map("bike_type")
+  bikeOwned         String?   @map("bike_owned") // e.g., "Yamaha YZF-R3"
+  bikeOwnerSince    DateTime? @map("bike_owner_since")
+  bikeOdometer      Int? // in kilometers
+  bikeModifications String?   @map("bike_modifications") // e.g., JSON string of modifications
+  bikeOwnerAge      Int?      @map("bike_owner_age") // in years
+  xpPoints          Int?      @map("xp_points") // Experience points
+  experienceLevel   String?   @map("experience_level") // e.g., Beginner, Intermediate, Expert
+  levelOfActivity   String?   @map("level_of_activity") // e.g., Casual, Regular, Enthusiast
+  reputationScore   Float?    @map("reputation_score") // e.g., 4.5 out of 5
+  affiliations      String? // e.g., Clubs or groups the user is part of (as a JSON string)
+  reminders         String? // e.g., JSON string of reminder settings
 
   // Timestamps
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // User role and permissions
-  role          UserRole  @default(USER)
+  role UserRole @default(USER)
 
   // Relations
-  accounts      Account[]
-  sessions      Session[]
-  verificationTokens VerificationToken[]
-  createdRides  Ride[]    @relation("RideCreator")
-  rideParticipations RideParticipant[]
-  createdClubs  Club[]    @relation("ClubOwner")
-  clubMemberships ClubMember[]
+  accounts            Account[]
+  sessions            Session[]
+  verificationTokens  VerificationToken[]
+  createdRides        Ride[]               @relation("RideCreator")
+  rideParticipations  RideParticipant[]
+  createdClubs        Club[]               @relation("ClubOwner")
+  clubMemberships     ClubMember[]
   marketplaceListings MarketplaceListing[] @relation("SellerListings")
-  chatMessages  ChatMessage[]
-  posts         Post[]
-  likes         Like[]
-  comments      Comment[]
-  followers     Follow[]  @relation("Following")
-  following     Follow[]  @relation("Followers")
-  receivedReviews Review[] @relation("ReviewReceiver")
+  chatMessages        ChatMessage[]
+  posts               Post[]
+  likes               Like[]
+  comments            Comment[]
+  followers           Follow[]             @relation("Following")
+  following           Follow[]             @relation("Followers")
+  receivedReviews     Review[]             @relation("ReviewReceiver")
 
   @@map("users")
 }
@@ -103,9 +103,9 @@ model VerificationToken {
   token      String   // The OTP code or verification token
   expires    DateTime
   type       String   @default("email") // "email" or "sms"
-  
-  userId     String?  @map("user_id")
-  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([identifier, token])
   @@map("verification_tokens")
@@ -115,38 +115,38 @@ model VerificationToken {
 
 // User roles for role-based access control
 enum UserRole {
-  SUPER_ADMIN  // Full platform access (web only)
-  ADMIN        // System administrator (web only)
-  CLUB_OWNER   // Club creator/manager (web + mobile)
-  USER         // Regular user (default, mobile only)
-  RIDER        // Active motorcycle rider (mobile only)
-  SELLER       // Marketplace seller (mobile only)
+  SUPER_ADMIN // Full platform access (web only)
+  ADMIN // System administrator (web only)
+  CLUB_OWNER // Club creator/manager (web + mobile)
+  USER // Regular user (default, mobile only)
+  RIDER // Active motorcycle rider (mobile only)
+  SELLER // Marketplace seller (mobile only)
 }
 
 // Media model for tracking uploaded files
 model Media {
-  id          String   @id @default(cuid())
-  publicId    String   @unique @map("public_id") // Cloudinary public ID
-  url         String
-  secureUrl   String   @map("secure_url")
-  thumbnailUrl String? @map("thumbnail_url")
-  type        MediaType
-  format      String?
-  width       Int?
-  height      Int?
-  bytes       Int?
-  duration    Float?   // For videos, in seconds
-  folder      String   // Cloudinary folder
-  
+  id           String    @id @default(cuid())
+  publicId     String    @unique @map("public_id") // Cloudinary public ID
+  url          String
+  secureUrl    String    @map("secure_url")
+  thumbnailUrl String?   @map("thumbnail_url")
+  type         MediaType
+  format       String?
+  width        Int?
+  height       Int?
+  bytes        Int?
+  duration     Float? // For videos, in seconds
+  folder       String // Cloudinary folder
+
   // Polymorphic associations
-  userId      String?  @map("user_id")
-  clubId      String?  @map("club_id")
-  rideId      String?  @map("ride_id")
-  listingId   String?  @map("listing_id")
-  postId      String?  @map("post_id")
-  
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  userId    String? @map("user_id")
+  clubId    String? @map("club_id")
+  rideId    String? @map("ride_id")
+  listingId String? @map("listing_id")
+  postId    String? @map("post_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("media")
 }
@@ -164,10 +164,10 @@ enum RideStatus {
 }
 
 enum ClubMemberRole {
-  MEMBER     // Regular club member
-  OFFICER    // Club officer/moderator
-  ADMIN      // Club admin
-  FOUNDER    // Club founder
+  MEMBER // Regular club member
+  OFFICER // Club officer/moderator
+  ADMIN // Club admin
+  FOUNDER // Club founder
 }
 
 enum RideParticipantStatus {
@@ -179,72 +179,72 @@ enum RideParticipantStatus {
 }
 
 model Ride {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  startLocation String @map("start_location")
-  endLocation   String? @map("end_location")
-  experienceLevel String? @map("experience_level") // e.g., Beginner, Intermediate, Expert
-  xpRequired   Int?    @map("xp_required")
-  pace        String? // e.g., Leisurely, Moderate, Fast
-  distance      Float?
-  duration      Int?    // in minutes
-  scheduledAt   DateTime? @map("scheduled_at")
-  endedAt       DateTime? @map("ended_at") // When ride actually ended
-  status        RideStatus @default(PLANNED)
-  
+  id              String     @id @default(cuid())
+  title           String
+  description     String?
+  startLocation   String     @map("start_location")
+  endLocation     String?    @map("end_location")
+  experienceLevel String?    @map("experience_level") // e.g., Beginner, Intermediate, Expert
+  xpRequired      Int?       @map("xp_required")
+  pace            String? // e.g., Leisurely, Moderate, Fast
+  distance        Float?
+  duration        Int? // in minutes
+  scheduledAt     DateTime?  @map("scheduled_at")
+  endedAt         DateTime?  @map("ended_at") // When ride actually ended
+  status          RideStatus @default(PLANNED)
+
   // Lifecycle management
   keepPermanently Boolean @default(false) @map("keep_permanently") // Prevent auto-deletion
-  
+
   // Route data (for GPS tracking)
-  routeData   String?  @map("route_data") // JSON string of waypoints
-  images      String[] // Array of image URLs
+  routeData String?  @map("route_data") // JSON string of waypoints
+  images    String[] // Array of image URLs
 
   // Chat fields
   chatGroupId String? @map("chat_group_id")
-  chatLocked  Boolean  @default(false) @map("chat_locked")
+  chatLocked  Boolean @default(false) @map("chat_locked")
 
   // Creator relation
-  creatorId   String   @map("creator_id")
-  creator     User     @relation("RideCreator", fields: [creatorId], references: [id], onDelete: Cascade)
-  
+  creatorId String @map("creator_id")
+  creator   User   @relation("RideCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
   // Club relation (optional - for club-organized rides)
-  clubId      String?  @map("club_id")
-  
+  clubId String? @map("club_id")
+
   // Participants relation
   participants RideParticipant[]
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("rides")
 }
 
 model Club {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  location    String?
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  location      String?
   establishedAt DateTime? @map("established_at")
-  verified    Boolean  @default(false)
-  image       String?
-  coverImage  String?  @map("cover_image")
-  clubType    String?  @map("club_type") // e.g., Riding Club, Social Club
-  isPublic    Boolean  @default(true) @map("is_public")
-  memberCount Int      @default(0) @map("member_count")
-  trophies     String[] // Array of trophy names or IDs
-  trophyCount  Int      @default(0) @map("trophy_count")
-  gallery     String[] // Array of image URLs
-  reputation    Float?   // Average rating of the club
-  
-  ownerId     String   @map("owner_id")
-  owner       User     @relation("ClubOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  
-  // Members relation
-  members     ClubMember[]
+  verified      Boolean   @default(false)
+  image         String?
+  coverImage    String?   @map("cover_image")
+  clubType      String?   @map("club_type") // e.g., Riding Club, Social Club
+  isPublic      Boolean   @default(true) @map("is_public")
+  memberCount   Int       @default(0) @map("member_count")
+  trophies      String[] // Array of trophy names or IDs
+  trophyCount   Int       @default(0) @map("trophy_count")
+  gallery       String[] // Array of image URLs
+  reputation    Float? // Average rating of the club
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  ownerId String @map("owner_id")
+  owner   User   @relation("ClubOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Members relation
+  members ClubMember[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("clubs")
 }
@@ -256,26 +256,26 @@ enum ListingStatus {
 }
 
 model MarketplaceListing {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  price       Float
-  currency    String   @default("INR")
-  images      String[] // Array of image URLs
-  category    String? // e.g., Motorcycle, Gear, Accessories
-  subcategory String? // e.g., Helmet, Jacket
+  id             String        @id @default(cuid())
+  title          String
+  description    String?
+  price          Float
+  currency       String        @default("INR")
+  images         String[] // Array of image URLs
+  category       String? // e.g., Motorcycle, Gear, Accessories
+  subcategory    String? // e.g., Helmet, Jacket
   specifications String? // e.g., JSON string of specifications
-  condition   String?
-  status      ListingStatus @default(ACTIVE)
-  
-  sellerId    String   @map("seller_id")
-  seller      User     @relation("SellerListings", fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  // Reviews relation
-  reviews     Review[]
+  condition      String?
+  status         ListingStatus @default(ACTIVE)
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  sellerId String @map("seller_id")
+  seller   User   @relation("SellerListings", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Reviews relation
+  reviews Review[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("marketplace_listings")
 }
@@ -286,21 +286,21 @@ model ChatMessage {
   senderId    String   @map("sender_id")
   content     String
   timestamp   DateTime @default(now())
+  users       User[]
 
   @@map("chat_messages")
-  users User[]
 }
 
 // Club membership model with roles
 model ClubMember {
-  id          String   @id @default(cuid())
-  clubId      String   @map("club_id")
-  userId      String   @map("user_id")
-  role        ClubMemberRole @default(MEMBER)
-  joinedAt    DateTime @default(now()) @map("joined_at")
-  
-  club        Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id       String         @id @default(cuid())
+  clubId   String         @map("club_id")
+  userId   String         @map("user_id")
+  role     ClubMemberRole @default(MEMBER)
+  joinedAt DateTime       @default(now()) @map("joined_at")
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([clubId, userId])
   @@map("club_members")
@@ -308,14 +308,14 @@ model ClubMember {
 
 // Ride participant model to track participation
 model RideParticipant {
-  id          String   @id @default(cuid())
-  rideId      String   @map("ride_id")
-  userId      String   @map("user_id")
-  status      RideParticipantStatus @default(ACCEPTED)
-  joinedAt    DateTime @default(now()) @map("joined_at")
-  
-  ride        Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id       String                @id @default(cuid())
+  rideId   String                @map("ride_id")
+  userId   String                @map("user_id")
+  status   RideParticipantStatus @default(ACCEPTED)
+  joinedAt DateTime              @default(now()) @map("joined_at")
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([rideId, userId])
   @@map("ride_participants")
@@ -323,38 +323,38 @@ model RideParticipant {
 
 // Post model for the feed system
 model Post {
-  id          String   @id @default(cuid())
-  type        String   // "ride", "content", "listing", "club-activity"
-  content     String?
-  images      String[] // Array of image URLs
-  
-  authorId    String   @map("author_id")
-  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  
-  // Optional relations to other models
-  rideId      String?  @map("ride_id")
-  listingId   String?  @map("listing_id")
-  clubId      String?  @map("club_id")
-  
-  // Interactions
-  likes       Like[]
-  comments    Comment[]
+  id      String   @id @default(cuid())
+  type    String // "ride", "content", "listing", "club-activity"
+  content String?
+  images  String[] // Array of image URLs
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Optional relations to other models
+  rideId    String? @map("ride_id")
+  listingId String? @map("listing_id")
+  clubId    String? @map("club_id")
+
+  // Interactions
+  likes    Like[]
+  comments Comment[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("posts")
 }
 
 // Like model for posts
 model Like {
-  id          String   @id @default(cuid())
-  postId      String   @map("post_id")
-  userId      String   @map("user_id")
-  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  postId String @map("post_id")
+  userId String @map("user_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([postId, userId])
   @@map("likes")
@@ -362,29 +362,29 @@ model Like {
 
 // Comment model for posts
 model Comment {
-  id          String   @id @default(cuid())
-  postId      String   @map("post_id")
-  authorId    String   @map("author_id")
-  content     String
-  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  postId   String @map("post_id")
+  authorId String @map("author_id")
+  content  String
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("comments")
 }
 
 // Follow model for user relationships
 model Follow {
-  id          String   @id @default(cuid())
-  followerId  String   @map("follower_id")
-  followingId String   @map("following_id")
-  
-  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
-  following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  id          String @id @default(cuid())
+  followerId  String @map("follower_id")
+  followingId String @map("following_id")
 
-  createdAt   DateTime @default(now()) @map("created_at")
+  follower  User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([followerId, followingId])
   @@map("follows")
@@ -392,17 +392,17 @@ model Follow {
 
 // Review/Rating model for marketplace listings
 model Review {
-  id          String   @id @default(cuid())
-  listingId   String   @map("listing_id")
-  reviewerId  String   @map("reviewer_id")
-  rating      Float    // 1.0 to 5.0
-  comment     String?
-  
-  listing     MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  reviewer    User     @relation("ReviewReceiver", fields: [reviewerId], references: [id], onDelete: Cascade)
+  id         String  @id @default(cuid())
+  listingId  String  @map("listing_id")
+  reviewerId String  @map("reviewer_id")
+  rating     Float // 1.0 to 5.0
+  comment    String?
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  listing  MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  reviewer User               @relation("ReviewReceiver", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([listingId, reviewerId])
   @@map("reviews")

@@ -87,6 +87,13 @@ export const updateProfileSchema = z.object({
     .optional(),
 });
 
+export const updateUserSchema = updateProfileSchema.extend({
+  email: z.string().email("Invalid email format").optional(),
+  username: z.string().min(2).max(50).optional(),
+  image: z.string().url("Invalid image URL").optional(),
+  phone: z.string().min(10).max(20).optional(),
+});
+
 export const userQuerySchema = paginationSchema.extend({
   role: z.enum(["ADMIN", "USER", "RIDER", "SELLER"]).optional(),
   search: z.string().optional(),

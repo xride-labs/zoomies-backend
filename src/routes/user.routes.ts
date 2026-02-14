@@ -3,14 +3,16 @@ import prisma from "../lib/prisma.js";
 import { requireAuth } from "../config/auth.js";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
 import {
+  validateBody,
   validateQuery,
   validateParams,
   asyncHandler,
 } from "../middlewares/validation.js";
-import { requireRole, requireAdmin, UserRole } from "../middlewares/rbac.js";
+import { requireAdmin } from "../middlewares/rbac.js";
 import {
   userQuerySchema,
   idParamSchema,
+  updateUserSchema,
   updateUserRoleSchema,
 } from "../validators/schemas.js";
 
@@ -202,12 +204,97 @@ router.get(
 );
 
 /**
+ * PATCH /api/users/:id
+ * Update a user (self or admin)
+ */
+router.patch(
+  "/:id",
+  validateParams(idParamSchema),
+  validateBody(updateUserSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const isSelf = session.user.id === id;
+    if (!isSelf) {
+      const requester = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { role: true },
+      });
+
+      if (!requester) {
+        return ApiResponse.unauthorized(
+          res,
+          "User not found",
+          ErrorCode.USER_NOT_FOUND,
+        );
+      }
+
+      if (!["ADMIN", "SUPER_ADMIN"].includes(requester.role)) {
+        return ApiResponse.forbidden(
+          res,
+          "You don't have permission to update this user",
+        );
+      }
+    }
+
+    const {
+      email,
+      username,
+      name,
+      bio,
+      location,
+      bikeType,
+      bikeOwned,
+      experienceLevel,
+      levelOfActivity,
+      bloodType,
+      image,
+      phone,
+    } = req.body;
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        ...(email !== undefined && { email }),
+        ...(username !== undefined && { username }),
+        ...(name !== undefined && { name }),
+        ...(bio !== undefined && { bio }),
+        ...(location !== undefined && { location }),
+        ...(bikeType !== undefined && { bikeType }),
+        ...(bikeOwned !== undefined && { bikeOwned }),
+        ...(experienceLevel !== undefined && { experienceLevel }),
+        ...(levelOfActivity !== undefined && { levelOfActivity }),
+        ...(bloodType !== undefined && { bloodType }),
+        ...(image !== undefined && { image }),
+        ...(phone !== undefined && { phone }),
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        image: true,
+        bio: true,
+        location: true,
+        phone: true,
+        role: true,
+        updatedAt: true,
+      },
+    });
+
+    ApiResponse.success(res, { user }, "User updated successfully");
+  }),
+);
+
+/**
  * PATCH /api/users/:id/role
  * Update user role (admin only)
  */
 router.patch(
   "/:id/role",
   validateParams(idParamSchema),
+  validateBody(updateUserRoleSchema),
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
@@ -239,6 +326,59 @@ router.patch(
     });
 
     ApiResponse.success(res, { user }, "User role updated successfully");
+  }),
+);
+
+/**
+ * DELETE /api/users/:id
+ * Delete a user (self or admin)
+ */
+router.delete(
+  "/:id",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const isSelf = session.user.id === id;
+    if (!isSelf) {
+      const requester = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { role: true },
+      });
+
+      if (!requester) {
+        return ApiResponse.unauthorized(
+          res,
+          "User not found",
+          ErrorCode.USER_NOT_FOUND,
+        );
+      }
+
+      if (!["ADMIN", "SUPER_ADMIN"].includes(requester.role)) {
+        return ApiResponse.forbidden(
+          res,
+          "You don't have permission to delete this user",
+        );
+      }
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existingUser) {
+      return ApiResponse.notFound(
+        res,
+        "User not found",
+        ErrorCode.USER_NOT_FOUND,
+      );
+    }
+
+    await prisma.user.delete({ where: { id } });
+
+    ApiResponse.success(res, null, "User deleted successfully");
   }),
 );
 

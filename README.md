@@ -12,7 +12,7 @@ A Node.js/TypeScript backend for the Zoomies application featuring:
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - PostgreSQL database (Supabase or Neon recommended)
 - MongoDB database (optional)
 - Twilio account (for SMS OTP)
@@ -21,32 +21,39 @@ A Node.js/TypeScript backend for the Zoomies application featuring:
 ### Installation
 
 1. **Install dependencies:**
+
    ```bash
    npm install
    ```
 
 2. **Set up environment variables:**
+
    ```bash
    cp .env.example .env
    ```
+
    Edit `.env` with your database URLs and API keys.
 
 3. **Generate Prisma client:**
+
    ```bash
    npm run prisma:generate
    ```
 
 4. **Run database migrations:**
+
    ```bash
    npm run prisma:migrate
    ```
 
 5. **Seed the database (optional):**
+
    ```bash
    npm run db:seed
    ```
 
 6. **Start the development server:**
+
    ```bash
    npm run dev
    ```
@@ -76,6 +83,8 @@ The server will start at `http://localhost:3001`.
 |--------|----------|-------------|
 | GET | `/api/users` | List all users |
 | GET | `/api/users/:id` | Get user by ID |
+| PATCH | `/api/users/:id` | Update user (self or admin) |
+| DELETE | `/api/users/:id` | Delete user (self or admin) |
 
 ### Rides
 
@@ -108,16 +117,26 @@ The server will start at `http://localhost:3001`.
 | PATCH | `/api/marketplace/:id` | Update a listing |
 | DELETE | `/api/marketplace/:id` | Delete a listing |
 
+### Monitoring
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/metrics` | Prometheus scrape endpoint (Super Admin or bearer token) |
+
 ## Authentication Providers
 
 ### Google OAuth
+
 Sign in with Google account. Configure `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` in `.env`.
 
 ### Email/Password
+
 Traditional credentials-based authentication. Use `/api/auth/register` to create accounts.
 
 ### Phone OTP
+
 SMS-based authentication via Twilio:
+
 1. Call `/api/auth/send-otp` with phone number
 2. User receives SMS with 6-digit code
 3. Sign in via Auth.js with `phone-otp` provider
@@ -145,6 +164,18 @@ npm run prisma:migrate   # Run database migrations
 npm run prisma:studio    # Open Prisma Studio
 npm run db:seed      # Seed database with sample data
 ```
+
+## Monitoring (Prometheus + Grafana)
+
+Monitoring assets live in [monitoring/](monitoring). Start with:
+
+```bash
+docker compose -f monitoring/docker-compose.yml up -d
+```
+
+Set `METRICS_BEARER_TOKEN` in the backend and update
+`monitoring/secrets/metrics_token` to the same value. Prometheus scrapes
+`/api/admin/metrics` using that bearer token.
 
 ## Project Structure
 

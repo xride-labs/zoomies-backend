@@ -19,6 +19,8 @@ import {
 } from "./routes/index.js";
 import { initializeScheduledJobs } from "./jobs/scheduler.js";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
+import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
+import { requireMonitoringAccess } from "./middlewares/monitoring.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -44,6 +46,9 @@ app.use(cors(corsOptions));
 // Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Metrics middleware
+app.use(metricsMiddleware);
 
 // Setup Swagger/OpenAPI documentation
 setupSwagger(app);
@@ -83,6 +88,9 @@ app.get("/health", (req: Request, res: Response) => {
 
 // Auth.js middleware - handles /auth routes
 app.use("/auth", authHandler);
+
+// Monitoring endpoint (Prometheus scrape target)
+app.get("/api/admin/metrics", requireMonitoringAccess, metricsHandler);
 
 // API Routes
 app.use("/api/auth", authRoutes);

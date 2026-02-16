@@ -382,18 +382,12 @@ router.post(
       },
     });
 
-    // Update user role to SELLER if not already higher
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
+    // Ensure user has SELLER role
+    await prisma.userRoleAssignment.upsert({
+      where: { userId_role: { userId: session.user.id, role: "SELLER" } },
+      create: { userId: session.user.id, role: "SELLER" },
+      update: {},
     });
-
-    if (user && user.role === "USER") {
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data: { role: "SELLER" },
-      });
-    }
 
     ApiResponse.created(res, { listing }, "Listing created successfully");
   }),

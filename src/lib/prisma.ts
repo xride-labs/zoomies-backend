@@ -1,12 +1,12 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
 
-const client = new pg.Client({
-  connectionString: process.env.DATABASE_URL,
-});
+console.log(
+  "[DB] Initializing Prisma with DATABASE_URL:",
+  process.env.DATABASE_URL?.substring(0, 40) + "...",
+);
 
-const adapter = new PrismaPg(client);
-const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient();
+
+console.log("[DB] Prisma client initialized");
 
 export default prisma;

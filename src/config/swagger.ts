@@ -18,20 +18,36 @@ const swaggerDefinition = {
 A comprehensive REST API for the Zoomies cycling community platform.
 
 ### Authentication
-This API uses **Auth.js (NextAuth)** for authentication with multiple providers:
+This API uses **Better Auth** for authentication with multiple providers:
 - **Google OAuth** - Sign in with Google
 - **Email/Password** - Traditional credentials
-- **Phone OTP** - SMS verification via Twilio
+
+**Important:**
+- \`/api/auth/sign-up/email\` and \`/api/auth/sign-in/email\` are Better Auth endpoints.
+- \`/api/auth/register\` is a custom legacy-compatible endpoint that creates a user and credential account.
+- Prefer Better Auth endpoints for new integrations.
 
 ### Base URL
 - Development: \`http://localhost:5000\`
 - Production: \`https://api.zoomies.app\`
 
-### Authentication Flow
-1. Get CSRF token: \`GET /auth/csrf\`
-2. Sign in: \`POST /auth/signin/{provider}\`
-3. Get session: \`GET /auth/session\`
-4. Sign out: \`POST /auth/signout\`
+### Authentication Flow (Recommended)
+**New user (email/password)**
+1. **Sign Up**: \`POST /api/auth/sign-up/email\` (Better Auth)
+2. **Verify Email**: \`POST /api/auth/verify-email\` (token sent by email)
+3. **Sign In**: \`POST /api/auth/sign-in/email\`
+4. **Use Session**: \`GET /api/auth/session\` or \`GET /api/auth/me\`
+5. **Sign Out**: \`POST /api/auth/sign-out\`
+
+**Existing user (email/password)**
+1. **Sign In**: \`POST /api/auth/sign-in/email\`
+2. **Use Session**: \`GET /api/auth/session\` or \`GET /api/auth/me\`
+3. **Sign Out**: \`POST /api/auth/sign-out\`
+
+**Legacy register (if required)**
+1. **Register**: \`POST /api/auth/register\`
+2. **Verify Email**: \`POST /api/auth/verify-email\`
+3. **Sign In**: \`POST /api/auth/sign-in/email\`
     `,
     contact: {
       name: "Zoomies Support",
@@ -44,7 +60,7 @@ This API uses **Auth.js (NextAuth)** for authentication with multiple providers:
   },
   servers: [
     {
-      url: "http://localhost:3001",
+      url: "http://localhost:5000",
       description: "Development server",
     },
     {
@@ -59,7 +75,7 @@ This API uses **Auth.js (NextAuth)** for authentication with multiple providers:
     },
     {
       name: "Auth",
-      description: "Authentication endpoints (Auth.js)",
+      description: "Authentication endpoints (Better Auth)",
     },
     {
       name: "Users",
@@ -83,15 +99,15 @@ This API uses **Auth.js (NextAuth)** for authentication with multiple providers:
       cookieAuth: {
         type: "apiKey",
         in: "cookie",
-        name: "authjs.session-token",
+        name: "better-auth.session-token",
         description:
-          "Session cookie set by Auth.js after successful authentication",
+          "Session cookie set by Better Auth after successful authentication",
       },
       bearerAuth: {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
-        description: "JWT token for API authentication",
+        description: "Session token for API authentication (optional)",
       },
     },
     schemas: {

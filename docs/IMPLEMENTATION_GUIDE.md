@@ -455,6 +455,8 @@ export const WEB_ACCESS_ROLES = [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.
 
 ## Quick Reference
 
+See the Prisma setup guide in `docs/PRISMA_GUIDE.md` for dev/prod database workflows.
+
 ### File Structure
 
 ```
@@ -489,12 +491,24 @@ CLOUDINARY_API_SECRET=
 ENABLE_SCHEDULED_JOBS=true
 RIDE_CLEANUP_DAYS=30
 
-# Auth (existing)
-AUTH_SECRET=
-NEXTAUTH_URL=
+# Better Auth
+BETTER_AUTH_SECRET=
+BETTER_AUTH_BASE_URL=http://localhost:5000
+AUTH_GOOGLE_ID=
+AUTH_GOOGLE_SECRET=
 
-# Database (existing)
+# CORS / trusted origins
+FRONTEND_URL=http://localhost:3000
+MOBILE_APP_URL=exp://localhost:8081
+
+# Database
 DATABASE_URL=
+
+# Optional Mongo (metrics + optional features)
+MONGODB_URI=
+
+# Monitoring
+METRICS_BEARER_TOKEN=
 ```
 
 ### Migration Commands
@@ -530,8 +544,8 @@ npm run dev
 
 ```bash
 # Health check
-curl http://localhost:3001/api/health
+curl http://localhost:5000/health
 
 # Admin stats (requires auth)
-curl -H "Authorization: Bearer <token>" http://localhost:3001/api/admin/stats
+curl -H "Authorization: Bearer <token>" http://localhost:5000/api/admin/stats
 ```

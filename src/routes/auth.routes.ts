@@ -1,24 +1,15 @@
 import { Router, Request, Response } from "express";
-import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
-import {
-  generateOTP,
-  sendOTPViaSMS,
-  isValidPhoneNumber,
-} from "../lib/twilio.js";
-import { requireAuth, getCurrentSession } from "../config/auth.js";
+import { auth, requireAuth } from "../config/auth.js";
+import { fromNodeHeaders } from "better-auth/node";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
 import { validateBody, asyncHandler } from "../middlewares/validation.js";
 import {
-  registerSchema,
-  sendOtpSchema,
-  verifyOtpSchema,
   updateProfileSchema,
   verifyEmailSchema,
 } from "../validators/schemas.js";
 import { z } from "zod";
-import { randomBytes } from "node:crypto";
-import { sendVerificationEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -35,10 +26,12 @@ const changePasswordSchema = z.object({
 
 /**
  * @swagger
- * /api/auth/register:
+ * /api/account/verify-email:
  *   post:
- *     summary: Register a new user
- *     description: Create a new user account with email and password
+ *     summary: Verify email address
+ *     description: |
+ *       Confirms email ownership using the verification token sent during registration.
+ *       Use this before attempting sign-in if email verification is enabled.
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -48,122 +41,60 @@ const changePasswordSchema = z.object({
  *             type: object
  *             required:
  *               - email
- *               - password
+ *               - token
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *                 example: user@example.com
- *               password:
+ *               token:
  *                 type: string
- *                 format: password
- *                 minLength: 8
- *                 example: securePassword123
- *               name:
- *                 type: string
- *                 example: John Doe
+ *                 example: 1a2b3c4d5e6f...
  *     responses:
- *       201:
- *         description: User registered successfully
+ *       200:
+ *         description: Email verified successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: string
- *                   example: User registered successfully
- *                 user:
- *                   $ref: '#/components/schemas/User'
+ *                   example: Email verified successfully
  *       400:
  *         $ref: '#/components/responses/BadRequest'
- *       500:
- *         $ref: '#/components/responses/InternalError'
- */
-router.post(
-  "/register",
-  validateBody(registerSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    const { email, password, name } = req.body;
-
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existingUser) {
-      return ApiResponse.conflict(
-        res,
-        "User with this email already exists",
-        ErrorCode.ALREADY_EXISTS,
-      );
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-      },
-    });
-
-    const verificationToken = randomBytes(32).toString("hex");
-    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await prisma.verificationToken.create({
-      data: {
-        identifier: email,
-        token: verificationToken,
-        expires: verificationExpires,
-        type: "email",
-      },
-    });
-
-    try {
-      await sendVerificationEmail({
-        to: email,
-        name: user.name,
-        token: verificationToken,
-      });
-    } catch (error) {
-      console.warn("[Email] Verification email failed:", error);
-    }
-
-    ApiResponse.created(res, { user }, "User registered successfully");
-  }),
-);
-
-/**
- * POST /api/auth/verify-email
- * Verify email address using token
  */
 router.post(
   "/verify-email",
   validateBody(verifyEmailSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { email, token } = req.body;
+    console.log("[AUTH] POST /verify-email", { email });
 
-    const verificationToken = await prisma.verificationToken.findFirst({
-      where: {
-        identifier: email,
-        token,
-        type: "email",
-        expires: { gt: new Date() },
-      },
-    });
+    // Better Auth uses JWT tokens for email verification (signed with BETTER_AUTH_SECRET).
+    // Decode and verify the JWT instead of looking up a DB record.
+    const secret = process.env.BETTER_AUTH_SECRET;
+    if (!secret) {
+      console.error("[AUTH] BETTER_AUTH_SECRET is not set");
+      return ApiResponse.error(
+        res,
+        "Server configuration error",
+        500,
+        ErrorCode.INTERNAL_ERROR,
+      );
+    }
 
-    if (!verificationToken) {
+    let decoded: { email?: string };
+    try {
+      decoded = jwt.verify(token, secret) as { email?: string };
+    } catch (err: any) {
+      console.warn(
+        "[AUTH] Verify-email - JWT verification failed:",
+        err.message,
+      );
       return ApiResponse.error(
         res,
         "Invalid or expired verification token",
@@ -172,14 +103,35 @@ router.post(
       );
     }
 
+    // Ensure the email in the JWT matches the email in the request body
+    if (decoded.email !== email) {
+      console.warn("[AUTH] Verify-email - Email mismatch", {
+        tokenEmail: decoded.email,
+        bodyEmail: email,
+      });
+      return ApiResponse.error(
+        res,
+        "Token does not match the provided email",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    // Verify user exists
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return ApiResponse.error(res, "User not found", 404, ErrorCode.NOT_FOUND);
+    }
+
+    if (user.emailVerified) {
+      return ApiResponse.success(res, null, "Email is already verified");
+    }
+
     await prisma.user.update({
       where: { email },
-      data: { emailVerified: new Date() },
+      data: { emailVerified: true },
     });
-
-    await prisma.verificationToken.delete({
-      where: { id: verificationToken.id },
-    });
+    console.log("[AUTH] Verify-email - User updated", { email });
 
     ApiResponse.success(res, null, "Email verified successfully");
   }),
@@ -187,186 +139,38 @@ router.post(
 
 /**
  * @swagger
- * /api/auth/send-otp:
- *   post:
- *     summary: Send OTP via SMS
- *     description: Send a one-time password to a phone number for verification
+ * /api/account/me:
+ *   get:
+ *     summary: Get current authenticated user
+ *     description: Returns the authenticated user and role assignments.
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - phone
- *             properties:
- *               phone:
- *                 type: string
- *                 description: Phone number in E.164 format
- *                 example: "+1234567890"
+ *     security:
+ *       - cookieAuth: []
  *     responses:
  *       200:
- *         description: OTP sent successfully
+ *         description: Current user
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP sent successfully
- *                 expiresAt:
- *                   type: string
- *                   format: date-time
- *       400:
- *         $ref: '#/components/responses/BadRequest'
- *       500:
- *         $ref: '#/components/responses/InternalError'
- */
-router.post(
-  "/send-otp",
-  validateBody(sendOtpSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    const { phone } = req.body;
-
-    if (!isValidPhoneNumber(phone)) {
-      return ApiResponse.validationError(res, {
-        phone: [
-          "Invalid phone number format. Use E.164 format (e.g., +1234567890)",
-        ],
-      });
-    }
-
-    // Generate OTP
-    const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    // Delete any existing OTP for this phone
-    await prisma.verificationToken.deleteMany({
-      where: {
-        identifier: phone,
-        type: "sms",
-      },
-    });
-
-    // Store OTP in database
-    await prisma.verificationToken.create({
-      data: {
-        identifier: phone,
-        token: otp,
-        expires: expiresAt,
-        type: "sms",
-      },
-    });
-
-    // Send OTP via SMS
-    const sent = await sendOTPViaSMS(phone, otp);
-
-    if (!sent && process.env.NODE_ENV !== "development") {
-      return ApiResponse.error(
-        res,
-        "Failed to send OTP",
-        500,
-        ErrorCode.EXTERNAL_SERVICE_ERROR,
-      );
-    }
-
-    ApiResponse.success(
-      res,
-      {
-        expiresAt,
-        // Only include OTP in development for testing
-        ...(process.env.NODE_ENV === "development" && { otp }),
-      },
-      "OTP sent successfully",
-    );
-  }),
-);
-
-/**
- * @swagger
- * /api/auth/verify-otp:
- *   post:
- *     summary: Verify OTP code
- *     description: Verify a one-time password without signing in (for phone verification)
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - phone
- *               - otp
- *             properties:
- *               phone:
- *                 type: string
- *                 description: Phone number in E.164 format
- *                 example: "+1234567890"
- *               otp:
- *                 type: string
- *                 description: 6-digit OTP code
- *                 example: "123456"
- *     responses:
- *       200:
- *         description: OTP verified successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP verified successfully
- *                 verified:
+ *                 success:
  *                   type: boolean
  *                   example: true
- *       400:
- *         $ref: '#/components/responses/BadRequest'
- *       500:
- *         $ref: '#/components/responses/InternalError'
- */
-router.post(
-  "/verify-otp",
-  validateBody(verifyOtpSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    const { phone, otp } = req.body;
-
-    // Find the verification token
-    const verificationToken = await prisma.verificationToken.findFirst({
-      where: {
-        identifier: phone,
-        token: otp,
-        type: "sms",
-        expires: { gt: new Date() },
-      },
-    });
-
-    if (!verificationToken) {
-      return ApiResponse.error(
-        res,
-        "Invalid or expired OTP",
-        400,
-        ErrorCode.INVALID_CREDENTIALS,
-      );
-    }
-
-    // Don't delete the token here - it will be used during sign-in
-    ApiResponse.success(res, { verified: true }, "OTP verified successfully");
-  }),
-);
-
-/**
- * GET /api/auth/me
- * Get current authenticated user
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
 router.get(
   "/me",
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
+    console.log("[AUTH] GET /me", { userId: session.user.id });
 
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
@@ -375,12 +179,26 @@ router.get(
         email: true,
         name: true,
         image: true,
+        username: true,
         phone: true,
         phoneVerified: true,
         emailVerified: true,
         bio: true,
         location: true,
-        role: true,
+        ridesCompleted: true,
+        bikeType: true,
+        bikeOwned: true,
+        bikeOwnerSince: true,
+        bikeOdometer: true,
+        bikeModifications: true,
+        bikeOwnerAge: true,
+        xpPoints: true,
+        experienceLevel: true,
+        levelOfActivity: true,
+        reputationScore: true,
+        affiliations: true,
+        reminders: true,
+        userRoles: { select: { role: true } },
         createdAt: true,
         updatedAt: true,
       },
@@ -394,13 +212,58 @@ router.get(
       );
     }
 
-    ApiResponse.success(res, { user });
+    // Flatten roles for the response
+    const { userRoles, ...rest } = user;
+    const response = {
+      ...rest,
+      roles: userRoles.map((r) => r.role),
+    };
+    console.log("[AUTH] GET /me - Returning user", {
+      userId: user.id,
+      roles: response.roles,
+    });
+
+    ApiResponse.success(res, { user: response });
   }),
 );
 
 /**
- * PATCH /api/auth/me
- * Update current user profile
+ * @swagger
+ * /api/account/me:
+ *   patch:
+ *     summary: Update current user profile
+ *     description: Updates profile fields for the authenticated user.
+ *     tags: [Auth]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               bio:
+ *                 type: string
+ *               location:
+ *                 type: string
+ *               bikeType:
+ *                 type: string
+ *               bikeOwned:
+ *                 type: string
+ *               experienceLevel:
+ *                 type: string
+ *               levelOfActivity:
+ *                 type: string
+ *               bloodType:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
 router.patch(
   "/me",
@@ -408,6 +271,10 @@ router.patch(
   validateBody(updateProfileSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
+    console.log("[AUTH] PATCH /me", {
+      userId: session.user.id,
+      fields: Object.keys(req.body),
+    });
     const {
       name,
       bio,
@@ -447,14 +314,44 @@ router.patch(
         updatedAt: true,
       },
     });
+    console.log("[AUTH] PATCH /me - Profile updated", { userId: user.id });
 
     ApiResponse.success(res, { user }, "Profile updated successfully");
   }),
 );
 
 /**
- * POST /api/auth/change-password
- * Change user password
+ * @swagger
+ * /api/account/change-password:
+ *   post:
+ *     summary: Change user password
+ *     description: Updates the password for the authenticated user.
+ *     tags: [Auth]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *                 format: password
+ *               newPassword:
+ *                 type: string
+ *                 format: password
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
 router.post(
   "/change-password",
@@ -463,39 +360,37 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { currentPassword, newPassword } = req.body;
+    console.log("[AUTH] POST /change-password", { userId: session.user.id });
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-    });
+    try {
+      // Use Better Auth's built-in changePassword API
+      // It verifies the current password and hashes the new one correctly
+      await auth.api.changePassword({
+        headers: fromNodeHeaders(req.headers),
+        body: {
+          currentPassword,
+          newPassword,
+          revokeOtherSessions: false,
+        },
+      });
 
-    if (!user || !user.password) {
+      console.log("[AUTH] POST /change-password - Password updated", {
+        userId: session.user.id,
+      });
+
+      ApiResponse.success(res, null, "Password changed successfully");
+    } catch (error: any) {
+      console.warn("[AUTH] POST /change-password - Failed", {
+        userId: session.user.id,
+        error: error.message,
+      });
       return ApiResponse.error(
         res,
-        "User does not have a password set",
-        400,
-        ErrorCode.INVALID_INPUT,
-      );
-    }
-
-    // Verify current password
-    const isValid = await bcrypt.compare(currentPassword, user.password);
-    if (!isValid) {
-      return ApiResponse.error(
-        res,
-        "Current password is incorrect",
+        error.body?.message || "Current password is incorrect",
         400,
         ErrorCode.INVALID_CREDENTIALS,
       );
     }
-
-    // Hash and update new password
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { password: hashedPassword },
-    });
-
-    ApiResponse.success(res, null, "Password changed successfully");
   }),
 );
 

@@ -7,4 +7,4 @@ scrape_configs:
     metrics_path: /api/admin/metrics
     bearer_token_file: /etc/prometheus/metrics_token
     static_configs:
-      - targets: ["host.docker.internal:3001"]
+      - targets: ["host.docker.internal:5000"]

@@ -285,18 +285,12 @@ router.post(
       },
     });
 
-    // Update user role to CLUB_OWNER if not already admin
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
+    // Ensure user has CLUB_OWNER role
+    await prisma.userRoleAssignment.upsert({
+      where: { userId_role: { userId: session.user.id, role: "CLUB_OWNER" } },
+      create: { userId: session.user.id, role: "CLUB_OWNER" },
+      update: {},
     });
-
-    if (user && user.role !== "SUPER_ADMIN" && user.role !== "ADMIN") {
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data: { role: "CLUB_OWNER" },
-      });
-    }
 
     ApiResponse.created(res, { club }, "Club created successfully");
   }),

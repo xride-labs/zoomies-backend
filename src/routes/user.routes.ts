@@ -80,7 +80,9 @@ router.get(
     const skip = (page - 1) * limit;
 
     const where: any = {};
-    if (role) where.role = role;
+    if (role) {
+      where.userRoles = { some: { role } };
+    }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },
@@ -102,7 +104,7 @@ router.get(
           image: true,
           bio: true,
           location: true,
-          role: true,
+          userRoles: { select: { role: true } },
           ridesCompleted: true,
           experienceLevel: true,
           createdAt: true,
@@ -112,7 +114,12 @@ router.get(
       prisma.user.count({ where }),
     ]);
 
-    ApiResponse.paginated(res, users, {
+    const usersWithRoles = users.map(({ userRoles, ...u }) => ({
+      ...u,
+      roles: userRoles.map((r) => r.role),
+    }));
+
+    ApiResponse.paginated(res, usersWithRoles, {
       page,
       limit,
       total,
@@ -171,7 +178,7 @@ router.get(
         image: true,
         bio: true,
         location: true,
-        role: true,
+        userRoles: { select: { role: true } },
         bikeType: true,
         bikeOwned: true,
         ridesCompleted: true,
@@ -199,7 +206,10 @@ router.get(
       );
     }
 
-    ApiResponse.success(res, { user });
+    const { userRoles, ...rest } = user;
+    ApiResponse.success(res, {
+      user: { ...rest, roles: userRoles.map((r) => r.role) },
+    });
   }),
 );
 
@@ -217,20 +227,15 @@ router.patch(
 
     const isSelf = session.user.id === id;
     if (!isSelf) {
-      const requester = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { role: true },
+      // Check if requester has admin role
+      const adminRole = await prisma.userRoleAssignment.findFirst({
+        where: {
+          userId: session.user.id,
+          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+        },
       });
 
-      if (!requester) {
-        return ApiResponse.unauthorized(
-          res,
-          "User not found",
-          ErrorCode.USER_NOT_FOUND,
-        );
-      }
-
-      if (!["ADMIN", "SUPER_ADMIN"].includes(requester.role)) {
+      if (!adminRole) {
         return ApiResponse.forbidden(
           res,
           "You don't have permission to update this user",
@@ -278,12 +283,17 @@ router.patch(
         bio: true,
         location: true,
         phone: true,
-        role: true,
+        userRoles: { select: { role: true } },
         updatedAt: true,
       },
     });
 
-    ApiResponse.success(res, { user }, "User updated successfully");
+    const { userRoles: updatedRoles, ...userData } = user;
+    ApiResponse.success(
+      res,
+      { user: { ...userData, roles: updatedRoles.map((r) => r.role) } },
+      "User updated successfully",
+    );
   }),
 );
 
@@ -314,18 +324,29 @@ router.patch(
       });
     }
 
-    const user = await prisma.user.update({
+    // Add the role (upsert to avoid duplicates)
+    await prisma.userRoleAssignment.upsert({
+      where: { userId_role: { userId: id, role } },
+      create: { userId: id, role },
+      update: {},
+    });
+
+    const user = await prisma.user.findUnique({
       where: { id },
-      data: { role },
       select: {
         id: true,
         email: true,
         name: true,
-        role: true,
+        userRoles: { select: { role: true } },
       },
     });
 
-    ApiResponse.success(res, { user }, "User role updated successfully");
+    const roles = user?.userRoles.map((r) => r.role) ?? [];
+    ApiResponse.success(
+      res,
+      { user: { id: user?.id, email: user?.email, name: user?.name, roles } },
+      "User role updated successfully",
+    );
   }),
 );
 
@@ -342,20 +363,14 @@ router.delete(
 
     const isSelf = session.user.id === id;
     if (!isSelf) {
-      const requester = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { role: true },
+      const adminRole = await prisma.userRoleAssignment.findFirst({
+        where: {
+          userId: session.user.id,
+          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+        },
       });
 
-      if (!requester) {
-        return ApiResponse.unauthorized(
-          res,
-          "User not found",
-          ErrorCode.USER_NOT_FOUND,
-        );
-      }
-
-      if (!["ADMIN", "SUPER_ADMIN"].includes(requester.role)) {
+      if (!adminRole) {
         return ApiResponse.forbidden(
           res,
           "You don't have permission to delete this user",

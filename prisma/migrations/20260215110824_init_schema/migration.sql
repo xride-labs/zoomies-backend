@@ -1,5 +1,8 @@
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'USER', 'RIDER', 'SELLER');
+CREATE TYPE "UserRole" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'CLUB_OWNER', 'USER', 'RIDER', 'SELLER');
+
+-- CreateEnum
+CREATE TYPE "MediaType" AS ENUM ('IMAGE', 'VIDEO');
 
 -- CreateEnum
 CREATE TYPE "RideStatus" AS ENUM ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED');
@@ -17,16 +20,17 @@ CREATE TYPE "ListingStatus" AS ENUM ('ACTIVE', 'SOLD', 'INACTIVE');
 CREATE TABLE "accounts" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
-    "provider_account_id" TEXT NOT NULL,
-    "refresh_token" TEXT,
+    "account_id" TEXT NOT NULL,
+    "provider_id" TEXT NOT NULL,
     "access_token" TEXT,
-    "expires_at" INTEGER,
-    "token_type" TEXT,
+    "refresh_token" TEXT,
+    "access_token_expires_at" TIMESTAMP(3),
+    "refresh_token_expires_at" TIMESTAMP(3),
     "scope" TEXT,
     "id_token" TEXT,
-    "session_state" TEXT,
+    "password" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "accounts_pkey" PRIMARY KEY ("id")
 );
@@ -34,9 +38,13 @@ CREATE TABLE "accounts" (
 -- CreateTable
 CREATE TABLE "sessions" (
     "id" TEXT NOT NULL,
-    "session_token" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
-    "expires" TIMESTAMP(3) NOT NULL,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "ip_address" TEXT,
+    "user_agent" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "sessions_pkey" PRIMARY KEY ("id")
 );
@@ -48,11 +56,11 @@ CREATE TABLE "users" (
     "name" TEXT,
     "email" TEXT,
     "blood_type" TEXT,
-    "email_verified" TIMESTAMP(3),
+    "email_verified" BOOLEAN NOT NULL DEFAULT false,
     "image" TEXT,
     "password" TEXT,
     "phone" TEXT,
-    "phone_verified" TIMESTAMP(3),
+    "phone_verified" BOOLEAN NOT NULL DEFAULT false,
     "bio" TEXT,
     "location" TEXT,
     "rides_completed" INTEGER,
@@ -70,9 +78,20 @@ CREATE TABLE "users" (
     "reminders" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "role" "UserRole" NOT NULL DEFAULT 'USER',
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "verifications" (
+    "id" TEXT NOT NULL,
+    "identifier" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "verifications_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -88,6 +107,41 @@ CREATE TABLE "verification_tokens" (
 );
 
 -- CreateTable
+CREATE TABLE "user_role_assignments" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "role" "UserRole" NOT NULL,
+    "assigned_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "user_role_assignments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "media" (
+    "id" TEXT NOT NULL,
+    "public_id" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "secure_url" TEXT NOT NULL,
+    "thumbnail_url" TEXT,
+    "type" "MediaType" NOT NULL,
+    "format" TEXT,
+    "width" INTEGER,
+    "height" INTEGER,
+    "bytes" INTEGER,
+    "duration" DOUBLE PRECISION,
+    "folder" TEXT NOT NULL,
+    "user_id" TEXT,
+    "club_id" TEXT,
+    "ride_id" TEXT,
+    "listing_id" TEXT,
+    "post_id" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "media_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "rides" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
@@ -100,10 +154,15 @@ CREATE TABLE "rides" (
     "distance" DOUBLE PRECISION,
     "duration" INTEGER,
     "scheduled_at" TIMESTAMP(3),
+    "ended_at" TIMESTAMP(3),
     "status" "RideStatus" NOT NULL DEFAULT 'PLANNED',
+    "keep_permanently" BOOLEAN NOT NULL DEFAULT false,
+    "route_data" TEXT,
+    "images" TEXT[],
     "chat_group_id" TEXT,
     "chat_locked" BOOLEAN NOT NULL DEFAULT false,
     "creator_id" TEXT NOT NULL,
+    "club_id" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -249,6 +308,25 @@ CREATE TABLE "reviews" (
 );
 
 -- CreateTable
+CREATE TABLE "reports" (
+    "id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "reported_item_id" TEXT,
+    "reported_item_name" TEXT,
+    "reported_item_type" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "priority" TEXT NOT NULL DEFAULT 'medium',
+    "resolution" TEXT,
+    "reporter_id" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "reports_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "_ChatMessageToUser" (
     "A" TEXT NOT NULL,
     "B" TEXT NOT NULL,
@@ -257,10 +335,10 @@ CREATE TABLE "_ChatMessageToUser" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "accounts_provider_provider_account_id_key" ON "accounts"("provider", "provider_account_id");
+CREATE UNIQUE INDEX "accounts_provider_id_account_id_key" ON "accounts"("provider_id", "account_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "sessions_session_token_key" ON "sessions"("session_token");
+CREATE UNIQUE INDEX "sessions_token_key" ON "sessions"("token");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
@@ -273,6 +351,12 @@ CREATE UNIQUE INDEX "users_phone_key" ON "users"("phone");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "verification_tokens_identifier_token_key" ON "verification_tokens"("identifier", "token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_role_assignments_user_id_role_key" ON "user_role_assignments"("user_id", "role");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "media_public_id_key" ON "media"("public_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "club_members_club_id_user_id_key" ON "club_members"("club_id", "user_id");
@@ -300,6 +384,9 @@ ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY ("user
 
 -- AddForeignKey
 ALTER TABLE "verification_tokens" ADD CONSTRAINT "verification_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "user_role_assignments" ADD CONSTRAINT "user_role_assignments_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "rides" ADD CONSTRAINT "rides_creator_id_fkey" FOREIGN KEY ("creator_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -348,6 +435,9 @@ ALTER TABLE "reviews" ADD CONSTRAINT "reviews_listing_id_fkey" FOREIGN KEY ("lis
 
 -- AddForeignKey
 ALTER TABLE "reviews" ADD CONSTRAINT "reviews_reviewer_id_fkey" FOREIGN KEY ("reviewer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "reports" ADD CONSTRAINT "reports_reporter_id_fkey" FOREIGN KEY ("reporter_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "_ChatMessageToUser" ADD CONSTRAINT "_ChatMessageToUser_A_fkey" FOREIGN KEY ("A") REFERENCES "chat_messages"("id") ON DELETE CASCADE ON UPDATE CASCADE;

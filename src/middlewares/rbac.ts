@@ -1,60 +1,38 @@
 import { Request, Response, NextFunction } from "express";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import {
+  UserRole,
+  hasAnyRole,
+  isAdmin,
+  isSuperAdmin,
+  WEB_ACCESS_ROLES,
+  MOBILE_ACCESS_ROLES,
+} from "../lib/utils/permissions.js";
 import prisma from "../lib/prisma.js";
 
+// Re-export for backward compatibility
+export { UserRole, WEB_ACCESS_ROLES, MOBILE_ACCESS_ROLES };
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
 /**
- * User roles enum matching Prisma schema
+ * Fetch a user's roles from the DB as a UserRole[].
+ * Always includes USER implicitly.
  */
-export enum UserRole {
-  SUPER_ADMIN = "SUPER_ADMIN", // Full platform access
-  ADMIN = "ADMIN", // System administrator
-  CLUB_OWNER = "CLUB_OWNER", // Club creator/manager
-  USER = "USER", // Regular user (default)
-  RIDER = "RIDER", // Active motorcycle rider
-  SELLER = "SELLER", // Marketplace seller
+export async function getUserRoles(userId: string): Promise<UserRole[]> {
+  const assignments = await prisma.userRoleAssignment.findMany({
+    where: { userId },
+    select: { role: true },
+  });
+  const roles = assignments.map((a) => a.role as UserRole);
+  if (!roles.includes(UserRole.USER)) roles.push(UserRole.USER);
+  return roles;
 }
 
-/**
- * Role hierarchy - higher roles include permissions of lower roles
- */
-const roleHierarchy: Record<UserRole, number> = {
-  [UserRole.SUPER_ADMIN]: 100,
-  [UserRole.ADMIN]: 80,
-  [UserRole.CLUB_OWNER]: 60,
-  [UserRole.SELLER]: 40,
-  [UserRole.RIDER]: 30,
-  [UserRole.USER]: 10,
-};
+// ─── Middleware factories ────────────────────────────────────────────
 
 /**
- * Web platform access roles - only these can access web frontend
- */
-export const WEB_ACCESS_ROLES: UserRole[] = [
-  UserRole.SUPER_ADMIN,
-  UserRole.ADMIN,
-  UserRole.CLUB_OWNER,
-];
-
-/**
- * Mobile app access roles
- */
-export const MOBILE_ACCESS_ROLES: UserRole[] = [
-  UserRole.RIDER,
-  UserRole.SELLER,
-  UserRole.CLUB_OWNER, // Club owners can also use mobile
-  UserRole.USER,
-];
-
-/**
- * Check if a role has sufficient privileges
- */
-function hasRole(userRole: UserRole, requiredRole: UserRole): boolean {
-  return roleHierarchy[userRole] >= roleHierarchy[requiredRole];
-}
-
-/**
- * Middleware to require specific role(s)
- * @param allowedRoles - Array of roles that are allowed access
+ * Require that the authenticated user holds **any** of the listed roles.
  */
 export function requireRole(...allowedRoles: UserRole[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -64,34 +42,15 @@ export function requireRole(...allowedRoles: UserRole[]) {
       return ApiResponse.unauthorized(res, "Authentication required");
     }
 
-    // Fetch user with role from database
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { id: true, role: true },
-    });
+    const userRoles = await getUserRoles(session.user.id);
 
-    if (!user) {
-      return ApiResponse.unauthorized(
-        res,
-        "User not found",
-        ErrorCode.USER_NOT_FOUND,
-      );
-    }
-
-    const userRole = user.role as UserRole;
-
-    // SUPER_ADMIN always has access
-    if (userRole === UserRole.SUPER_ADMIN) {
-      (req as any).userRole = userRole;
+    // SUPER_ADMIN always passes
+    if (isSuperAdmin(userRoles)) {
+      (req as any).userRoles = userRoles;
       return next();
     }
 
-    // Check if user has any of the allowed roles
-    const hasAccess = allowedRoles.some(
-      (role) => userRole === role || hasRole(userRole, role),
-    );
-
-    if (!hasAccess) {
+    if (!hasAnyRole(userRoles, allowedRoles)) {
       return ApiResponse.forbidden(
         res,
         `This action requires one of the following roles: ${allowedRoles.join(", ")}`,
@@ -99,24 +58,15 @@ export function requireRole(...allowedRoles: UserRole[]) {
       );
     }
 
-    (req as any).userRole = userRole;
+    (req as any).userRoles = userRoles;
     next();
   };
 }
 
-/**
- * Middleware to require admin access
- */
+// ─── Pre-built guards ────────────────────────────────────────────────
+
 export const requireAdmin = requireRole(UserRole.ADMIN, UserRole.SUPER_ADMIN);
-
-/**
- * Middleware to require super admin access
- */
 export const requireSuperAdmin = requireRole(UserRole.SUPER_ADMIN);
-
-/**
- * Middleware to require club owner or admin access
- */
 export const requireClubOwnerOrAdmin = requireRole(
   UserRole.CLUB_OWNER,
   UserRole.ADMIN,
@@ -124,7 +74,7 @@ export const requireClubOwnerOrAdmin = requireRole(
 );
 
 /**
- * Middleware to check if user can access web platform
+ * Require web-portal access (SUPER_ADMIN | ADMIN | CLUB_OWNER | SELLER).
  */
 export function requireWebAccess(
   req: Request,
@@ -134,10 +84,10 @@ export function requireWebAccess(
   return requireRole(...WEB_ACCESS_ROLES)(req, res, next);
 }
 
+// ─── Ownership guards ───────────────────────────────────────────────
+
 /**
- * Middleware to check resource ownership or admin access
- * @param resourceType - Type of resource to check ownership
- * @param resourceIdParam - Request param containing resource ID
+ * Require resource ownership **or** admin access.
  */
 export function requireOwnershipOrAdmin(
   resourceType: "ride" | "club" | "listing" | "post",
@@ -151,47 +101,39 @@ export function requireOwnershipOrAdmin(
       return ApiResponse.unauthorized(res, "Authentication required");
     }
 
-    // Fetch user role
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { id: true, role: true },
-    });
+    const userRoles = await getUserRoles(session.user.id);
 
-    if (!user) {
-      return ApiResponse.unauthorized(res, "User not found");
-    }
-
-    const userRole = user.role as UserRole;
-
-    // Admins always have access
-    if (userRole === UserRole.SUPER_ADMIN || userRole === UserRole.ADMIN) {
-      (req as any).userRole = userRole;
+    // Admins always pass
+    if (isAdmin(userRoles)) {
+      (req as any).userRoles = userRoles;
       return next();
     }
 
-    // Check ownership based on resource type
+    // Check ownership
     let isOwner = false;
 
     switch (resourceType) {
-      case "ride":
+      case "ride": {
         const ride = await prisma.ride.findUnique({
           where: { id: resourceId },
           select: { creatorId: true },
         });
         isOwner = ride?.creatorId === session.user.id;
         break;
-
-      case "club":
+      }
+      case "club": {
         const club = await prisma.club.findUnique({
           where: { id: resourceId },
           select: { ownerId: true },
         });
         isOwner = club?.ownerId === session.user.id;
-        // Also check if user is a club admin
         if (!isOwner) {
           const membership = await prisma.clubMember.findUnique({
             where: {
-              clubId_userId: { clubId: resourceId, userId: session.user.id },
+              clubId_userId: {
+                clubId: resourceId,
+                userId: session.user.id,
+              },
             },
             select: { role: true },
           });
@@ -199,22 +141,23 @@ export function requireOwnershipOrAdmin(
             membership?.role === "ADMIN" || membership?.role === "FOUNDER";
         }
         break;
-
-      case "listing":
+      }
+      case "listing": {
         const listing = await prisma.marketplaceListing.findUnique({
           where: { id: resourceId },
           select: { sellerId: true },
         });
         isOwner = listing?.sellerId === session.user.id;
         break;
-
-      case "post":
+      }
+      case "post": {
         const post = await prisma.post.findUnique({
           where: { id: resourceId },
           select: { authorId: true },
         });
         isOwner = post?.authorId === session.user.id;
         break;
+      }
     }
 
     if (!isOwner) {
@@ -225,13 +168,13 @@ export function requireOwnershipOrAdmin(
       );
     }
 
-    (req as any).userRole = userRole;
+    (req as any).userRoles = userRoles;
     next();
   };
 }
 
 /**
- * Middleware to require club membership with specific role
+ * Require club membership with a minimum role.
  */
 export function requireClubMembership(
   minRole: "MEMBER" | "OFFICER" | "ADMIN" | "FOUNDER" = "MEMBER",
@@ -256,15 +199,9 @@ export function requireClubMembership(
       );
     }
 
-    // Check if user is system admin
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
-    });
-
-    if (user?.role === "SUPER_ADMIN" || user?.role === "ADMIN") {
-      return next();
-    }
+    // System admins always pass
+    const userRoles = await getUserRoles(session.user.id);
+    if (isAdmin(userRoles)) return next();
 
     // Check club membership
     const membership = await prisma.clubMember.findUnique({
@@ -272,7 +209,6 @@ export function requireClubMembership(
       select: { role: true },
     });
 
-    // Also check if user is club owner
     const club = await prisma.club.findUnique({
       where: { id: clubId },
       select: { ownerId: true },

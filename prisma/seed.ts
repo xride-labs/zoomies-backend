@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "better-auth/crypto";
 
 const prisma = new PrismaClient();
 
@@ -9,6 +9,7 @@ async function main() {
   // Clear existing data
   console.log("🗑️  Clearing existing data...");
   await prisma.review.deleteMany();
+  await prisma.report.deleteMany();
   await prisma.follow.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.like.deleteMany();
@@ -19,26 +20,72 @@ async function main() {
   await prisma.marketplaceListing.deleteMany();
   await prisma.club.deleteMany();
   await prisma.ride.deleteMany();
-  await prisma.verificationToken.deleteMany();
   await prisma.session.deleteMany();
   await prisma.account.deleteMany();
   await prisma.media.deleteMany();
+  await prisma.userRoleAssignment.deleteMany();
   await prisma.user.deleteMany();
 
-  const hashedPassword = await bcrypt.hash("password123", 12);
+  // Use Better Auth's hashPassword (scrypt-based) so sign-in works correctly
+  const hashedPassword = await hashPassword("password123");
 
-  // Create Admin User
-  const adminUser = await prisma.user.create({
-    data: {
+  // ── Helper: create user + multi-role assignments ─────────────────
+  async function createUserWithRoles(
+    data: Parameters<typeof prisma.user.create>[0]["data"],
+    roles: string[],
+    passwordHash: string,
+  ) {
+    const user = await prisma.user.create({
+      data: {
+        ...data,
+      },
+    });
+    await prisma.userRoleAssignment.createMany({
+      data: roles.map((role) => ({ userId: user.id, role: role as any })),
+    });
+    // Better Auth stores credentials in the Account table
+    await prisma.account.create({
+      data: {
+        userId: user.id,
+        providerId: "credential",
+        accountId: user.id,
+        password: passwordHash,
+      },
+    });
+    return user;
+  }
+
+  // ── Super Admin ──────────────────────────────────────────────────
+  const superAdmin = await createUserWithRoles(
+    {
+      email: "superadmin@zoomies.com",
+      username: "superadmin",
+      name: "Super Admin",
+      phone: "+1234567800",
+      emailVerified: true,
+      phoneVerified: true,
+      bio: "Platform super administrator",
+      location: "Mumbai, India",
+      xpPoints: 9999,
+      experienceLevel: "Expert",
+      levelOfActivity: "Enthusiast",
+      reputationScore: 5.0,
+    },
+    ["SUPER_ADMIN", "ADMIN", "USER"],
+    hashedPassword,
+  );
+  console.log("✅ Created super admin:", superAdmin.email);
+
+  // ── Admin (also a club owner) ────────────────────────────────────
+  const adminUser = await createUserWithRoles(
+    {
       email: "admin@zoomies.com",
       username: "admin",
       name: "Admin User",
-      password: hashedPassword,
       phone: "+1234567890",
-      emailVerified: new Date(),
-      phoneVerified: new Date(),
-      role: "ADMIN",
-      bio: "Platform administrator",
+      emailVerified: true,
+      phoneVerified: true,
+      bio: "Platform administrator & club manager",
       location: "Mumbai, India",
       bikeType: "Sport",
       bikeOwned: "Kawasaki Ninja 650",
@@ -47,20 +94,20 @@ async function main() {
       levelOfActivity: "Enthusiast",
       reputationScore: 5.0,
     },
-  });
+    ["ADMIN", "CLUB_OWNER", "USER"],
+    hashedPassword,
+  );
   console.log("✅ Created admin user:", adminUser.email);
 
-  // Create Regular Users
-  const user1 = await prisma.user.create({
-    data: {
+  // ── Regular rider (mobile-only) ──────────────────────────────────
+  const user1 = await createUserWithRoles(
+    {
       email: "john@example.com",
       username: "john_rider",
       name: "John Doe",
-      password: hashedPassword,
       phone: "+1234567891",
-      emailVerified: new Date(),
-      phoneVerified: new Date(),
-      role: "RIDER",
+      emailVerified: true,
+      phoneVerified: true,
       bio: "Love riding on weekends!",
       location: "Bangalore, India",
       bikeType: "Cruiser",
@@ -72,19 +119,20 @@ async function main() {
       levelOfActivity: "Regular",
       reputationScore: 4.5,
     },
-  });
+    ["RIDER", "USER"],
+    hashedPassword,
+  );
   console.log("✅ Created user:", user1.email);
 
-  const user2 = await prisma.user.create({
-    data: {
+  // ── Rider + Seller (web + mobile) ────────────────────────────────
+  const user2 = await createUserWithRoles(
+    {
       email: "sarah@example.com",
       username: "sarah_speed",
       name: "Sarah Johnson",
-      password: hashedPassword,
       phone: "+1234567892",
-      emailVerified: new Date(),
-      phoneVerified: new Date(),
-      role: "RIDER",
+      emailVerified: true,
+      phoneVerified: true,
       bio: "Speed enthusiast and track day lover",
       location: "Delhi, India",
       bikeType: "Sport",
@@ -96,18 +144,19 @@ async function main() {
       levelOfActivity: "Enthusiast",
       reputationScore: 4.8,
     },
-  });
+    ["RIDER", "SELLER", "USER"],
+    hashedPassword,
+  );
   console.log("✅ Created user:", user2.email);
 
-  const user3 = await prisma.user.create({
-    data: {
+  // ── Club Owner + Rider (web + mobile) ────────────────────────────
+  const user3 = await createUserWithRoles(
+    {
       email: "mike@example.com",
       username: "mike_adventure",
       name: "Mike Wilson",
-      password: hashedPassword,
       phone: "+1234567893",
-      emailVerified: new Date(),
-      role: "CLUB_OWNER",
+      emailVerified: true,
       bio: "Adventure rider exploring India",
       location: "Pune, India",
       bikeType: "Adventure",
@@ -119,18 +168,19 @@ async function main() {
       levelOfActivity: "Enthusiast",
       reputationScore: 4.7,
     },
-  });
+    ["CLUB_OWNER", "RIDER", "USER"],
+    hashedPassword,
+  );
   console.log("✅ Created user:", user3.email);
 
-  const user4 = await prisma.user.create({
-    data: {
+  // ── Seller + Rider (web + mobile) ────────────────────────────────
+  const user4 = await createUserWithRoles(
+    {
       email: "lisa@example.com",
       username: "lisa_rider",
       name: "Lisa Brown",
-      password: hashedPassword,
       phone: "+1234567894",
-      emailVerified: new Date(),
-      role: "SELLER",
+      emailVerified: true,
       bio: "Gear enthusiast and marketplace seller",
       location: "Chennai, India",
       bikeType: "Naked",
@@ -140,14 +190,17 @@ async function main() {
       levelOfActivity: "Casual",
       reputationScore: 4.3,
     },
-  });
+    ["SELLER", "RIDER", "USER"],
+    hashedPassword,
+  );
   console.log("✅ Created user:", user4.email);
 
   // Create Clubs
   const club1 = await prisma.club.create({
     data: {
       name: "Mumbai Riders Club",
-      description: "Premier riding club for Mumbai bikers. Weekly rides and events.",
+      description:
+        "Premier riding club for Mumbai bikers. Weekly rides and events.",
       location: "Mumbai, India",
       establishedAt: new Date("2018-05-01"),
       verified: true,
@@ -212,7 +265,8 @@ async function main() {
   const ride1 = await prisma.ride.create({
     data: {
       title: "Mumbai to Lonavala Weekend Ride",
-      description: "Scenic ride through the Western Ghats. Perfect for all skill levels.",
+      description:
+        "Scenic ride through the Western Ghats. Perfect for all skill levels.",
       startLocation: "Mumbai, India",
       endLocation: "Lonavala, India",
       experienceLevel: "Intermediate",
@@ -283,6 +337,24 @@ async function main() {
   });
   console.log("✅ Created ride:", ride4.title);
 
+  // In-progress ride for live tracking demo
+  const ride5 = await prisma.ride.create({
+    data: {
+      title: "Chennai Coastal Express",
+      description: "Live ride along ECR — currently in progress!",
+      startLocation: "Chennai, India",
+      endLocation: "Mahabalipuram, India",
+      experienceLevel: "Beginner",
+      pace: "Moderate",
+      distance: 55.0,
+      duration: 90,
+      scheduledAt: new Date(Date.now() - 30 * 60 * 1000),
+      status: "IN_PROGRESS",
+      creatorId: user4.id,
+    },
+  });
+  console.log("✅ Created live ride:", ride5.title);
+
   // Create Ride Participants
   await prisma.rideParticipant.createMany({
     data: [
@@ -293,6 +365,8 @@ async function main() {
       { rideId: ride2.id, userId: user3.id, status: "ACCEPTED" },
       { rideId: ride3.id, userId: user1.id, status: "REQUESTED" },
       { rideId: ride4.id, userId: user1.id, status: "ACCEPTED" },
+      { rideId: ride5.id, userId: user4.id, status: "ACCEPTED" },
+      { rideId: ride5.id, userId: user1.id, status: "ACCEPTED" },
     ],
   });
   console.log("✅ Created ride participants");
@@ -301,7 +375,8 @@ async function main() {
   const listing1 = await prisma.marketplaceListing.create({
     data: {
       title: "AGV K3 SV Helmet - Size L",
-      description: "Brand new AGV helmet, never used. Comes with original box and accessories.",
+      description:
+        "Brand new AGV helmet, never used. Comes with original box and accessories.",
       price: 15000,
       currency: "INR",
       category: "Gear",
@@ -333,7 +408,8 @@ async function main() {
   const listing3 = await prisma.marketplaceListing.create({
     data: {
       title: "Royal Enfield Classic 350 - 2019",
-      description: "Well maintained bike, single owner. All service records available.",
+      description:
+        "Well maintained bike, single owner. All service records available.",
       price: 125000,
       currency: "INR",
       category: "Motorcycle",
@@ -348,7 +424,8 @@ async function main() {
   const listing4 = await prisma.marketplaceListing.create({
     data: {
       title: "GoPro Hero 10 with Mounts",
-      description: "Perfect for recording your rides. Includes helmet and handlebar mounts.",
+      description:
+        "Perfect for recording your rides. Includes helmet and handlebar mounts.",
       price: 28000,
       currency: "INR",
       category: "Accessories",
@@ -409,10 +486,22 @@ async function main() {
   // Create Comments
   await prisma.comment.createMany({
     data: [
-      { postId: post1.id, authorId: user2.id, content: "Wow! That sounds amazing! 🔥" },
-      { postId: post1.id, authorId: user3.id, content: "I want to do this ride too!" },
+      {
+        postId: post1.id,
+        authorId: user2.id,
+        content: "Wow! That sounds amazing! 🔥",
+      },
+      {
+        postId: post1.id,
+        authorId: user3.id,
+        content: "I want to do this ride too!",
+      },
       { postId: post2.id, authorId: user1.id, content: "Count me in! 👍" },
-      { postId: post3.id, authorId: user2.id, content: "Is this still available?" },
+      {
+        postId: post3.id,
+        authorId: user2.id,
+        content: "Is this still available?",
+      },
     ],
   });
   console.log("✅ Created comments");
@@ -433,27 +522,56 @@ async function main() {
   // Create Reviews
   await prisma.review.createMany({
     data: [
-      { listingId: listing1.id, reviewerId: user1.id, rating: 5.0, comment: "Great seller, fast response!" },
-      { listingId: listing2.id, reviewerId: user2.id, rating: 4.5, comment: "Good quality jacket" },
-      { listingId: listing4.id, reviewerId: user1.id, rating: 5.0, comment: "Excellent condition, as described" },
+      {
+        listingId: listing1.id,
+        reviewerId: user1.id,
+        rating: 5.0,
+        comment: "Great seller, fast response!",
+      },
+      {
+        listingId: listing2.id,
+        reviewerId: user2.id,
+        rating: 4.5,
+        comment: "Good quality jacket",
+      },
+      {
+        listingId: listing4.id,
+        reviewerId: user1.id,
+        rating: 5.0,
+        comment: "Excellent condition, as described",
+      },
     ],
   });
   console.log("✅ Created reviews");
 
   console.log("\n🎉 Database seed completed successfully!");
   console.log("\n📊 Summary:");
-  console.log("   - Users: 5 (1 admin, 4 regular users)");
+  console.log("   - Users: 6 (1 super admin, 1 admin, 4 regular users)");
+  console.log("   - Multi-role assignments: ✅");
   console.log("   - Clubs: 3");
-  console.log("   - Rides: 4");
+  console.log("   - Rides: 5 (4 planned, 1 live)");
   console.log("   - Marketplace Listings: 4");
   console.log("   - Posts: 3");
   console.log("   - Likes, Comments, Follows, Reviews: Multiple");
-  console.log("\n🔑 Test Credentials:");
-  console.log("   Email: admin@zoomies.com | Password: password123");
-  console.log("   Email: john@example.com | Password: password123");
-  console.log("   Email: sarah@example.com | Password: password123");
-  console.log("   Email: mike@example.com | Password: password123");
-  console.log("   Email: lisa@example.com | Password: password123");
+  console.log("\n🔑 Test Credentials (password: password123):");
+  console.log(
+    "   superadmin@zoomies.com → SUPER_ADMIN + ADMIN        (web only)",
+  );
+  console.log(
+    "   admin@zoomies.com      → ADMIN + CLUB_OWNER         (web + mobile)",
+  );
+  console.log(
+    "   john@example.com       → RIDER                      (mobile only)",
+  );
+  console.log(
+    "   sarah@example.com      → RIDER + SELLER             (mobile + web)",
+  );
+  console.log(
+    "   mike@example.com       → CLUB_OWNER + RIDER         (web + mobile)",
+  );
+  console.log(
+    "   lisa@example.com       → SELLER + RIDER             (web + mobile)",
+  );
 }
 
 main()

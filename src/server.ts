@@ -5,11 +5,12 @@ import dotenv from "dotenv";
 // Load environment variables
 dotenv.config();
 
-import { authHandler } from "./config/auth.js";
+import { auth } from "./config/auth.js";
+import { toNodeHandler } from "better-auth/node";
 import { connectMongoDB } from "./lib/mongodb.js";
 import { setupSwagger } from "./config/swagger.js";
 import {
-  authRoutes,
+  accountRoutes,
   userRoutes,
   rideRoutes,
   clubRoutes,
@@ -43,12 +44,16 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Body parsing middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 // Metrics middleware
 app.use(metricsMiddleware);
+
+// Better Auth handler — MUST be mounted BEFORE express.json()
+// See: https://www.better-auth.com/docs/integrations/express
+app.all("/api/auth/*", toNodeHandler(auth));
+
+// Body parsing middleware (AFTER Better Auth)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Setup Swagger/OpenAPI documentation
 setupSwagger(app);
@@ -86,14 +91,11 @@ app.get("/health", (req: Request, res: Response) => {
   });
 });
 
-// Auth.js middleware - handles /auth routes
-app.use("/auth", authHandler);
-
 // Monitoring endpoint (Prometheus scrape target)
 app.get("/api/admin/metrics", requireMonitoringAccess, metricsHandler);
 
-// API Routes
-app.use("/api/auth", authRoutes);
+// Account routes (profile, verify-email, change-password)
+app.use("/api/account", accountRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/rides", rideRoutes);
 app.use("/api/clubs", clubRoutes);
@@ -115,6 +117,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // Start server
 async function startServer() {
   try {
+    console.log("[SERVER] Starting Zoomies Backend Server...");
+
     // Connect to MongoDB (optional, will warn if not configured)
     // Server will start even if MongoDB connection fails
     try {
@@ -124,13 +128,14 @@ async function startServer() {
     }
 
     // Initialize scheduled background jobs
+    console.log("[SERVER] Initializing scheduled jobs...");
     initializeScheduledJobs();
 
     app.listen(PORT, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
-║   🚀 Zoomies Backend Server                               ║
+║   🚀 Zoomies Backend Server (Better Auth)                 ║
 ║                                                            ║
 ║   Server running on: http://localhost:${PORT}              ║
 ║   Environment: ${process.env.NODE_ENV || "development"}    ║
@@ -140,18 +145,19 @@ async function startServer() {
 ║   - ReDoc:      http://localhost:${PORT}/redoc             ║
 ║   - OpenAPI:    http://localhost:${PORT}/api-docs.json     ║
 ║                                                            ║
-║   Auth endpoints:                                          ║
-║   - GET  /auth/signin                                      ║
-║   - GET  /auth/signout                                     ║
-║   - GET  /auth/session                                     ║
-║   - GET  /auth/csrf                                        ║
-║   - GET  /auth/providers                                   ║
+║   Better Auth endpoints (handled automatically):           ║
+║   - POST /api/auth/sign-up/email                           ║
+║   - POST /api/auth/sign-in/email                           ║
+║   - POST /api/auth/sign-in/social                          ║
+║   - POST /api/auth/sign-out                                ║
+║   - GET  /api/auth/session                                 ║
+║   - POST /api/auth/phone-number/send-otp                   ║
+║   - POST /api/auth/phone-number/verify                     ║
 ║                                                            ║
-║   API endpoints:                                           ║
-║   - POST /api/auth/register                                ║
-║   - POST /api/auth/send-otp                                ║
-║   - POST /api/auth/verify-otp                              ║
-║   - GET  /api/auth/me                                      ║
+║   Custom API endpoints:                                    ║
+║   - GET  /api/account/me                                   ║
+║   - POST /api/account/verify-email                         ║
+║   - POST /api/account/change-password                      ║
 ║   - GET  /api/users                                        ║
 ║   - GET  /api/rides                                        ║
 ║   - GET  /api/clubs                                        ║

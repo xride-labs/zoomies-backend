@@ -51,6 +51,17 @@ export const verifyOtpSchema = z.object({
     .regex(/^\d+$/, "OTP must contain only digits"),
 });
 
+export const phoneLoginSchema = z.object({
+  phone: z
+    .string()
+    .min(10, "Phone number must be at least 10 digits")
+    .regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format (E.164)"),
+  otp: z
+    .string()
+    .length(6, "OTP must be 6 digits")
+    .regex(/^\d+$/, "OTP must contain only digits"),
+});
+
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email format"),
 });
@@ -95,7 +106,9 @@ export const updateUserSchema = updateProfileSchema.extend({
 });
 
 export const userQuerySchema = paginationSchema.extend({
-  role: z.enum(["ADMIN", "USER", "RIDER", "SELLER"]).optional(),
+  role: z
+    .enum(["SUPER_ADMIN", "ADMIN", "CLUB_OWNER", "USER", "RIDER", "SELLER"])
+    .optional(),
   search: z.string().optional(),
 });
 
@@ -249,6 +262,11 @@ export const updateUserRoleSchema = z.object({
     "CLUB_OWNER",
     "SUPER_ADMIN",
   ]),
+});
+
+export const updateReportSchema = z.object({
+  status: z.enum(["pending", "investigating", "resolved", "dismissed"]),
+  resolution: z.string().max(2000).optional(),
 });
 
 export const adminStatsQuerySchema = z.object({

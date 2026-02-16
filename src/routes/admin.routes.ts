@@ -18,6 +18,7 @@ import {
   adminStatsQuerySchema,
   idParamSchema,
   updateUserRoleSchema,
+  updateReportSchema,
 } from "../validators/schemas.js";
 import { runJobManually } from "../jobs/scheduler.js";
 
@@ -65,8 +66,8 @@ router.get(
       }),
     ]);
 
-    // Get user role breakdown
-    const usersByRole = await prisma.user.groupBy({
+    // Get user role breakdown from role assignments
+    const usersByRole = await prisma.userRoleAssignment.groupBy({
       by: ["role"],
       _count: { role: true },
     });
@@ -123,7 +124,9 @@ router.get(
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
-    if (role) where.role = role;
+    if (role) {
+      where.userRoles = { some: { role } };
+    }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },
@@ -142,7 +145,7 @@ router.get(
           name: true,
           image: true,
           phone: true,
-          role: true,
+          userRoles: { select: { role: true } },
           ridesCompleted: true,
           createdAt: true,
           _count: {
@@ -154,7 +157,13 @@ router.get(
       prisma.user.count({ where }),
     ]);
 
-    ApiResponse.paginated(res, users, {
+    // Flatten roles for response
+    const usersWithRoles = users.map(({ userRoles, ...u }) => ({
+      ...u,
+      roles: userRoles.map((r) => r.role),
+    }));
+
+    ApiResponse.paginated(res, usersWithRoles, {
       page: Number(page),
       limit: Number(limit),
       total,
@@ -176,18 +185,30 @@ router.patch(
     const { id } = req.params;
     const { role } = req.body;
 
-    const user = await prisma.user.update({
+    // Upsert the role assignment (add if missing, no-op if exists)
+    await prisma.userRoleAssignment.upsert({
+      where: { userId_role: { userId: id, role } },
+      create: { userId: id, role },
+      update: {},
+    });
+
+    // Return user with all current roles
+    const user = await prisma.user.findUnique({
       where: { id },
-      data: { role },
       select: {
         id: true,
         email: true,
         name: true,
-        role: true,
+        userRoles: { select: { role: true } },
       },
     });
 
-    ApiResponse.success(res, { user }, "User role updated successfully");
+    const roles = user?.userRoles.map((r) => r.role) ?? [];
+    ApiResponse.success(
+      res,
+      { user: { id: user?.id, email: user?.email, name: user?.name, roles } },
+      "User role updated successfully",
+    );
   }),
 );
 
@@ -355,6 +376,101 @@ router.post(
         ErrorCode.INVALID_INPUT,
       );
     }
+  }),
+);
+
+/**
+ * GET /api/admin/reports
+ * Get all reports with filters
+ */
+router.get(
+  "/reports",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page = 1, limit = 20, status, priority } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where: any = {};
+    if (status) where.status = status;
+    if (priority) where.priority = priority;
+
+    const [reports, total] = await Promise.all([
+      prisma.report.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        include: {
+          reporter: {
+            select: { id: true, name: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.report.count({ where }),
+    ]);
+
+    const formattedReports = reports.map((report) => ({
+      id: report.id,
+      type: report.type,
+      title: report.title,
+      description: report.description ?? undefined,
+      reportedItem: {
+        id: report.reportedItemId ?? "",
+        name: report.reportedItemName ?? "",
+        type: report.reportedItemType ?? report.type,
+      },
+      reporter: {
+        id: report.reporter?.id ?? "",
+        name: report.reporter?.name ?? "Unknown",
+      },
+      status: report.status,
+      priority: report.priority,
+      createdAt: report.createdAt.toISOString(),
+    }));
+
+    ApiResponse.paginated(res, formattedReports, {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    });
+  }),
+);
+
+/**
+ * PATCH /api/admin/reports/:id
+ * Update report status/resolution
+ */
+router.patch(
+  "/reports/:id",
+  validateParams(idParamSchema),
+  validateBody(updateReportSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { status, resolution } = req.body;
+
+    const report = await prisma.report.update({
+      where: { id },
+      data: { status, resolution },
+      include: {
+        reporter: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    ApiResponse.success(res, {
+      report: {
+        id: report.id,
+        status: report.status,
+        resolution: report.resolution,
+        reporter: {
+          id: report.reporter?.id ?? "",
+          name: report.reporter?.name ?? "Unknown",
+        },
+      },
+    });
   }),
 );
 

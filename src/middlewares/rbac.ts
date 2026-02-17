@@ -4,7 +4,6 @@ import {
   UserRole,
   hasAnyRole,
   isAdmin,
-  isSuperAdmin,
   WEB_ACCESS_ROLES,
   MOBILE_ACCESS_ROLES,
 } from "../lib/utils/permissions.js";
@@ -17,16 +16,14 @@ export { UserRole, WEB_ACCESS_ROLES, MOBILE_ACCESS_ROLES };
 
 /**
  * Fetch a user's roles from the DB as a UserRole[].
- * Always includes USER implicitly.
+ * Returns the assigned roles as-is.
  */
 export async function getUserRoles(userId: string): Promise<UserRole[]> {
   const assignments = await prisma.userRoleAssignment.findMany({
     where: { userId },
     select: { role: true },
   });
-  const roles = assignments.map((a) => a.role as UserRole);
-  if (!roles.includes(UserRole.USER)) roles.push(UserRole.USER);
-  return roles;
+  return assignments.map((a) => a.role as UserRole);
 }
 
 // ─── Middleware factories ────────────────────────────────────────────
@@ -44,12 +41,6 @@ export function requireRole(...allowedRoles: UserRole[]) {
 
     const userRoles = await getUserRoles(session.user.id);
 
-    // SUPER_ADMIN always passes
-    if (isSuperAdmin(userRoles)) {
-      (req as any).userRoles = userRoles;
-      return next();
-    }
-
     if (!hasAnyRole(userRoles, allowedRoles)) {
       return ApiResponse.forbidden(
         res,
@@ -65,16 +56,15 @@ export function requireRole(...allowedRoles: UserRole[]) {
 
 // ─── Pre-built guards ────────────────────────────────────────────────
 
-export const requireAdmin = requireRole(UserRole.ADMIN, UserRole.SUPER_ADMIN);
-export const requireSuperAdmin = requireRole(UserRole.SUPER_ADMIN);
+export const requireAdmin = requireRole(UserRole.ADMIN);
+export const requireSuperAdmin = requireRole(UserRole.ADMIN);
 export const requireClubOwnerOrAdmin = requireRole(
   UserRole.CLUB_OWNER,
   UserRole.ADMIN,
-  UserRole.SUPER_ADMIN,
 );
 
 /**
- * Require web-portal access (SUPER_ADMIN | ADMIN | CLUB_OWNER | SELLER).
+ * Require web-portal access (ADMIN | CLUB_OWNER | SELLER).
  */
 export function requireWebAccess(
   req: Request,

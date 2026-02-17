@@ -8,10 +8,8 @@ import { fromNodeHeaders } from "better-auth/node";
 
 // User roles enum (sync with Prisma schema)
 export enum UserRole {
-  SUPER_ADMIN = "SUPER_ADMIN",
   ADMIN = "ADMIN",
   CLUB_OWNER = "CLUB_OWNER",
-  USER = "USER",
   RIDER = "RIDER",
   SELLER = "SELLER",
 }
@@ -65,6 +63,16 @@ export const auth = betterAuth({
   trustedOrigins: [
     process.env.FRONTEND_URL || "http://localhost:3000",
     process.env.MOBILE_APP_URL || "http://localhost:8081",
+    "http://127.0.0.1:8081",
+    "http://10.0.2.2:8081",
+    "http://10.0.2.2:5000",
+    "http://localhost:5000",
+    "exp://10.0.2.2:8081",
+    "exp://localhost:8081",
+    "http://10.0.2.2:19000",
+    "http://localhost:19000",
+    "http://10.0.2.2:19006",
+    "http://localhost:19006",
   ],
 
   // Enable email and password authentication
@@ -100,14 +108,14 @@ export const auth = betterAuth({
     user: {
       create: {
         after: async (user) => {
-          // Auto-assign USER role on signup
+          // Auto-assign RIDER role on signup
           try {
             await prisma.userRoleAssignment.create({
-              data: { userId: user.id, role: "USER" },
+              data: { userId: user.id, role: "RIDER" },
             });
-            console.log(`[AUTH] USER role assigned to ${user.id}`);
+            console.log(`[AUTH] RIDER role assigned to ${user.id}`);
           } catch (error) {
-            console.warn(`[AUTH] Failed to assign USER role:`, error);
+            console.warn(`[AUTH] Failed to assign RIDER role:`, error);
           }
         },
       },
@@ -156,19 +164,19 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
-      bikeType: {
-        type: "string",
-        required: false,
-      },
-      bikeOwned: {
-        type: "string",
-        required: false,
-      },
-      experienceLevel: {
-        type: "string",
+      dob: {
+        type: "date",
         required: false,
       },
       bloodType: {
+        type: "string",
+        required: false,
+      },
+      avatar: {
+        type: "string",
+        required: false,
+      },
+      coverImage: {
         type: "string",
         required: false,
       },
@@ -221,7 +229,7 @@ export async function getCurrentSession(
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
-      image: session.user.image ?? null,
+      image: (session.user as any).avatar ?? null,
       phone: session.user.phone ?? null,
       roles: [],
     },
@@ -273,9 +281,6 @@ export async function requireAuth(
     });
 
     const roles = assignments.map((a) => a.role);
-    if (!roles.includes(UserRole.USER)) {
-      roles.push(UserRole.USER);
-    }
     console.log("[AUTH] requireAuth - Roles loaded", {
       userId: session.user.id,
       roles,
@@ -287,7 +292,7 @@ export async function requireAuth(
         id: session.user.id,
         email: session.user.email,
         name: session.user.name,
-        image: session.user.image ?? null,
+        image: (session.user as any).avatar ?? null,
         phone: (session.user as any).phone || null,
         roles,
       },
@@ -337,16 +342,13 @@ export async function optionalAuth(
       });
 
       const roles = assignments.map((a) => a.role);
-      if (!roles.includes(UserRole.USER)) {
-        roles.push(UserRole.USER);
-      }
 
       req.session = {
         user: {
           id: session.user.id,
           email: session.user.email,
           name: session.user.name,
-          image: session.user.image ?? null,
+          image: (session.user as any).avatar ?? null,
           phone: (session.user as any).phone || null,
           roles,
         },

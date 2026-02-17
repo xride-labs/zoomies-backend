@@ -14,6 +14,13 @@ async function main() {
   await prisma.comment.deleteMany();
   await prisma.like.deleteMany();
   await prisma.post.deleteMany();
+  await prisma.userBadge.deleteMany();
+  await prisma.badge.deleteMany();
+  await prisma.emergencyContact.deleteMany();
+  await prisma.userPreferences.deleteMany();
+  await prisma.userRideStats.deleteMany();
+  await prisma.friendship.deleteMany();
+  await prisma.bike.deleteMany();
   await prisma.rideParticipant.deleteMany();
   await prisma.clubMember.deleteMany();
   await prisma.chatMessage.deleteMany();
@@ -55,28 +62,7 @@ async function main() {
     return user;
   }
 
-  // ── Super Admin ──────────────────────────────────────────────────
-  const superAdmin = await createUserWithRoles(
-    {
-      email: "superadmin@zoomies.com",
-      username: "superadmin",
-      name: "Super Admin",
-      phone: "+1234567800",
-      emailVerified: true,
-      phoneVerified: true,
-      bio: "Platform super administrator",
-      location: "Mumbai, India",
-      xpPoints: 9999,
-      experienceLevel: "Expert",
-      levelOfActivity: "Enthusiast",
-      reputationScore: 5.0,
-    },
-    ["SUPER_ADMIN", "ADMIN", "USER"],
-    hashedPassword,
-  );
-  console.log("✅ Created super admin:", superAdmin.email);
-
-  // ── Admin (also a club owner) ────────────────────────────────────
+  // ── Admin (super admin) ──────────────────────────────────────────
   const adminUser = await createUserWithRoles(
     {
       email: "admin@zoomies.com",
@@ -87,14 +73,19 @@ async function main() {
       phoneVerified: true,
       bio: "Platform administrator & club manager",
       location: "Mumbai, India",
-      bikeType: "Sport",
-      bikeOwned: "Kawasaki Ninja 650",
-      xpPoints: 5000,
-      experienceLevel: "Expert",
-      levelOfActivity: "Enthusiast",
+      dob: new Date("1992-02-01"),
+      bloodType: "O+",
+      avatar: "https://cdn.zoomies.app/assets/avatars/admin.jpg",
+      coverImage: "https://cdn.zoomies.app/assets/covers/admin.jpg",
+      xpPoints: 5200,
+      level: 12,
+      levelTitle: "Road Commander",
+      activityLevel: "Enthusiast",
       reputationScore: 5.0,
+      helmetVerified: true,
+      lastSafetyCheck: new Date("2026-01-12"),
     },
-    ["ADMIN", "CLUB_OWNER", "USER"],
+    ["ADMIN", "CLUB_OWNER"],
     hashedPassword,
   );
   console.log("✅ Created admin user:", adminUser.email);
@@ -110,16 +101,19 @@ async function main() {
       phoneVerified: true,
       bio: "Love riding on weekends!",
       location: "Bangalore, India",
-      bikeType: "Cruiser",
-      bikeOwned: "Royal Enfield Classic 350",
-      bikeOwnerSince: new Date("2020-01-15"),
-      bikeOdometer: 15000,
+      dob: new Date("1996-04-11"),
+      bloodType: "B+",
+      avatar: "https://cdn.zoomies.app/assets/avatars/john.jpg",
+      coverImage: "https://cdn.zoomies.app/assets/covers/john.jpg",
       xpPoints: 1200,
-      experienceLevel: "Intermediate",
-      levelOfActivity: "Regular",
+      level: 5,
+      levelTitle: "Weekend Runner",
+      activityLevel: "Regular",
       reputationScore: 4.5,
+      helmetVerified: true,
+      lastSafetyCheck: new Date("2026-01-05"),
     },
-    ["RIDER", "USER"],
+    ["RIDER", "SELLER"],
     hashedPassword,
   );
   console.log("✅ Created user:", user1.email);
@@ -135,16 +129,19 @@ async function main() {
       phoneVerified: true,
       bio: "Speed enthusiast and track day lover",
       location: "Delhi, India",
-      bikeType: "Sport",
-      bikeOwned: "Yamaha YZF-R15",
-      bikeOwnerSince: new Date("2021-06-10"),
-      bikeOdometer: 8000,
+      dob: new Date("1998-09-23"),
+      bloodType: "A+",
+      avatar: "https://cdn.zoomies.app/assets/avatars/sarah.jpg",
+      coverImage: "https://cdn.zoomies.app/assets/covers/sarah.jpg",
       xpPoints: 2500,
-      experienceLevel: "Expert",
-      levelOfActivity: "Enthusiast",
+      level: 8,
+      levelTitle: "Track Chaser",
+      activityLevel: "Enthusiast",
       reputationScore: 4.8,
+      helmetVerified: true,
+      lastSafetyCheck: new Date("2026-01-20"),
     },
-    ["RIDER", "SELLER", "USER"],
+    ["RIDER", "SELLER"],
     hashedPassword,
   );
   console.log("✅ Created user:", user2.email);
@@ -159,16 +156,19 @@ async function main() {
       emailVerified: true,
       bio: "Adventure rider exploring India",
       location: "Pune, India",
-      bikeType: "Adventure",
-      bikeOwned: "KTM 390 Adventure",
-      bikeOwnerSince: new Date("2019-03-20"),
-      bikeOdometer: 25000,
+      dob: new Date("1994-12-02"),
+      bloodType: "O-",
+      avatar: "https://cdn.zoomies.app/assets/avatars/mike.jpg",
+      coverImage: "https://cdn.zoomies.app/assets/covers/mike.jpg",
       xpPoints: 3500,
-      experienceLevel: "Expert",
-      levelOfActivity: "Enthusiast",
+      level: 10,
+      levelTitle: "Trail Boss",
+      activityLevel: "Enthusiast",
       reputationScore: 4.7,
+      helmetVerified: true,
+      lastSafetyCheck: new Date("2026-02-01"),
     },
-    ["CLUB_OWNER", "RIDER", "USER"],
+    ["CLUB_OWNER", "RIDER", "SELLER"],
     hashedPassword,
   );
   console.log("✅ Created user:", user3.email);
@@ -183,17 +183,265 @@ async function main() {
       emailVerified: true,
       bio: "Gear enthusiast and marketplace seller",
       location: "Chennai, India",
-      bikeType: "Naked",
-      bikeOwned: "KTM Duke 200",
+      dob: new Date("2000-06-14"),
+      bloodType: "AB+",
+      avatar: "https://cdn.zoomies.app/assets/avatars/lisa.jpg",
+      coverImage: "https://cdn.zoomies.app/assets/covers/lisa.jpg",
       xpPoints: 800,
-      experienceLevel: "Beginner",
-      levelOfActivity: "Casual",
+      level: 3,
+      levelTitle: "Starter",
+      activityLevel: "Casual",
       reputationScore: 4.3,
+      helmetVerified: false,
     },
-    ["SELLER", "RIDER", "USER"],
+    ["SELLER", "RIDER"],
     hashedPassword,
   );
   console.log("✅ Created user:", user4.email);
+
+  // Bikes
+  await prisma.bike.createMany({
+    data: [
+      {
+        userId: adminUser.id,
+        make: "Kawasaki",
+        model: "Ninja 650",
+        year: 2022,
+        type: "SPORT",
+        engineCc: 649,
+        color: "Emerald Green",
+        odo: 5200,
+        ownerSince: new Date("2022-06-01"),
+        isPrimary: true,
+        modifications: { exhaust: "Akrapovic", phoneMount: true },
+      },
+      {
+        userId: user1.id,
+        make: "Royal Enfield",
+        model: "Classic 350",
+        year: 2020,
+        type: "CRUISER",
+        engineCc: 349,
+        color: "Signals Desert Sand",
+        odo: 15000,
+        ownerSince: new Date("2020-01-15"),
+        isPrimary: true,
+        modifications: { lights: "LED", tyres: "Michelin Road 6" },
+      },
+      {
+        userId: user2.id,
+        make: "Yamaha",
+        model: "R15 V4",
+        year: 2023,
+        type: "SPORT",
+        engineCc: 155,
+        color: "Racing Blue",
+        odo: 8450,
+        ownerSince: new Date("2023-02-12"),
+        isPrimary: true,
+        modifications: { exhaust: "Akrapovic", phoneMount: true },
+      },
+      {
+        userId: user3.id,
+        make: "KTM",
+        model: "390 Adventure",
+        year: 2019,
+        type: "ADVENTURE",
+        engineCc: 373,
+        color: "Orange",
+        odo: 25000,
+        ownerSince: new Date("2019-03-20"),
+        isPrimary: true,
+        modifications: { panniers: "Touring", lights: "Aux LED" },
+      },
+      {
+        userId: user4.id,
+        make: "KTM",
+        model: "Duke 200",
+        year: 2021,
+        type: "NAKED",
+        engineCc: 199,
+        color: "White",
+        odo: 6400,
+        ownerSince: new Date("2021-09-11"),
+        isPrimary: true,
+        modifications: { tyres: "Pirelli Diablo" },
+      },
+    ],
+  });
+  console.log("✅ Created bikes");
+
+  // Badges
+  const badgeFirstRide = await prisma.badge.create({
+    data: {
+      title: "First Ride",
+      description: "Completed your first ride",
+      icon: "🏁",
+      auraPoints: 100,
+      category: "achievement",
+    },
+  });
+  const badge1000Km = await prisma.badge.create({
+    data: {
+      title: "1000 KM Club",
+      description: "Crossed 1000km total distance",
+      icon: "🔥",
+      auraPoints: 150,
+      category: "distance",
+    },
+  });
+  const badgeNightOwl = await prisma.badge.create({
+    data: {
+      title: "Night Owl",
+      description: "Completed 10 night rides",
+      icon: "🌙",
+      auraPoints: 120,
+      category: "activity",
+    },
+  });
+  await prisma.userBadge.createMany({
+    data: [
+      { userId: user1.id, badgeId: badgeFirstRide.id },
+      { userId: user1.id, badgeId: badge1000Km.id },
+      { userId: user2.id, badgeId: badgeFirstRide.id },
+      { userId: user2.id, badgeId: badgeNightOwl.id },
+      { userId: user3.id, badgeId: badgeFirstRide.id },
+      { userId: user4.id, badgeId: badgeFirstRide.id },
+    ],
+  });
+  console.log("✅ Created badges and user badges");
+
+  // Emergency contacts
+  await prisma.emergencyContact.createMany({
+    data: [
+      {
+        userId: user1.id,
+        name: "Ravi Kumar",
+        phone: "+919876543210",
+        relationship: "Brother",
+        isPrimary: true,
+      },
+      {
+        userId: user2.id,
+        name: "Ananya Singh",
+        phone: "+919812345678",
+        relationship: "Friend",
+        isPrimary: true,
+      },
+      {
+        userId: user3.id,
+        name: "Priya Wilson",
+        phone: "+919911122233",
+        relationship: "Spouse",
+        isPrimary: true,
+      },
+    ],
+  });
+  console.log("✅ Created emergency contacts");
+
+  // Preferences
+  await prisma.userPreferences.createMany({
+    data: [
+      {
+        userId: adminUser.id,
+        rideReminders: true,
+        serviceReminderKm: 4000,
+        darkMode: false,
+        units: "metric",
+        openToInvite: true,
+      },
+      {
+        userId: user1.id,
+        rideReminders: true,
+        serviceReminderKm: 3000,
+        darkMode: true,
+        units: "metric",
+        openToInvite: true,
+      },
+      {
+        userId: user2.id,
+        rideReminders: true,
+        serviceReminderKm: 3500,
+        darkMode: false,
+        units: "metric",
+        openToInvite: false,
+      },
+      {
+        userId: user3.id,
+        rideReminders: false,
+        serviceReminderKm: 5000,
+        darkMode: true,
+        units: "metric",
+        openToInvite: true,
+      },
+      {
+        userId: user4.id,
+        rideReminders: true,
+        serviceReminderKm: 2500,
+        darkMode: true,
+        units: "metric",
+        openToInvite: true,
+      },
+    ],
+  });
+  console.log("✅ Created user preferences");
+
+  // Ride stats
+  await prisma.userRideStats.createMany({
+    data: [
+      {
+        userId: adminUser.id,
+        totalDistanceKm: 5400,
+        longestRideKm: 420,
+        totalRides: 55,
+        nightRides: 14,
+        weekendRides: 28,
+      },
+      {
+        userId: user1.id,
+        totalDistanceKm: 3420,
+        longestRideKm: 410,
+        totalRides: 48,
+        nightRides: 18,
+        weekendRides: 22,
+      },
+      {
+        userId: user2.id,
+        totalDistanceKm: 2800,
+        longestRideKm: 320,
+        totalRides: 33,
+        nightRides: 10,
+        weekendRides: 16,
+      },
+      {
+        userId: user3.id,
+        totalDistanceKm: 7600,
+        longestRideKm: 560,
+        totalRides: 72,
+        nightRides: 12,
+        weekendRides: 30,
+      },
+      {
+        userId: user4.id,
+        totalDistanceKm: 1200,
+        longestRideKm: 180,
+        totalRides: 12,
+        nightRides: 4,
+        weekendRides: 6,
+      },
+    ],
+  });
+  console.log("✅ Created ride stats");
+
+  // Friendships
+  await prisma.friendship.createMany({
+    data: [
+      { senderId: user1.id, receiverId: user2.id, status: "ACCEPTED" },
+      { senderId: user2.id, receiverId: user3.id, status: "ACCEPTED" },
+      { senderId: user4.id, receiverId: user1.id, status: "PENDING" },
+    ],
+  });
+  console.log("✅ Created friendships");
 
   // Create Clubs
   const club1 = await prisma.club.create({
@@ -546,17 +794,15 @@ async function main() {
 
   console.log("\n🎉 Database seed completed successfully!");
   console.log("\n📊 Summary:");
-  console.log("   - Users: 6 (1 super admin, 1 admin, 4 regular users)");
+  console.log("   - Users: 5 (1 admin, 4 riders)");
   console.log("   - Multi-role assignments: ✅");
   console.log("   - Clubs: 3");
   console.log("   - Rides: 5 (4 planned, 1 live)");
   console.log("   - Marketplace Listings: 4");
   console.log("   - Posts: 3");
   console.log("   - Likes, Comments, Follows, Reviews: Multiple");
+  console.log("   - Bikes, Badges, Preferences, Ride Stats, Friendships: ✅");
   console.log("\n🔑 Test Credentials (password: password123):");
-  console.log(
-    "   superadmin@zoomies.com → SUPER_ADMIN + ADMIN        (web only)",
-  );
   console.log(
     "   admin@zoomies.com      → ADMIN + CLUB_OWNER         (web + mobile)",
   );

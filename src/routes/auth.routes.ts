@@ -174,33 +174,22 @@ router.get(
 
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        image: true,
-        username: true,
-        phone: true,
-        phoneVerified: true,
-        emailVerified: true,
-        bio: true,
-        location: true,
-        ridesCompleted: true,
-        bikeType: true,
-        bikeOwned: true,
-        bikeOwnerSince: true,
-        bikeOdometer: true,
-        bikeModifications: true,
-        bikeOwnerAge: true,
-        xpPoints: true,
-        experienceLevel: true,
-        levelOfActivity: true,
-        reputationScore: true,
-        affiliations: true,
-        reminders: true,
+      include: {
         userRoles: { select: { role: true } },
-        createdAt: true,
-        updatedAt: true,
+        bikes: true,
+        badges: { include: { badge: true } },
+        emergencyContacts: true,
+        preferences: true,
+        rideStats: true,
+        clubMemberships: { include: { club: true } },
+        _count: {
+          select: {
+            followers: true,
+            following: true,
+            friendsInitiated: true,
+            friendsReceived: true,
+          },
+        },
       },
     });
 
@@ -212,11 +201,96 @@ router.get(
       );
     }
 
-    // Flatten roles for the response
-    const { userRoles, ...rest } = user;
+    const roles = user.userRoles?.map((r) => r.role) ?? [];
+    const xpPoints = user.xpPoints ?? 0;
+    const nextLevelXp = (user.level + 1) * 250;
+    const progressPercent = nextLevelXp
+      ? Math.min(100, Math.round((xpPoints / nextLevelXp) * 100))
+      : 0;
+    const friendsCount =
+      (user._count?.friendsInitiated ?? 0) +
+      (user._count?.friendsReceived ?? 0);
+
     const response = {
-      ...rest,
-      roles: userRoles.map((r) => r.role),
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email,
+      dob: user.dob,
+      emailVerified: user.emailVerified,
+      phoneVerified: user.phoneVerified,
+      phone: user.phone,
+      coverImage: user.coverImage,
+      avatar: user.avatar,
+      bio: user.bio,
+      location: user.location,
+      bloodType: user.bloodType,
+      ridesCompleted: user.rideStats?.totalRides ?? 0,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      roles,
+      experience: {
+        xpPoints,
+        level: user.level,
+        levelTitle: user.levelTitle,
+        nextLevelXp,
+        progressPercent,
+        reputationScore: user.reputationScore ?? 0,
+        activityLevel: user.activityLevel,
+      },
+      bikes:
+        user.bikes?.map((bike) => ({
+          id: bike.id,
+          make: bike.make,
+          model: bike.model,
+          year: bike.year,
+          type: bike.type,
+          engineCc: bike.engineCc,
+          color: bike.color,
+          odo: bike.odo,
+          ownerSince: bike.ownerSince,
+          modifications: bike.modifications,
+          isPrimary: bike.isPrimary,
+        })) ?? [],
+      clubs:
+        user.clubMemberships?.map((membership) => ({
+          id: membership.club.id,
+          name: membership.club.name,
+          role: membership.role,
+          joinedAt: membership.joinedAt,
+          memberCount: membership.club.memberCount,
+          logo: membership.club.image,
+        })) ?? [],
+      rideStats: user.rideStats
+        ? {
+            totalDistanceKm: user.rideStats.totalDistanceKm,
+            longestRideKm: user.rideStats.longestRideKm,
+            nightRides: user.rideStats.nightRides,
+            weekendRides: user.rideStats.weekendRides,
+          }
+        : null,
+      badges:
+        user.badges?.map((userBadge) => ({
+          id: userBadge.badge.id,
+          title: userBadge.badge.title,
+          auraPoints: userBadge.badge.auraPoints,
+          icon: userBadge.badge.icon,
+          earnedAt: userBadge.earnedAt,
+        })) ?? [],
+      social: {
+        followers: user._count?.followers ?? 0,
+        following: user._count?.following ?? 0,
+        friends: friendsCount,
+      },
+      safety: {
+        emergencyContacts: {
+          count: user.emergencyContacts?.length ?? 0,
+          items: user.emergencyContacts ?? [],
+        },
+        helmetVerified: user.helmetVerified,
+        lastSafetyCheck: user.lastSafetyCheck,
+      },
+      preferences: user.preferences,
     };
     console.log("[AUTH] GET /me - Returning user", {
       userId: user.id,
@@ -275,16 +349,8 @@ router.patch(
       userId: session.user.id,
       fields: Object.keys(req.body),
     });
-    const {
-      name,
-      bio,
-      location,
-      bikeType,
-      bikeOwned,
-      experienceLevel,
-      levelOfActivity,
-      bloodType,
-    } = req.body;
+    const { name, bio, location, dob, bloodType, avatar, coverImage } =
+      req.body;
 
     const user = await prisma.user.update({
       where: { id: session.user.id },
@@ -292,25 +358,22 @@ router.patch(
         ...(name !== undefined && { name }),
         ...(bio !== undefined && { bio }),
         ...(location !== undefined && { location }),
-        ...(bikeType !== undefined && { bikeType }),
-        ...(bikeOwned !== undefined && { bikeOwned }),
-        ...(experienceLevel !== undefined && { experienceLevel }),
-        ...(levelOfActivity !== undefined && { levelOfActivity }),
+        ...(dob !== undefined && { dob: new Date(dob) }),
         ...(bloodType !== undefined && { bloodType }),
+        ...(avatar !== undefined && { avatar }),
+        ...(coverImage !== undefined && { coverImage }),
       },
       select: {
         id: true,
         email: true,
         name: true,
-        image: true,
+        avatar: true,
+        coverImage: true,
         phone: true,
         bio: true,
         location: true,
-        bikeType: true,
-        bikeOwned: true,
-        experienceLevel: true,
-        levelOfActivity: true,
         bloodType: true,
+        dob: true,
         updatedAt: true,
       },
     });

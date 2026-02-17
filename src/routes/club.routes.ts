@@ -103,7 +103,7 @@ router.get(
         orderBy: { createdAt: "desc" },
         include: {
           owner: {
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, avatar: true },
           },
           _count: { select: { members: true } },
         },
@@ -164,12 +164,12 @@ router.get(
       where: { id },
       include: {
         owner: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
         members: {
           include: {
             user: {
-              select: { id: true, name: true, image: true },
+              select: { id: true, name: true, avatar: true },
             },
           },
           orderBy: { joinedAt: "desc" },
@@ -271,7 +271,7 @@ router.post(
       },
       include: {
         owner: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -297,8 +297,54 @@ router.post(
 );
 
 /**
- * PATCH /api/clubs/:id
- * Update a club
+ * @swagger
+ * /api/clubs/{id}:
+ *   patch:
+ *     summary: Update a club
+ *     description: Update club details. Must be club owner or admin. Club images (logo/cover) should be uploaded via /api/media/upload/club/{clubId} endpoint and will be served via Cloudinary.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               location:
+ *                 type: string
+ *               clubType:
+ *                 type: string
+ *               isPublic:
+ *                 type: boolean
+ *               image:
+ *                 type: string
+ *                 format: uri
+ *                 description: Club logo URL (Cloudinary)
+ *               coverImage:
+ *                 type: string
+ *                 format: uri
+ *                 description: Club cover URL (Cloudinary)
+ *     responses:
+ *       200:
+ *         description: Club updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not club owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/:id",
@@ -330,7 +376,7 @@ router.patch(
       },
       include: {
         owner: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -340,8 +386,30 @@ router.patch(
 );
 
 /**
- * DELETE /api/clubs/:id
- * Delete a club
+ * @swagger
+ * /api/clubs/{id}:
+ *   delete:
+ *     summary: Delete a club
+ *     description: Delete a club and all its members. Must be club owner or admin.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Club deleted successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not club owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.delete(
   "/:id",
@@ -364,8 +432,33 @@ router.delete(
 );
 
 /**
- * POST /api/clubs/:id/join
- * Join a club
+ * @swagger
+ * /api/clubs/{id}/join:
+ *   post:
+ *     summary: Join a club
+ *     description: Join a public club as a member.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Club ID
+ *     responses:
+ *       201:
+ *         description: Joined club successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Club is private
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       409:
+ *         description: Already a member
  */
 router.post(
   "/:id/join",
@@ -415,7 +508,7 @@ router.post(
       },
       include: {
         user: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -444,8 +537,31 @@ router.post(
 );
 
 /**
- * DELETE /api/clubs/:id/leave
- * Leave a club
+ * @swagger
+ * /api/clubs/{id}/leave:
+ *   delete:
+ *     summary: Leave a club
+ *     description: Leave a club you have joined. Founders cannot leave - they must transfer ownership or delete the club.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Club ID
+ *     responses:
+ *       200:
+ *         description: Left club successfully
+ *       400:
+ *         description: Founders cannot leave
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: Not a member of this club
  */
 router.delete(
   "/:id/leave",
@@ -486,8 +602,49 @@ router.delete(
 );
 
 /**
- * PATCH /api/clubs/:id/members/:userId
- * Update member role
+ * @swagger
+ * /api/clubs/{id}/members/{userId}:
+ *   patch:
+ *     summary: Update member role
+ *     description: Update a club member's role. Requires club ADMIN role.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Club ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Member user ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - role
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [MEMBER, OFFICER, ADMIN]
+ *     responses:
+ *       200:
+ *         description: Member role updated
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires club ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/:id/members/:userId",
@@ -503,7 +660,7 @@ router.patch(
       data: { role },
       include: {
         user: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -513,8 +670,39 @@ router.patch(
 );
 
 /**
- * DELETE /api/clubs/:id/members/:userId
- * Remove a member from club
+ * @swagger
+ * /api/clubs/{id}/members/{userId}:
+ *   delete:
+ *     summary: Remove a member from club
+ *     description: Remove a member from the club. Requires club ADMIN role. Cannot remove founders.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Club ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Member user ID
+ *     responses:
+ *       200:
+ *         description: Member removed successfully
+ *       400:
+ *         description: Cannot remove yourself
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires club ADMIN role or cannot remove founder
+ *       404:
+ *         description: Member not found
  */
 router.delete(
   "/:id/members/:userId",

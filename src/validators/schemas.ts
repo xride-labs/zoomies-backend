@@ -89,26 +89,22 @@ export const updateProfileSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   bio: z.string().max(500).optional(),
   location: z.string().max(200).optional(),
-  bikeType: z.string().max(100).optional(),
-  bikeOwned: z.string().max(200).optional(),
-  experienceLevel: z.enum(["Beginner", "Intermediate", "Expert"]).optional(),
-  levelOfActivity: z.enum(["Casual", "Regular", "Enthusiast"]).optional(),
+  dob: z.string().datetime().optional(),
   bloodType: z
     .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"])
     .optional(),
+  avatar: z.string().url("Invalid avatar URL").optional(),
+  coverImage: z.string().url("Invalid cover image URL").optional(),
 });
 
 export const updateUserSchema = updateProfileSchema.extend({
   email: z.string().email("Invalid email format").optional(),
   username: z.string().min(2).max(50).optional(),
-  image: z.string().url("Invalid image URL").optional(),
   phone: z.string().min(10).max(20).optional(),
 });
 
 export const userQuerySchema = paginationSchema.extend({
-  role: z
-    .enum(["SUPER_ADMIN", "ADMIN", "CLUB_OWNER", "USER", "RIDER", "SELLER"])
-    .optional(),
+  role: z.enum(["ADMIN", "CLUB_OWNER", "RIDER", "SELLER"]).optional(),
   search: z.string().optional(),
 });
 
@@ -254,14 +250,7 @@ export const uploadMediaSchema = z.object({
 // ========================================
 
 export const updateUserRoleSchema = z.object({
-  role: z.enum([
-    "ADMIN",
-    "USER",
-    "RIDER",
-    "SELLER",
-    "CLUB_OWNER",
-    "SUPER_ADMIN",
-  ]),
+  role: z.enum(["ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]),
 });
 
 export const updateReportSchema = z.object({

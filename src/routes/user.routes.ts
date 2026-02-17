@@ -18,6 +18,97 @@ import {
 
 const router = Router();
 
+function buildUserProfileResponse(user: any) {
+  const roles = user.userRoles?.map((r: { role: string }) => r.role) ?? [];
+  const xpPoints = user.xpPoints ?? 0;
+  const nextLevelXp = (user.level + 1) * 250;
+  const progressPercent = nextLevelXp
+    ? Math.min(100, Math.round((xpPoints / nextLevelXp) * 100))
+    : 0;
+
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    email: user.email,
+    dob: user.dob,
+    emailVerified: user.emailVerified,
+    phoneVerified: user.phoneVerified,
+    phone: user.phone,
+    coverImage: user.coverImage,
+    avatar: user.avatar,
+    bio: user.bio,
+    location: user.location,
+    bloodType: user.bloodType,
+    ridesCompleted: user.rideStats?.totalRides ?? 0,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    role: roles,
+    experience: {
+      xpPoints,
+      level: user.level,
+      levelTitle: user.levelTitle,
+      nextLevelXp,
+      progressPercent,
+      reputationScore: user.reputationScore ?? 0,
+      activityLevel: user.activityLevel,
+    },
+    bikes:
+      user.bikes?.map((bike: any) => ({
+        id: bike.id,
+        make: bike.make,
+        model: bike.model,
+        year: bike.year,
+        type: bike.type,
+        engineCc: bike.engineCc,
+        color: bike.color,
+        odo: bike.odo,
+        ownerSince: bike.ownerSince,
+        modifications: bike.modifications,
+        isPrimary: bike.isPrimary,
+      })) ?? [],
+    clubs:
+      user.clubMemberships?.map((membership: any) => ({
+        id: membership.club.id,
+        name: membership.club.name,
+        role: membership.role,
+        joinedAt: membership.joinedAt,
+        memberCount: membership.club.memberCount,
+        logo: membership.club.image,
+      })) ?? [],
+    rideStats: user.rideStats
+      ? {
+          totalDistanceKm: user.rideStats.totalDistanceKm,
+          longestRideKm: user.rideStats.longestRideKm,
+          nightRides: user.rideStats.nightRides,
+          weekendRides: user.rideStats.weekendRides,
+        }
+      : null,
+    badges:
+      user.badges?.map((userBadge: any) => ({
+        id: userBadge.badge.id,
+        title: userBadge.badge.title,
+        auraPoints: userBadge.badge.auraPoints,
+        icon: userBadge.badge.icon,
+        earnedAt: userBadge.earnedAt,
+      })) ?? [],
+    social: {
+      followers: user._count?.followers ?? 0,
+      following: user._count?.following ?? 0,
+      friends: user.friendsCount ?? 0,
+    },
+    safety: {
+      emergencyContacts: {
+        count: user.emergencyContacts?.length ?? 0,
+        items: user.emergencyContacts ?? [],
+      },
+      helmetVerified: user.helmetVerified,
+      lastSafetyCheck: user.lastSafetyCheck,
+    },
+    preferences: user.preferences,
+  };
+}
+
 // All user routes require authentication
 router.use(requireAuth);
 
@@ -101,12 +192,19 @@ router.get(
           email: true,
           username: true,
           name: true,
-          image: true,
+          avatar: true,
           bio: true,
           location: true,
+          bloodType: true,
+          phone: true,
+          emailVerified: true,
+          phoneVerified: true,
+          xpPoints: true,
+          level: true,
+          levelTitle: true,
+          activityLevel: true,
+          reputationScore: true,
           userRoles: { select: { role: true } },
-          ridesCompleted: true,
-          experienceLevel: true,
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
@@ -170,29 +268,22 @@ router.get(
 
     const user = await prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        name: true,
-        image: true,
-        bio: true,
-        location: true,
+      include: {
         userRoles: { select: { role: true } },
-        bikeType: true,
-        bikeOwned: true,
-        ridesCompleted: true,
-        experienceLevel: true,
-        levelOfActivity: true,
-        xpPoints: true,
-        reputationScore: true,
-        createdAt: true,
+        bikes: true,
+        badges: { include: { badge: true } },
+        emergencyContacts: true,
+        preferences: true,
+        rideStats: true,
+        clubMemberships: { include: { club: true } },
         _count: {
           select: {
             createdRides: true,
             createdClubs: true,
             followers: true,
             following: true,
+            friendsInitiated: true,
+            friendsReceived: true,
           },
         },
       },
@@ -206,16 +297,69 @@ router.get(
       );
     }
 
-    const { userRoles, ...rest } = user;
+    const friendsCount =
+      (user._count?.friendsInitiated ?? 0) +
+      (user._count?.friendsReceived ?? 0);
+    const userWithFriends = { ...user, friendsCount };
     ApiResponse.success(res, {
-      user: { ...rest, roles: userRoles.map((r) => r.role) },
+      user: buildUserProfileResponse(userWithFriends),
     });
   }),
 );
 
 /**
- * PATCH /api/users/:id
- * Update a user (self or admin)
+ * @swagger
+ * /api/users/{id}:
+ *   patch:
+ *     summary: Update a user
+ *     description: Update user details. Can update own profile or admin can update any user. Profile images (avatar/cover) should be uploaded via /api/media/upload/profile endpoints and will be served via Cloudinary.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               bio:
+ *                 type: string
+ *               location:
+ *                 type: string
+ *               bloodType:
+ *                 type: string
+ *                 enum: [A+, A-, B+, B-, AB+, AB-, O+, O-]
+ *               avatar:
+ *                 type: string
+ *                 format: uri
+ *                 description: Avatar URL (Cloudinary)
+ *               coverImage:
+ *                 type: string
+ *                 format: uri
+ *                 description: Cover image URL (Cloudinary)
+ *               dob:
+ *                 type: string
+ *                 format: date-time
+ *               phone:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not authorized to update this user
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/:id",
@@ -231,7 +375,7 @@ router.patch(
       const adminRole = await prisma.userRoleAssignment.findFirst({
         where: {
           userId: session.user.id,
-          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+          role: { in: ["ADMIN"] },
         },
       });
 
@@ -249,12 +393,10 @@ router.patch(
       name,
       bio,
       location,
-      bikeType,
-      bikeOwned,
-      experienceLevel,
-      levelOfActivity,
       bloodType,
-      image,
+      avatar,
+      coverImage,
+      dob,
       phone,
     } = req.body;
 
@@ -266,12 +408,10 @@ router.patch(
         ...(name !== undefined && { name }),
         ...(bio !== undefined && { bio }),
         ...(location !== undefined && { location }),
-        ...(bikeType !== undefined && { bikeType }),
-        ...(bikeOwned !== undefined && { bikeOwned }),
-        ...(experienceLevel !== undefined && { experienceLevel }),
-        ...(levelOfActivity !== undefined && { levelOfActivity }),
         ...(bloodType !== undefined && { bloodType }),
-        ...(image !== undefined && { image }),
+        ...(avatar !== undefined && { avatar }),
+        ...(coverImage !== undefined && { coverImage }),
+        ...(dob !== undefined && { dob: new Date(dob) }),
         ...(phone !== undefined && { phone }),
       },
       select: {
@@ -279,9 +419,12 @@ router.patch(
         email: true,
         username: true,
         name: true,
-        image: true,
+        avatar: true,
+        coverImage: true,
         bio: true,
         location: true,
+        bloodType: true,
+        dob: true,
         phone: true,
         userRoles: { select: { role: true } },
         updatedAt: true,
@@ -298,8 +441,42 @@ router.patch(
 );
 
 /**
- * PATCH /api/users/:id/role
- * Update user role (admin only)
+ * @swagger
+ * /api/users/{id}/role:
+ *   patch:
+ *     summary: Update user role
+ *     description: Add a role to a user. Requires ADMIN role.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - role
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [ADMIN, CLUB_OWNER, RIDER, SELLER]
+ *     responses:
+ *       200:
+ *         description: Role updated successfully
+ *       400:
+ *         description: Invalid role
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
  */
 router.patch(
   "/:id/role",
@@ -310,14 +487,7 @@ router.patch(
     const { id } = req.params;
     const { role } = req.body;
 
-    const validRoles = [
-      "SUPER_ADMIN",
-      "ADMIN",
-      "CLUB_OWNER",
-      "USER",
-      "RIDER",
-      "SELLER",
-    ];
+    const validRoles = ["ADMIN", "CLUB_OWNER", "RIDER", "SELLER"];
     if (!validRoles.includes(role)) {
       return ApiResponse.validationError(res, {
         role: [`Invalid role. Must be one of: ${validRoles.join(", ")}`],
@@ -351,8 +521,30 @@ router.patch(
 );
 
 /**
- * DELETE /api/users/:id
- * Delete a user (self or admin)
+ * @swagger
+ * /api/users/{id}:
+ *   delete:
+ *     summary: Delete a user
+ *     description: Delete a user account. Can delete own account or admin can delete any user.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not authorized to delete this user
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.delete(
   "/:id",
@@ -366,7 +558,7 @@ router.delete(
       const adminRole = await prisma.userRoleAssignment.findFirst({
         where: {
           userId: session.user.id,
-          role: { in: ["ADMIN", "SUPER_ADMIN"] },
+          role: { in: ["ADMIN"] },
         },
       });
 
@@ -398,8 +590,42 @@ router.delete(
 );
 
 /**
- * GET /api/users/:id/rides
- * Get rides created by a user
+ * @swagger
+ * /api/users/{id}/rides:
+ *   get:
+ *     summary: Get user's rides
+ *     description: Get paginated list of rides created by a user.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Paginated list of user's rides
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get(
   "/:id/rides",
@@ -432,8 +658,42 @@ router.get(
 );
 
 /**
- * GET /api/users/:id/clubs
- * Get clubs created by a user
+ * @swagger
+ * /api/users/{id}/clubs:
+ *   get:
+ *     summary: Get user's clubs
+ *     description: Get list of clubs owned by a user.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of user's clubs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     clubs:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Club'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get(
   "/:id/clubs",

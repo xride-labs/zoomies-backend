@@ -29,8 +29,63 @@ router.use(requireAuth);
 router.use(requireWebAccess);
 
 /**
- * GET /api/admin/stats
- * Get platform-wide statistics (Super Admin only)
+ * @swagger
+ * /api/admin/stats:
+ *   get:
+ *     summary: Get platform statistics
+ *     description: Get platform-wide statistics including user counts, ride stats, and activity metrics. Requires SUPER_ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Platform statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     overview:
+ *                       type: object
+ *                       properties:
+ *                         totalUsers:
+ *                           type: integer
+ *                         totalRides:
+ *                           type: integer
+ *                         totalClubs:
+ *                           type: integer
+ *                         totalListings:
+ *                           type: integer
+ *                         activeRides:
+ *                           type: integer
+ *                         completedRides:
+ *                           type: integer
+ *                         verifiedClubs:
+ *                           type: integer
+ *                     recent:
+ *                       type: object
+ *                       properties:
+ *                         newUsersLast7Days:
+ *                           type: integer
+ *                         newRidesLast7Days:
+ *                           type: integer
+ *                     breakdown:
+ *                       type: object
+ *                       properties:
+ *                         usersByRole:
+ *                           type: object
+ *                         ridesByStatus:
+ *                           type: object
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires SUPER_ADMIN role
  */
 router.get(
   "/stats",
@@ -113,8 +168,47 @@ router.get(
 );
 
 /**
- * GET /api/admin/users
- * Get all users with filters (Admin only)
+ * @swagger
+ * /api/admin/users:
+ *   get:
+ *     summary: Get all users (admin)
+ *     description: Get paginated list of all users with optional filters. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [ADMIN, CLUB_OWNER, RIDER, SELLER]
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by name or email
+ *     responses:
+ *       200:
+ *         description: Paginated list of users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
  */
 router.get(
   "/users",
@@ -143,7 +237,7 @@ router.get(
           id: true,
           email: true,
           name: true,
-          image: true,
+          avatar: true,
           phone: true,
           userRoles: { select: { role: true } },
           ridesCompleted: true,
@@ -173,8 +267,43 @@ router.get(
 );
 
 /**
- * PATCH /api/admin/users/:id/role
- * Update user role
+ * @swagger
+ * /api/admin/users/{id}/role:
+ *   patch:
+ *     summary: Update user role
+ *     description: Add a role to a user. Requires SUPER_ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - role
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [ADMIN, CLUB_OWNER, RIDER, SELLER]
+ *     responses:
+ *       200:
+ *         description: Role updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires SUPER_ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/users/:id/role",
@@ -213,8 +342,33 @@ router.patch(
 );
 
 /**
- * DELETE /api/admin/users/:id
- * Delete a user (Super Admin only)
+ * @swagger
+ * /api/admin/users/{id}:
+ *   delete:
+ *     summary: Delete a user
+ *     description: Permanently delete a user account. Requires SUPER_ADMIN role. Cannot delete own account.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       400:
+ *         description: Cannot delete own account
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires SUPER_ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.delete(
   "/users/:id",
@@ -242,8 +396,47 @@ router.delete(
 );
 
 /**
- * GET /api/admin/rides
- * Get all rides with filters
+ * @swagger
+ * /api/admin/rides:
+ *   get:
+ *     summary: Get all rides (admin)
+ *     description: Get paginated list of all rides with filters. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED]
+ *       - in: query
+ *         name: creatorId
+ *         schema:
+ *           type: string
+ *         description: Filter by creator ID
+ *     responses:
+ *       200:
+ *         description: Paginated list of rides
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
  */
 router.get(
   "/rides",
@@ -263,7 +456,7 @@ router.get(
         take: Number(limit),
         include: {
           creator: {
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, avatar: true },
           },
           _count: { select: { participants: true } },
         },
@@ -282,8 +475,45 @@ router.get(
 );
 
 /**
- * GET /api/admin/clubs
- * Get all clubs with filters
+ * @swagger
+ * /api/admin/clubs:
+ *   get:
+ *     summary: Get all clubs (admin)
+ *     description: Get paginated list of all clubs with filters. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: verified
+ *         schema:
+ *           type: boolean
+ *       - in: query
+ *         name: ownerId
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Paginated list of clubs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
  */
 router.get(
   "/clubs",
@@ -303,7 +533,7 @@ router.get(
         take: Number(limit),
         include: {
           owner: {
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, avatar: true },
           },
           _count: { select: { members: true } },
         },
@@ -322,8 +552,40 @@ router.get(
 );
 
 /**
- * PATCH /api/admin/clubs/:id/verify
- * Verify or unverify a club
+ * @swagger
+ * /api/admin/clubs/{id}/verify:
+ *   patch:
+ *     summary: Verify or unverify a club
+ *     description: Update club verification status. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Club ID
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               verified:
+ *                 type: boolean
+ *                 default: true
+ *     responses:
+ *       200:
+ *         description: Club verification status updated
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/clubs/:id/verify",
@@ -352,8 +614,31 @@ router.patch(
 );
 
 /**
- * POST /api/admin/jobs/:jobName/run
- * Run a background job manually
+ * @swagger
+ * /api/admin/jobs/{jobName}/run:
+ *   post:
+ *     summary: Run background job manually
+ *     description: Trigger a background job to run immediately. Requires SUPER_ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Job name to run
+ *     responses:
+ *       200:
+ *         description: Job executed successfully
+ *       400:
+ *         description: Invalid job name
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires SUPER_ADMIN role
  */
 router.post(
   "/jobs/:jobName/run",
@@ -380,8 +665,47 @@ router.post(
 );
 
 /**
- * GET /api/admin/reports
- * Get all reports with filters
+ * @swagger
+ * /api/admin/reports:
+ *   get:
+ *     summary: Get all reports (admin)
+ *     description: Get paginated list of user/content reports. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, REVIEWING, RESOLVED, DISMISSED]
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *           enum: [LOW, MEDIUM, HIGH, CRITICAL]
+ *     responses:
+ *       200:
+ *         description: Paginated list of reports
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
  */
 router.get(
   "/reports",
@@ -438,8 +762,43 @@ router.get(
 );
 
 /**
- * PATCH /api/admin/reports/:id
- * Update report status/resolution
+ * @swagger
+ * /api/admin/reports/{id}:
+ *   patch:
+ *     summary: Update report status
+ *     description: Update report status and resolution. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Report ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [PENDING, REVIEWING, RESOLVED, DISMISSED]
+ *               resolution:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Report updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/reports/:id",
@@ -475,8 +834,47 @@ router.patch(
 );
 
 /**
- * GET /api/admin/marketplace
- * Get all marketplace listings with filters
+ * @swagger
+ * /api/admin/marketplace:
+ *   get:
+ *     summary: Get all marketplace listings (admin)
+ *     description: Get paginated list of all marketplace listings. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, SOLD, INACTIVE]
+ *       - in: query
+ *         name: sellerId
+ *         schema:
+ *           type: string
+ *         description: Filter by seller ID
+ *     responses:
+ *       200:
+ *         description: Paginated list of listings
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
  */
 router.get(
   "/marketplace",
@@ -496,7 +894,7 @@ router.get(
         take: Number(limit),
         include: {
           seller: {
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, avatar: true },
           },
         },
         orderBy: { createdAt: "desc" },

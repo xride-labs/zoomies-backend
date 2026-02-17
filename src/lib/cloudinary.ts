@@ -25,8 +25,12 @@ export enum MediaType {
  */
 export enum MediaFolder {
   PROFILES = "zoomies/profiles",
+  PROFILE_COVERS = "zoomies/profiles/covers",
+  PROFILE_GALLERIES = "zoomies/profiles/galleries",
+  BIKES = "zoomies/bikes",
   CLUBS = "zoomies/clubs",
   CLUB_COVERS = "zoomies/clubs/covers",
+  CLUB_GALLERIES = "zoomies/clubs/galleries",
   RIDES = "zoomies/rides",
   LISTINGS = "zoomies/marketplace",
   POSTS = "zoomies/posts",
@@ -67,6 +71,18 @@ export interface UploadOptions {
 const imageTransformations = {
   profile: [
     { width: 400, height: 400, crop: "fill", gravity: "face" },
+    { quality: "auto", fetch_format: "auto" },
+  ],
+  profileCover: [
+    { width: 1200, height: 400, crop: "fill" },
+    { quality: "auto", fetch_format: "auto" },
+  ],
+  gallery: [
+    { width: 1200, height: 1200, crop: "limit" },
+    { quality: "auto", fetch_format: "auto" },
+  ],
+  bikeImage: [
+    { width: 1000, height: 750, crop: "limit" },
     { quality: "auto", fetch_format: "auto" },
   ],
   clubLogo: [
@@ -150,6 +166,50 @@ export async function uploadProfileImage(
 }
 
 /**
+ * Upload profile cover image
+ */
+export async function uploadProfileCover(
+  file: string,
+  userId: string,
+): Promise<UploadResult> {
+  return uploadMedia(file, {
+    folder: MediaFolder.PROFILE_COVERS,
+    publicId: `cover_${userId}`,
+    transformation: imageTransformations.profileCover,
+  });
+}
+
+/**
+ * Upload profile gallery image
+ */
+export async function uploadProfileGallery(
+  file: string,
+  userId: string,
+): Promise<UploadResult> {
+  return uploadMedia(file, {
+    folder: MediaFolder.PROFILE_GALLERIES,
+    tags: [`user_${userId}`],
+    transformation: imageTransformations.gallery,
+    eager: [imageTransformations.thumbnail],
+  });
+}
+
+/**
+ * Upload bike image
+ */
+export async function uploadBikeImage(
+  file: string,
+  bikeId: string,
+): Promise<UploadResult> {
+  return uploadMedia(file, {
+    folder: MediaFolder.BIKES,
+    publicId: `bike_${bikeId}`,
+    transformation: imageTransformations.bikeImage,
+    eager: [imageTransformations.thumbnail],
+  });
+}
+
+/**
  * Upload club logo
  */
 export async function uploadClubLogo(
@@ -175,6 +235,21 @@ export async function uploadClubCover(
     folder: MediaFolder.CLUB_COVERS,
     publicId: `cover_${clubId}`,
     transformation: imageTransformations.clubCover,
+  });
+}
+
+/**
+ * Upload club gallery image
+ */
+export async function uploadClubGallery(
+  file: string,
+  clubId: string,
+): Promise<UploadResult> {
+  return uploadMedia(file, {
+    folder: MediaFolder.CLUB_GALLERIES,
+    tags: [`club_${clubId}`],
+    transformation: imageTransformations.gallery,
+    eager: [imageTransformations.thumbnail],
   });
 }
 

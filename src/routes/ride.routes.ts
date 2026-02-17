@@ -110,7 +110,7 @@ router.get(
         orderBy: { createdAt: "desc" },
         include: {
           creator: {
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, avatar: true },
           },
           _count: { select: { participants: true } },
         },
@@ -171,12 +171,12 @@ router.get(
       where: { id },
       include: {
         creator: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
         participants: {
           include: {
             user: {
-              select: { id: true, name: true, image: true },
+              select: { id: true, name: true, avatar: true },
             },
           },
         },
@@ -293,7 +293,7 @@ router.post(
       },
       include: {
         creator: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -312,8 +312,51 @@ router.post(
 );
 
 /**
- * PATCH /api/rides/:id
- * Update a ride
+ * @swagger
+ * /api/rides/{id}:
+ *   patch:
+ *     summary: Update a ride
+ *     description: Update ride details. Must be the ride creator or admin.
+ *     tags: [Rides]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               startLocation:
+ *                 type: string
+ *               endLocation:
+ *                 type: string
+ *               distance:
+ *                 type: number
+ *               duration:
+ *                 type: integer
+ *               scheduledAt:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       200:
+ *         description: Ride updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not ride owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/:id",
@@ -355,7 +398,7 @@ router.patch(
       },
       include: {
         creator: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -365,8 +408,30 @@ router.patch(
 );
 
 /**
- * DELETE /api/rides/:id
- * Delete a ride
+ * @swagger
+ * /api/rides/{id}:
+ *   delete:
+ *     summary: Delete a ride
+ *     description: Delete a ride. Must be the ride creator or admin.
+ *     tags: [Rides]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Ride deleted successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not ride owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.delete(
   "/:id",
@@ -389,8 +454,42 @@ router.delete(
 );
 
 /**
- * POST /api/rides/:id/join
- * Request to join a ride
+ * @swagger
+ * /api/rides/{id}/join:
+ *   post:
+ *     summary: Request to join a ride
+ *     description: Request to join a ride as a participant. Creates a REQUESTED status that needs to be approved by the ride creator.
+ *     tags: [Rides]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Ride ID
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 description: Optional message to ride creator
+ *     responses:
+ *       201:
+ *         description: Join request submitted
+ *       400:
+ *         description: Ride already started or ended
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       409:
+ *         description: Already requested to join
  */
 router.post(
   "/:id/join",
@@ -446,7 +545,7 @@ router.post(
       },
       include: {
         user: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -470,8 +569,49 @@ router.post(
 );
 
 /**
- * PATCH /api/rides/:id/participants/:userId
- * Update participant status (accept/decline)
+ * @swagger
+ * /api/rides/{id}/participants/{userId}:
+ *   patch:
+ *     summary: Update participant status
+ *     description: Accept or decline a ride join request. Must be ride creator or admin.
+ *     tags: [Rides]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Ride ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Participant user ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [ACCEPTED, DECLINED, CANCELLED]
+ *     responses:
+ *       200:
+ *         description: Participant status updated
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not ride owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/:id/participants/:userId",
@@ -487,7 +627,7 @@ router.patch(
       data: { status },
       include: {
         user: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -501,8 +641,29 @@ router.patch(
 );
 
 /**
- * DELETE /api/rides/:id/leave
- * Leave a ride
+ * @swagger
+ * /api/rides/{id}/leave:
+ *   delete:
+ *     summary: Leave a ride
+ *     description: Leave a ride you have joined.
+ *     tags: [Rides]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Ride ID
+ *     responses:
+ *       200:
+ *         description: Left ride successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: Not a participant in this ride
  */
 router.delete(
   "/:id/leave",

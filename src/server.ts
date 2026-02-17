@@ -47,6 +47,20 @@ app.use(cors(corsOptions));
 // Metrics middleware
 app.use(metricsMiddleware);
 
+// Log auth origin headers in dev to diagnose Better Auth origin checks
+app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
+  if (process.env.NODE_ENV !== "production") {
+    const origin = req.headers.origin;
+    const host = req.headers.host;
+    const referer = req.headers.referer;
+    console.log("[AUTH] Origin check", { origin, host, referer });
+    if (!origin && host) {
+      req.headers.origin = `http://${host}`;
+    }
+  }
+  next();
+});
+
 // Better Auth handler — MUST be mounted BEFORE express.json()
 // See: https://www.better-auth.com/docs/integrations/express
 app.all("/api/auth/*", toNodeHandler(auth));

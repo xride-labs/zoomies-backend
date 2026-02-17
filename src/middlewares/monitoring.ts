@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { getCurrentSession } from "../config/auth.js";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
-import { requireSuperAdmin, UserRole } from "./rbac.js";
+import { requireAdmin, UserRole } from "./rbac.js";
 
 export async function requireMonitoringAccess(
   req: Request,
@@ -18,7 +18,7 @@ export async function requireMonitoringAccess(
     process.env.METRICS_BEARER_TOKEN &&
     bearerToken === process.env.METRICS_BEARER_TOKEN
   ) {
-    (req as any).userRole = UserRole.SUPER_ADMIN;
+    (req as any).userRole = UserRole.ADMIN;
     return next();
   }
 
@@ -32,5 +32,5 @@ export async function requireMonitoringAccess(
   }
 
   (req as any).session = session;
-  return requireSuperAdmin(req, res, next);
+  return requireAdmin(req, res, next);
 }

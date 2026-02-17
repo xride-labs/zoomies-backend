@@ -93,6 +93,14 @@ This API uses **Better Auth** for authentication with multiple providers:
       name: "Marketplace",
       description: "Marketplace listing endpoints",
     },
+    {
+      name: "Media",
+      description: "Media upload endpoints - All images and videos are delivered via Cloudinary",
+    },
+    {
+      name: "Admin",
+      description: "Admin management endpoints (requires ADMIN role)",
+    },
   ],
   components: {
     securitySchemes: {
@@ -424,6 +432,78 @@ This API uses **Better Auth** for authentication with multiple providers:
                 example: 10,
               },
             },
+          },
+        },
+      },
+      MediaUploadResult: {
+        type: "object",
+        properties: {
+          publicId: {
+            type: "string",
+            description: "Cloudinary public ID",
+            example: "zoomies/profiles/profile_123",
+          },
+          url: {
+            type: "string",
+            format: "uri",
+            description: "HTTP URL of the media",
+          },
+          secureUrl: {
+            type: "string",
+            format: "uri",
+            description: "HTTPS URL of the media (Cloudinary CDN)",
+            example: "https://res.cloudinary.com/...",
+          },
+          format: {
+            type: "string",
+            description: "File format",
+            example: "jpg",
+          },
+          width: {
+            type: "integer",
+            description: "Image width in pixels",
+            example: 400,
+          },
+          height: {
+            type: "integer",
+            description: "Image height in pixels",
+            example: 400,
+          },
+          bytes: {
+            type: "integer",
+            description: "File size in bytes",
+            example: 45678,
+          },
+          resourceType: {
+            type: "string",
+            enum: ["image", "video"],
+            description: "Resource type",
+          },
+          thumbnailUrl: {
+            type: "string",
+            format: "uri",
+            description: "Thumbnail URL if available",
+          },
+        },
+      },
+      UploadSignature: {
+        type: "object",
+        properties: {
+          signature: {
+            type: "string",
+            description: "Cloudinary upload signature",
+          },
+          timestamp: {
+            type: "integer",
+            description: "Unix timestamp",
+          },
+          cloudName: {
+            type: "string",
+            description: "Cloudinary cloud name",
+          },
+          apiKey: {
+            type: "string",
+            description: "Cloudinary API key",
           },
         },
       },

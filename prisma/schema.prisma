@@ -48,32 +48,32 @@ model Session {
 }
 
 model User {
-  id            String  @id @default(cuid())
-  username      String? @unique
+  id            String    @id @default(cuid())
+  username      String?   @unique
   name          String?
-  email         String? @unique
-  bloodType     String? @map("blood_type")
-  emailVerified Boolean @default(false) @map("email_verified")
-  image         String?
-  phone         String? @unique // For mobile OTP
-  phoneVerified Boolean @default(false) @map("phone_verified")
+  email         String?   @unique
+  dob           DateTime? // Date of birth
+  bloodType     String?   @map("blood_type") // e.g., "O+", "A-", "B+", "AB-"
+  emailVerified Boolean   @default(false) @map("email_verified")
+  avatar        String? // Profile picture URL
+  coverImage    String?   @map("cover_image") // Cover/banner image URL
+  phone         String?   @unique // For mobile OTP
+  phoneVerified Boolean   @default(false) @map("phone_verified")
 
   // Profile fields
-  bio               String?
-  location          String?
-  ridesCompleted    Int?      @map("rides_completed")
-  bikeType          String?   @map("bike_type")
-  bikeOwned         String?   @map("bike_owned") // e.g., "Yamaha YZF-R3"
-  bikeOwnerSince    DateTime? @map("bike_owner_since")
-  bikeOdometer      Int? // in kilometers
-  bikeModifications String?   @map("bike_modifications") // e.g., JSON string of modifications
-  bikeOwnerAge      Int?      @map("bike_owner_age") // in years
-  xpPoints          Int?      @map("xp_points") // Experience points
-  experienceLevel   String?   @map("experience_level") // e.g., Beginner, Intermediate, Expert
-  levelOfActivity   String?   @map("level_of_activity") // e.g., Casual, Regular, Enthusiast
-  reputationScore   Float?    @map("reputation_score") // e.g., 4.5 out of 5
-  affiliations      String? // e.g., Clubs or groups the user is part of (as a JSON string)
-  reminders         String? // e.g., JSON string of reminder settings
+  bio      String?
+  location String?
+
+  // Experience system
+  xpPoints        Int?   @default(0) @map("xp_points") // Total experience points
+  level           Int    @default(1) // Current level (1-100)
+  levelTitle      String @default("Beginner") @map("level_title") // e.g., "Road Warrior", "Highway Legend"
+  reputationScore Float? @default(0) @map("reputation_score") // 0.0 to 5.0
+  activityLevel   String @default("Casual") @map("activity_level") // e.g., "Casual", "Regular", "Enthusiast", "Pro"
+
+  // Safety fields
+  helmetVerified  Boolean   @default(false) @map("helmet_verified")
+  lastSafetyCheck DateTime? @map("last_safety_check")
 
   // Timestamps
   createdAt DateTime @default(now()) @map("created_at")
@@ -99,6 +99,15 @@ model User {
   receivedReviews     Review[]             @relation("ReviewReceiver")
   reportsFiled        Report[]             @relation("ReportReporter")
 
+  // New relations for comprehensive profile
+  bikes             Bike[]
+  badges            UserBadge[]
+  emergencyContacts EmergencyContact[]
+  preferences       UserPreferences?
+  rideStats         UserRideStats?
+  friendsInitiated  Friendship[]       @relation("FriendInitiator")
+  friendsReceived   Friendship[]       @relation("FriendReceiver")
+
   @@map("users")
 }
 
@@ -106,12 +115,10 @@ model User {
 
 // User roles for role-based access control
 enum UserRole {
-  SUPER_ADMIN // Full platform access (web only)
-  ADMIN // System administrator (web only)
+  ADMIN // Super admin with full platform access (web + mobile)
   CLUB_OWNER // Club creator/manager (web + mobile)
-  USER // Regular user (default, mobile only)
-  RIDER // Active motorcycle rider (mobile only)
-  SELLER // Marketplace seller (web + mobile)
+  RIDER // Default role for new signups - active motorcycle rider (mobile)
+  SELLER // Marketplace seller - assigned when user lists items (web + mobile)
 }
 
 // Many-to-many user role assignments (multi-role support)
@@ -431,4 +438,175 @@ model Report {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("reports")
+}
+
+// ============================================
+// USER PROFILE ENHANCEMENT MODELS
+// ============================================
+
+// Bike model for user's motorcycles
+enum BikeType {
+  SPORT
+  CRUISER
+  TOURING
+  ADVENTURE
+  NAKED
+  CAFE_RACER
+  DUAL_SPORT
+  SCOOTER
+  COMMUTER
+  SUPERBIKE
+  OTHER
+}
+
+model Bike {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  make         String // e.g., "Yamaha", "Honda", "Royal Enfield"
+  model        String // e.g., "R15 V4", "Meteor 350"
+  year         Int // e.g., 2023
+  type         BikeType  @default(OTHER)
+  engineCc     Int?      @map("engine_cc") // Engine displacement in cc
+  color        String?
+  licensePlate String?   @map("license_plate")
+  vin          String? // Vehicle Identification Number
+  odo          Int       @default(0) // Odometer reading in km
+  ownerSince   DateTime? @map("owner_since")
+  isPrimary    Boolean   @default(false) @map("is_primary")
+  image        String? // Bike image URL
+
+  // Modifications stored as JSON
+  modifications Json? // { exhaust, tyres, lights, phoneMount, etc. }
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bikes")
+}
+
+// Badge definitions (master list of all badges)
+model Badge {
+  id          String  @id @default(cuid())
+  title       String  @unique // e.g., "First Ride", "1000 KM Club"
+  description String?
+  icon        String? // Emoji or icon URL
+  auraPoints  Int     @default(0) @map("aura_points") // XP/Aura points awarded
+  category    String? // e.g., "distance", "social", "achievement"
+  requirement String? // Description of how to earn this badge
+
+  // Users who have earned this badge
+  users UserBadge[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("badges")
+}
+
+// Junction table for users and their earned badges
+model UserBadge {
+  id       String   @id @default(cuid())
+  userId   String   @map("user_id")
+  badgeId  String   @map("badge_id")
+  earnedAt DateTime @default(now()) @map("earned_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+// Emergency contacts for user safety
+model EmergencyContact {
+  id           String  @id @default(cuid())
+  userId       String  @map("user_id")
+  name         String
+  phone        String
+  relationship String? // e.g., "Spouse", "Parent", "Friend", "Sibling"
+  isPrimary    Boolean @default(false) @map("is_primary")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("emergency_contacts")
+}
+
+// User preferences for app settings
+model UserPreferences {
+  id                String  @id @default(cuid())
+  userId            String  @unique @map("user_id")
+  rideReminders     Boolean @default(true) @map("ride_reminders")
+  serviceReminderKm Int     @default(3000) @map("service_reminder_km")
+  darkMode          Boolean @default(false) @map("dark_mode")
+  units             String  @default("metric") // "metric" or "imperial"
+  openToInvite      Boolean @default(true) @map("open_to_invite")
+
+  // Notification preferences
+  pushNotifications  Boolean @default(true) @map("push_notifications")
+  emailNotifications Boolean @default(true) @map("email_notifications")
+  smsNotifications   Boolean @default(false) @map("sms_notifications")
+
+  // Privacy settings
+  profileVisibility String  @default("public") @map("profile_visibility") // "public", "friends", "private"
+  showLocation      Boolean @default(true) @map("show_location")
+  showBikes         Boolean @default(true) @map("show_bikes")
+  showStats         Boolean @default(true) @map("show_stats")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("user_preferences")
+}
+
+// User ride statistics (aggregated data)
+model UserRideStats {
+  id                String @id @default(cuid())
+  userId            String @unique @map("user_id")
+  totalDistanceKm   Int    @default(0) @map("total_distance_km")
+  longestRideKm     Int    @default(0) @map("longest_ride_km")
+  totalRides        Int    @default(0) @map("total_rides")
+  nightRides        Int    @default(0) @map("night_rides")
+  weekendRides      Int    @default(0) @map("weekend_rides")
+  soloRides         Int    @default(0) @map("solo_rides")
+  groupRides        Int    @default(0) @map("group_rides")
+  avgRideDistanceKm Float  @default(0) @map("avg_ride_distance_km")
+  totalRideTimeMin  Int    @default(0) @map("total_ride_time_min") // Total time in minutes
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("user_ride_stats")
+}
+
+// Friendship model for mutual connections (different from followers)
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  BLOCKED
+}
+
+model Friendship {
+  id         String           @id @default(cuid())
+  senderId   String           @map("sender_id")
+  receiverId String           @map("receiver_id")
+  status     FriendshipStatus @default(PENDING)
+
+  sender   User @relation("FriendInitiator", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("FriendReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([senderId, receiverId])
+  @@map("friendships")
 }

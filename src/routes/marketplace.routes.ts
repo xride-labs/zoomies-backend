@@ -114,7 +114,7 @@ router.get(
         orderBy: { createdAt: "desc" },
         include: {
           seller: {
-            select: { id: true, name: true, image: true },
+            select: { id: true, name: true, avatar: true },
           },
         },
       }),
@@ -254,12 +254,12 @@ router.get(
       where: { id },
       include: {
         seller: {
-          select: { id: true, name: true, image: true, reputationScore: true },
+          select: { id: true, name: true, avatar: true, reputationScore: true },
         },
         reviews: {
           include: {
             reviewer: {
-              select: { id: true, name: true, image: true },
+              select: { id: true, name: true, avatar: true },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -377,7 +377,7 @@ router.post(
       },
       include: {
         seller: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -394,8 +394,59 @@ router.post(
 );
 
 /**
- * PATCH /api/marketplace/:id
- * Update a listing
+ * @swagger
+ * /api/marketplace/{id}:
+ *   patch:
+ *     summary: Update a listing
+ *     description: Update listing details. Must be the seller or admin. Listing images should be uploaded via /api/media/upload/listing/{listingId} endpoint and will be served via Cloudinary CDN.
+ *     tags: [Marketplace]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               currency:
+ *                 type: string
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uri
+ *                 description: Array of Cloudinary image URLs (max 10)
+ *               category:
+ *                 type: string
+ *                 enum: [Motorcycle, Gear, Accessories, Parts, Other]
+ *               condition:
+ *                 type: string
+ *                 enum: [New, Like New, Good, Fair, Poor]
+ *               status:
+ *                 type: string
+ *                 enum: [ACTIVE, SOLD, INACTIVE]
+ *     responses:
+ *       200:
+ *         description: Listing updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not listing owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.patch(
   "/:id",
@@ -433,7 +484,7 @@ router.patch(
       },
       include: {
         seller: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });
@@ -443,8 +494,30 @@ router.patch(
 );
 
 /**
- * DELETE /api/marketplace/:id
- * Delete a listing
+ * @swagger
+ * /api/marketplace/{id}:
+ *   delete:
+ *     summary: Delete a listing
+ *     description: Delete a marketplace listing and all its reviews. Must be the seller or admin.
+ *     tags: [Marketplace]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Listing deleted successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Not listing owner or admin
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.delete(
   "/:id",
@@ -467,8 +540,48 @@ router.delete(
 );
 
 /**
- * POST /api/marketplace/:id/reviews
- * Add a review to a listing
+ * @swagger
+ * /api/marketplace/{id}/reviews:
+ *   post:
+ *     summary: Add a review to a listing
+ *     description: Add a review to a marketplace listing. Cannot review own listing. Can only review once per listing.
+ *     tags: [Marketplace]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Listing ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - rating
+ *             properties:
+ *               rating:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 5
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Review added successfully
+ *       400:
+ *         description: Cannot review own listing
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       409:
+ *         description: Already reviewed this listing
  */
 router.post(
   "/:id/reviews",
@@ -525,7 +638,7 @@ router.post(
       },
       include: {
         reviewer: {
-          select: { id: true, name: true, image: true },
+          select: { id: true, name: true, avatar: true },
         },
       },
     });

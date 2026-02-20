@@ -89,6 +89,7 @@ model User {
   rideParticipations  RideParticipant[]
   createdClubs        Club[]               @relation("ClubOwner")
   clubMemberships     ClubMember[]
+  clubJoinRequests    ClubJoinRequest[]
   marketplaceListings MarketplaceListing[] @relation("SellerListings")
   chatMessages        ChatMessage[]
   posts               Post[]
@@ -252,7 +253,8 @@ model Club {
   owner   User   @relation("ClubOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
   // Members relation
-  members ClubMember[]
+  members      ClubMember[]
+  joinRequests ClubJoinRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -315,6 +317,29 @@ model ClubMember {
 
   @@unique([clubId, userId])
   @@map("club_members")
+}
+
+// Club join request for private clubs or moderated joins
+model ClubJoinRequest {
+  id        String                @id @default(cuid())
+  clubId    String                @map("club_id")
+  userId    String                @map("user_id")
+  message   String? // Optional message from the requester
+  status    ClubJoinRequestStatus @default(PENDING)
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@map("club_join_requests")
+}
+
+enum ClubJoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 // Ride participant model to track participation

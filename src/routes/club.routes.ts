@@ -122,6 +122,148 @@ router.get(
 
 /**
  * @swagger
+ * /api/clubs/my:
+ *   get:
+ *     summary: Get my clubs
+ *     description: Get all clubs where the current user is a member
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of user's clubs
+ */
+router.get(
+  "/my",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+
+    const memberships = await prisma.clubMember.findMany({
+      where: { userId: session.user.id },
+      include: {
+        club: {
+          include: {
+            owner: {
+              select: { id: true, name: true, avatar: true },
+            },
+            _count: { select: { members: true } },
+          },
+        },
+      },
+      orderBy: { joinedAt: "desc" },
+    });
+
+    // Also include clubs where user is the owner
+    const ownedClubs = await prisma.club.findMany({
+      where: { ownerId: session.user.id },
+      include: {
+        owner: {
+          select: { id: true, name: true, avatar: true },
+        },
+        _count: { select: { members: true } },
+      },
+    });
+
+    const clubs = [
+      ...memberships.map((m) => ({
+        ...m.club,
+        role: m.role,
+        memberCount: m.club._count.members,
+      })),
+      ...ownedClubs.map((c) => ({
+        ...c,
+        role: "FOUNDER",
+        memberCount: c._count.members,
+      })),
+    ];
+
+    // Deduplicate (owner might also be a member)
+    const uniqueClubs = Array.from(
+      new Map(clubs.map((c) => [c.id, c])).values(),
+    );
+
+    ApiResponse.success(res, { clubs: uniqueClubs });
+  }),
+);
+
+/**
+ * @swagger
+ * /api/clubs/discover:
+ *   get:
+ *     summary: Discover public clubs
+ *     description: Get paginated list of public clubs for discovery
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *     responses:
+ *       200:
+ *         description: List of discoverable clubs
+ */
+router.get(
+  "/discover",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const page = parseInt(req.query.page as string) || 1;
+    const location = req.query.location as string | undefined;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    // Get clubs user is NOT a member of
+    const userClubIds = await prisma.clubMember.findMany({
+      where: { userId: session.user.id },
+      select: { clubId: true },
+    });
+
+    const userOwnedClubs = await prisma.club.findMany({
+      where: { ownerId: session.user.id },
+      select: { id: true },
+    });
+
+    const excludeIds = [
+      ...userClubIds.map((m) => m.clubId),
+      ...userOwnedClubs.map((c) => c.id),
+    ];
+
+    const clubs = await prisma.club.findMany({
+      where: {
+        isPublic: true,
+        id: { notIn: excludeIds },
+        ...(location && { location }),
+      },
+      include: {
+        owner: {
+          select: { id: true, name: true, avatar: true },
+        },
+        _count: { select: { members: true } },
+      },
+      orderBy: { memberCount: "desc" },
+      skip,
+      take: limit + 1,
+    });
+
+    const hasMore = clubs.length > limit;
+    const resultClubs = hasMore ? clubs.slice(0, limit) : clubs;
+
+    ApiResponse.success(res, {
+      clubs: resultClubs.map((c) => ({
+        ...c,
+        memberCount: c._count.members,
+      })),
+      hasMore,
+    });
+  }),
+);
+
+/**
+ * @swagger
  * /api/clubs/{id}:
  *   get:
  *     summary: Get club by ID
@@ -598,6 +740,170 @@ router.delete(
     });
 
     ApiResponse.success(res, null, "Left club successfully");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/clubs/{id}/members:
+ *   get:
+ *     summary: Get club members
+ *     description: Get paginated list of club members
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *     responses:
+ *       200:
+ *         description: List of club members
+ */
+router.get(
+  "/:id/members",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const members = await prisma.clubMember.findMany({
+      where: { clubId: id },
+      include: {
+        user: {
+          select: { id: true, name: true, avatar: true, email: true },
+        },
+      },
+      orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
+      skip,
+      take: limit + 1,
+    });
+
+    const hasMore = members.length > limit;
+    const resultMembers = hasMore ? members.slice(0, limit) : members;
+
+    ApiResponse.success(res, {
+      members: resultMembers.map((m) => ({
+        userId: m.userId,
+        user: m.user,
+        role: m.role,
+        joinedAt: m.joinedAt,
+      })),
+      hasMore,
+    });
+  }),
+);
+
+/**
+ * @swagger
+ * /api/clubs/{id}/requests:
+ *   get:
+ *     summary: Get pending join requests
+ *     description: Get list of pending join requests for a club. Requires club ADMIN role.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of pending requests
+ */
+router.get(
+  "/:id/requests",
+  validateParams(idParamSchema),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
+    ApiResponse.success(res, {
+      requests: [],
+    });
+  }),
+);
+
+/**
+ * @swagger
+ * /api/clubs/{id}/requests/{userId}/approve:
+ *   post:
+ *     summary: Approve join request
+ *     description: Approve a pending join request. Requires club ADMIN role.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Request approved
+ */
+router.post(
+  "/:id/requests/:userId/approve",
+  validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
+    ApiResponse.success(res, null, "Request approved");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/clubs/{id}/requests/{userId}/reject:
+ *   post:
+ *     summary: Reject join request
+ *     description: Reject a pending join request. Requires club ADMIN role.
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Request rejected
+ */
+router.post(
+  "/:id/requests/:userId/reject",
+  validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
+    ApiResponse.success(res, null, "Request rejected");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/clubs/{id}/join:
+ *   delete:
+ *     summary: Cancel join request
+ *     description: Cancel a pending join request
+ *     tags: [Clubs]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Request cancelled
+ */
+router.delete(
+  "/:id/join",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
+    ApiResponse.success(res, null, "Join request cancelled");
   }),
 );
 

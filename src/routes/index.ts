@@ -5,3 +5,4 @@ export { default as clubRoutes } from "./club.routes.js";
 export { default as marketplaceRoutes } from "./marketplace.routes.js";
 export { default as adminRoutes } from "./admin.routes.js";
 export { default as mediaRoutes } from "./media.routes.js";
+export { default as feedRoutes } from "./feed.routes.js";

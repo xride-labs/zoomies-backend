@@ -203,9 +203,14 @@ export async function updateUserStatistics(): Promise<{ updated: number }> {
         },
       });
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { ridesCompleted: ridesCount },
+      // Upsert UserRideStats to update totalRides
+      await prisma.userRideStats.upsert({
+        where: { userId: user.id },
+        update: { totalRides: ridesCount },
+        create: {
+          userId: user.id,
+          totalRides: ridesCount,
+        },
       });
 
       updated++;

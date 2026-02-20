@@ -240,7 +240,7 @@ router.get(
           avatar: true,
           phone: true,
           userRoles: { select: { role: true } },
-          ridesCompleted: true,
+          rideStats: { select: { totalRides: true } },
           createdAt: true,
           _count: {
             select: { createdRides: true, createdClubs: true },
@@ -252,9 +252,10 @@ router.get(
     ]);
 
     // Flatten roles for response
-    const usersWithRoles = users.map(({ userRoles, ...u }) => ({
+    const usersWithRoles = users.map(({ userRoles, rideStats, ...u }) => ({
       ...u,
       roles: userRoles.map((r) => r.role),
+      ridesCompleted: rideStats?.totalRides ?? 0,
     }));
 
     ApiResponse.paginated(res, usersWithRoles, {

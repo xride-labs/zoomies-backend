@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { createServer } from "http";
 
 // Load environment variables
 dotenv.config();
@@ -18,13 +19,17 @@ import {
   adminRoutes,
   mediaRoutes,
   feedRoutes,
+  discoveryRoutes,
+  chatRoutes,
 } from "./routes/index.js";
 import { initializeScheduledJobs } from "./jobs/scheduler.js";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
 import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
 import { requireMonitoringAccess } from "./middlewares/monitoring.js";
+import { createSocketServer } from "./lib/socket.js";
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Trust proxy (required for secure cookies behind reverse proxies)
@@ -119,6 +124,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/media", mediaRoutes);
 app.use("/api/feed", feedRoutes);
 app.use("/api/posts", feedRoutes);
+app.use("/api/discover", discoveryRoutes);
+app.use("/api/chat", chatRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -136,19 +143,24 @@ async function startServer() {
   try {
     console.log("[SERVER] Starting Zoomies Backend Server...");
 
-    // Connect to MongoDB (optional, will warn if not configured)
-    // Server will start even if MongoDB connection fails
+    // Connect to MongoDB (required for chat)
     try {
       await connectMongoDB();
     } catch (mongoError) {
-      console.warn("⚠️  MongoDB connection failed, continuing without MongoDB");
+      console.warn(
+        "⚠️  MongoDB connection failed, chat features will be unavailable",
+      );
     }
+
+    // Initialize Socket.io for real-time chat
+    const io = createSocketServer(httpServer);
+    console.log("[SERVER] Socket.io chat server initialized");
 
     // Initialize scheduled background jobs
     console.log("[SERVER] Initializing scheduled jobs...");
     initializeScheduledJobs();
 
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
@@ -181,6 +193,14 @@ async function startServer() {
 ║   - GET  /api/marketplace                                  ║
 ║   - GET  /api/admin (requires admin role)                  ║
 ║   - POST /api/media (file uploads)                         ║
+║                                                            ║
+║   Chat endpoints:                                          ║
+║   - GET  /api/chat/conversations                           ║
+║   - POST /api/chat/conversations                           ║
+║   - GET  /api/chat/conversations/:id/messages              ║
+║   - POST /api/chat/conversations/:id/messages              ║
+║   - GET  /api/chat/unread                                  ║
+║   - WebSocket: ws://${process.env.BETTER_AUTH_BASE_URL}:${PORT}
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
       `);

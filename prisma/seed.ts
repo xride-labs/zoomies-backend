@@ -443,316 +443,447 @@ async function main() {
   });
   console.log("✅ Created friendships");
 
-  // Create Clubs
-  const club1 = await prisma.club.create({
-    data: {
-      name: "Mumbai Riders Club",
-      description:
-        "Premier riding club for Mumbai bikers. Weekly rides and events.",
-      location: "Mumbai, India",
-      establishedAt: new Date("2018-05-01"),
-      verified: true,
-      clubType: "Riding Club",
-      isPublic: true,
-      memberCount: 3,
-      trophies: ["Best Club 2023", "Most Active Club"],
-      trophyCount: 2,
-      reputation: 4.8,
-      ownerId: adminUser.id,
-    },
-  });
-  console.log("✅ Created club:", club1.name);
+  // ── Bangalore Coordinates (base: 12.9716°N, 77.5946°E) ─────────────────
+  const bangaloreBase = {
+    lat: 12.9716,
+    lng: 77.5946,
+  };
 
-  const club2 = await prisma.club.create({
-    data: {
-      name: "Bangalore Adventure Riders",
-      description: "For those who love off-road and adventure riding",
-      location: "Bangalore, India",
-      establishedAt: new Date("2020-08-15"),
-      verified: true,
-      clubType: "Adventure Club",
-      isPublic: true,
-      memberCount: 2,
-      trophies: ["Adventure Champions"],
-      trophyCount: 1,
-      reputation: 4.6,
-      ownerId: user3.id,
-    },
-  });
-  console.log("✅ Created club:", club2.name);
+  // Helper to generate nearby coords (within ~15km radius)
+  function generateBangaloreCoords(index: number) {
+    const latDelta = (Math.sin(index * 0.5) * 0.15) % 0.15;
+    const lngDelta = (Math.cos(index * 0.7) * 0.15) % 0.15;
+    return {
+      lat: bangaloreBase.lat + (latDelta - 0.075),
+      lng: bangaloreBase.lng + (lngDelta - 0.075),
+    };
+  }
 
-  const club3 = await prisma.club.create({
-    data: {
-      name: "Delhi Speed Demons",
-      description: "Track day enthusiasts and speed lovers",
-      location: "Delhi, India",
-      verified: false,
-      clubType: "Sport Club",
-      isPublic: true,
-      memberCount: 1,
-      reputation: 4.5,
-      ownerId: user2.id,
-    },
-  });
-  console.log("✅ Created club:", club3.name);
+  // Create 30+ Clubs with Bangalore coordinates
+  const clubNames = [
+    "Bangalore Velocity Riders",
+    "Silk City Bikers",
+    "Outer Ring Road Warriors",
+    "Tech Park Riders Club",
+    "Indiranagar Motorcycle Society",
+    "Whitefield Adventure Club",
+    "Bellandur Cruiser Community",
+    "Yeshwanthpur Speed Enthusiasts",
+    "Electronic City Riders",
+    "Banashankari Touring Club",
+    "Marathahalli Bike Brotherhood",
+    "Aravind Eye Hospital Riders",
+    "Hebbal Lake Weekend Warriors",
+    "Koramangala Casual Riders",
+    "Jayanagar Club Members",
+    "Rajajinagar Motorcycle Circle",
+    "Ulsoor Urban Explorers",
+    "Langford Road Riders",
+    "Nageswara Rao Park Club",
+    "Varthur Adrenaline Junkies",
+    "RT Nagar Bike Lovers",
+    "Frazer Town Heritage Riders",
+    "Yelahanka Noble Riders",
+    "Yeshwantpur Off-Road Club",
+    "Sanjaynagar Motorcycle Guild",
+    "Vidyaranyapura Adventure Seekers",
+    "Singasandra Speedway Club",
+    "Nagarbhavi Night Riders",
+    "Jalahalli Weekend Waves",
+    "Gowdenhalli Touring Society",
+    "Dakshineswar Motorcycle Collective",
+    "Peenya Industrial Area Riders",
+    "Goraguntepalya Casual Commuters",
+  ];
 
-  // Create Club Members
+  const clubs: any[] = [];
+  for (let i = 0; i < clubNames.length; i++) {
+    const coords = generateBangaloreCoords(i);
+    const club = await prisma.club.create({
+      data: {
+        name: clubNames[i],
+        description: `Premier motorcycle and scooter club in Bangalore. Join ${clubNames[i]} for weekly group rides, track events, and social gatherings!`,
+        location: "Bangalore, India",
+        latitude: coords.lat,
+        longitude: coords.lng,
+        establishedAt: new Date(
+          Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000,
+        ),
+        verified: Math.random() > 0.3,
+        clubType: [
+          "Riding Club",
+          "Adventure Club",
+          "Sport Club",
+          "Casual Community",
+        ][Math.floor(Math.random() * 4)],
+        isPublic: true,
+        memberCount: Math.floor(Math.random() * 50) + 5,
+        trophies:
+          Math.random() > 0.5 ? ["Best Turnout 2025", "Most Active"] : [],
+        trophyCount:
+          Math.random() > 0.5 ? Math.floor(Math.random() * 3) + 1 : 0,
+        reputation: 3.5 + Math.random() * 1.5,
+        ownerId: [adminUser.id, user1.id, user2.id, user3.id][
+          Math.floor(Math.random() * 4)
+        ],
+      },
+    });
+    clubs.push(club);
+  }
+  console.log(`✅ Created ${clubs.length} clubs with Bangalore coordinates`);
+
+  // Create Club Members (deduplicated to avoid unique constraint violations)
+  const clubMemberMap = new Map<string, any>();
+  for (let i = 0; i < clubs.length; i++) {
+    const ownerKey = `${clubs[i].id}:${clubs[i].ownerId}`;
+    clubMemberMap.set(ownerKey, {
+      clubId: clubs[i].id,
+      userId: clubs[i].ownerId,
+      role: "FOUNDER",
+    });
+    // Add random other members (skip if same as owner)
+    const userIds = [adminUser.id, user1.id, user2.id, user3.id, user4.id];
+    for (let j = 0; j < Math.floor(Math.random() * 4) + 1; j++) {
+      const userId = userIds[Math.floor(Math.random() * userIds.length)];
+      const key = `${clubs[i].id}:${userId}`;
+      if (!clubMemberMap.has(key)) {
+        clubMemberMap.set(key, {
+          clubId: clubs[i].id,
+          userId,
+          role: ["MEMBER", "OFFICER", "ADMIN"][Math.floor(Math.random() * 3)],
+        });
+      }
+    }
+  }
+  const clubMemberData = Array.from(clubMemberMap.values());
   await prisma.clubMember.createMany({
-    data: [
-      { clubId: club1.id, userId: adminUser.id, role: "FOUNDER" },
-      { clubId: club1.id, userId: user1.id, role: "MEMBER" },
-      { clubId: club1.id, userId: user2.id, role: "OFFICER" },
-      { clubId: club2.id, userId: user3.id, role: "FOUNDER" },
-      { clubId: club2.id, userId: user1.id, role: "MEMBER" },
-      { clubId: club3.id, userId: user2.id, role: "FOUNDER" },
-    ],
+    data: clubMemberData,
   });
-  console.log("✅ Created club memberships");
+  console.log(`✅ Created ${clubMemberData.length} club memberships`);
 
-  // Create Rides
-  const ride1 = await prisma.ride.create({
-    data: {
-      title: "Mumbai to Lonavala Weekend Ride",
-      description:
-        "Scenic ride through the Western Ghats. Perfect for all skill levels.",
-      startLocation: "Mumbai, India",
-      endLocation: "Lonavala, India",
-      experienceLevel: "Intermediate",
-      xpRequired: 500,
-      pace: "Moderate",
-      distance: 83.5,
-      duration: 180,
-      scheduledAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      status: "PLANNED",
-      creatorId: adminUser.id,
-      clubId: club1.id,
-    },
-  });
-  console.log("✅ Created ride:", ride1.title);
+  // Create 30+ Rides with Bangalore coordinates
+  const rideNames = [
+    "Nandi Hills Sunrise Expedition",
+    "Ring Road Night Cruise",
+    "Electronic City Tech Park Ride",
+    "Old Airport Road Speed Run",
+    "Sarjapur Road Scenic Tour",
+    "Whitefield Tech Campus Commute",
+    "Bannerghatta Nature Reserve Ride",
+    "Tumkur Road Long Distance",
+    "Mysore Road Highway Dash",
+    "Bangalore Fort Historical Tour",
+    "Vidhana Soudha City Exploration",
+    "Cubbon Park Casual Cruise",
+    "Indiranagar Lake Weekend Ride",
+    "Bellandur Lake Evening Tour",
+    "Yeshwanthpur Industrial Area Loop",
+    "Marathahalli Bridge Challenge",
+    "Koramangala Nightlife Run",
+    "Jayanagar Group Meetup Ride",
+    "RT Nagar Community Cruise",
+    "Rajajinagar Breakfast Ride",
+    "Ulsoor Urban Adventure",
+    "Langford Road Vintage Tour",
+    "Hebbal Weekend Warriors Ride",
+    "Varthur Adrenaline Rush",
+    "Frazer Town Heritage Cruise",
+    "Yelahanka Noble Off-Road Trail",
+    "Sanjaynagar Motorcycle Meetup",
+    "Vidyaranyapura Adventure Trek",
+    "Singasandra Desert Road Blast",
+    "Nagarbhavi Night Exploration",
+    "Jalahalli Weekend Waves",
+    "Goraguntepalya Cross-City Ride",
+    "Dakshineswar Mountain Twisties",
+  ];
 
-  const ride2 = await prisma.ride.create({
-    data: {
-      title: "Bangalore to Nandi Hills Sunrise Ride",
-      description: "Early morning ride to catch the sunrise at Nandi Hills",
-      startLocation: "Bangalore, India",
-      endLocation: "Nandi Hills, India",
-      experienceLevel: "Beginner",
-      xpRequired: 100,
-      pace: "Leisurely",
-      distance: 60.0,
-      duration: 120,
-      scheduledAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      status: "PLANNED",
-      creatorId: user1.id,
-      clubId: club2.id,
-    },
-  });
-  console.log("✅ Created ride:", ride2.title);
+  const rideStartLocations = [
+    "Nandi Hills",
+    "Electronic City",
+    "Whitefield",
+    "Sarjapur",
+    "Old Airport Road",
+    "Bannerghatta",
+    "Tumkur",
+    "Mysore Road",
+    "Bangalore Fort",
+    "Cubbon Park",
+    "Indiranagar",
+    "Bellandur",
+    "Yeshwanthpur",
+    "Marathahalli",
+    "Koramangala",
+    "Jayanagar",
+    "RT Nagar",
+    "Rajajinagar",
+    "Ulsoor",
+    "Langford Road",
+    "Hebbal",
+    "Varthur",
+    "Frazer Town",
+    "Yelahanka",
+    "Sanjaynagar",
+    "Vidyaranyapura",
+    "Singasandra",
+    "Nagarbhavi",
+    "Jalahalli",
+    "Goraguntepalya",
+    "Dakshineswar",
+    "Peenya",
+    "Gowdenhalli",
+  ];
 
-  const ride3 = await prisma.ride.create({
-    data: {
-      title: "Delhi to Agra Day Trip",
-      description: "Visit the Taj Mahal on two wheels!",
-      startLocation: "Delhi, India",
-      endLocation: "Agra, India",
-      experienceLevel: "Intermediate",
-      xpRequired: 800,
-      pace: "Fast",
-      distance: 230.0,
-      duration: 240,
-      scheduledAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-      status: "PLANNED",
-      creatorId: user2.id,
-      clubId: club3.id,
-    },
-  });
-  console.log("✅ Created ride:", ride3.title);
+  const rides: any[] = [];
+  for (let i = 0; i < rideNames.length; i++) {
+    const coords = generateBangaloreCoords(i);
+    const experienceLevels = ["Beginner", "Intermediate", "Expert"];
+    const paces = ["Leisurely", "Moderate", "Fast"];
 
-  const ride4 = await prisma.ride.create({
-    data: {
-      title: "Pune City Night Ride",
-      description: "Casual night ride through Pune city",
-      startLocation: "Pune, India",
-      endLocation: "Pune, India",
-      experienceLevel: "Beginner",
-      pace: "Leisurely",
-      distance: 25.0,
-      duration: 90,
-      scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-      status: "PLANNED",
-      creatorId: user3.id,
-    },
-  });
-  console.log("✅ Created ride:", ride4.title);
+    const futureDate = new Date(
+      Date.now() + Math.random() * 30 * 24 * 60 * 60 * 1000,
+    );
+    const isLive = Math.random() > 0.9;
 
-  // In-progress ride for live tracking demo
-  const ride5 = await prisma.ride.create({
-    data: {
-      title: "Chennai Coastal Express",
-      description: "Live ride along ECR — currently in progress!",
-      startLocation: "Chennai, India",
-      endLocation: "Mahabalipuram, India",
-      experienceLevel: "Beginner",
-      pace: "Moderate",
-      distance: 55.0,
-      duration: 90,
-      scheduledAt: new Date(Date.now() - 30 * 60 * 1000),
-      status: "IN_PROGRESS",
-      creatorId: user4.id,
-    },
-  });
-  console.log("✅ Created live ride:", ride5.title);
+    const ride = await prisma.ride.create({
+      data: {
+        title: rideNames[i],
+        description: `${rideNames[i]} - A premium experience for motorcycle enthusiasts. Join our community for an unforgettable riding adventure with fellow riders!`,
+        startLocation: rideStartLocations[i],
+        endLocation: rideStartLocations[(i + 1) % rideStartLocations.length],
+        latitude: coords.lat,
+        longitude: coords.lng,
+        experienceLevel: experienceLevels[Math.floor(Math.random() * 3)],
+        xpRequired: Math.floor(Math.random() * 1000) + 100,
+        pace: paces[Math.floor(Math.random() * 3)],
+        distance: Math.floor(Math.random() * 150) + 20,
+        duration: Math.floor(Math.random() * 240) + 60,
+        scheduledAt: futureDate,
+        status: isLive ? "IN_PROGRESS" : "PLANNED",
+        creatorId: [adminUser.id, user1.id, user2.id, user3.id, user4.id][
+          Math.floor(Math.random() * 5)
+        ],
+        clubId: clubs[Math.floor(Math.random() * clubs.length)].id,
+      },
+    });
+    rides.push(ride);
+  }
+  console.log(`✅ Created ${rides.length} rides with Bangalore coordinates`);
 
   // Create Ride Participants
+  const participantData: any[] = [];
+  for (const ride of rides) {
+    const participantCount = Math.floor(Math.random() * 10) + 1;
+    const userIds = [adminUser.id, user1.id, user2.id, user3.id, user4.id];
+    for (let j = 0; j < participantCount; j++) {
+      const userId = userIds[Math.floor(Math.random() * userIds.length)];
+      // Check if already added to avoid duplicates
+      const exists = participantData.some(
+        (p) => p.rideId === ride.id && p.userId === userId,
+      );
+      if (!exists) {
+        participantData.push({
+          rideId: ride.id,
+          userId: userId,
+          status: ["REQUESTED", "ACCEPTED", "DECLINED"][
+            Math.floor(Math.random() * 3)
+          ],
+        });
+      }
+    }
+  }
   await prisma.rideParticipant.createMany({
-    data: [
-      { rideId: ride1.id, userId: user1.id, status: "ACCEPTED" },
-      { rideId: ride1.id, userId: user2.id, status: "ACCEPTED" },
-      { rideId: ride1.id, userId: user3.id, status: "REQUESTED" },
-      { rideId: ride2.id, userId: user2.id, status: "ACCEPTED" },
-      { rideId: ride2.id, userId: user3.id, status: "ACCEPTED" },
-      { rideId: ride3.id, userId: user1.id, status: "REQUESTED" },
-      { rideId: ride4.id, userId: user1.id, status: "ACCEPTED" },
-      { rideId: ride5.id, userId: user4.id, status: "ACCEPTED" },
-      { rideId: ride5.id, userId: user1.id, status: "ACCEPTED" },
-    ],
+    data: participantData,
   });
-  console.log("✅ Created ride participants");
+  console.log(`✅ Created ${participantData.length} ride participants`);
 
-  // Create Marketplace Listings
-  const listing1 = await prisma.marketplaceListing.create({
-    data: {
-      title: "AGV K3 SV Helmet - Size L",
-      description:
-        "Brand new AGV helmet, never used. Comes with original box and accessories.",
-      price: 15000,
-      currency: "INR",
-      category: "Gear",
-      subcategory: "Helmet",
-      condition: "New",
-      images: [],
-      status: "ACTIVE",
-      sellerId: user4.id,
-    },
-  });
-  console.log("✅ Created listing:", listing1.title);
+  // Create 30+ Marketplace Listings with Bangalore coordinates
+  const listingNames = [
+    "AGV K3 SV Full Face Helmet - Size L",
+    "Alpinestars Racing Jacket - Medium",
+    "Alpinestars Leather Gloves",
+    "SIDI Racing Boots - Size 42",
+    "Dainese Body Armor Set",
+    "Royal Enfield Classic 350 - 2019",
+    "Yamaha R15 V4 - 2023",
+    "KTM Duke 200 - 2021",
+    "Harley Davidson Street 750",
+    "Hero Honda Splendor Plus",
+    "GoPro Hero 10 with Mounts",
+    "DJI Mini 3 Pro Drone",
+    "Garmin Zumo 396 GPS",
+    "Phone Mount Handlebar Bracket",
+    "LED Fog Lights Set",
+    "Michelin Road 6 Tyres - Pair",
+    "Pirelli Diablo Motorcycle Tyres",
+    "Akrapovic Titanium Exhaust",
+    "Performance Air Filter Kit",
+    "Carbon Fiber Hugger Guard",
+    "Motorcycle Chain Lubricant",
+    "OEM Engine Oil 4L",
+    "Motorcycle Battery YTZ7S",
+    "Carbide Chain Lube Premium",
+    "Riding Jacket Winter Edition",
+    "Cross Country Gear Set",
+    "Daily Commute Backpack",
+    "Motorcycle Tool Kit Professional",
+    "Portable Air Pump 12V",
+    "Secure Cable Lock 2M",
+    "Reflective Safety Vest",
+    "Motorcycle Phone Charger",
+    "Handlebar Mirrors Pair",
+  ];
 
-  const listing2 = await prisma.marketplaceListing.create({
-    data: {
-      title: "Alpinestars Riding Jacket - Medium",
-      description: "Lightly used riding jacket with armor. Great condition.",
-      price: 8500,
-      currency: "INR",
-      category: "Gear",
-      subcategory: "Jacket",
-      condition: "Good",
-      images: [],
-      status: "ACTIVE",
-      sellerId: user4.id,
-    },
-  });
-  console.log("✅ Created listing:", listing2.title);
+  const listingCategories = [
+    { cat: "Gear", subcat: "Helmet" },
+    { cat: "Gear", subcat: "Jacket" },
+    { cat: "Gear", subcat: "Gloves" },
+    { cat: "Gear", subcat: "Boots" },
+    { cat: "Gear", subcat: "Armor" },
+    { cat: "Motorcycle", subcat: "Street" },
+    { cat: "Motorcycle", subcat: "Sport" },
+    { cat: "Motorcycle", subcat: "Cruiser" },
+    { cat: "Motorcycle", subcat: "Scooter" },
+    { cat: "Motorcycle", subcat: "Commuter" },
+    { cat: "Accessories", subcat: "Camera" },
+    { cat: "Accessories", subcat: "Drone" },
+    { cat: "Accessories", subcat: "GPS" },
+    { cat: "Accessories", subcat: "Mount" },
+    { cat: "Accessories", subcat: "Lights" },
+    { cat: "Parts", subcat: "Tyres" },
+    { cat: "Parts", subcat: "Exhaust" },
+    { cat: "Parts", subcat: "Filters" },
+    { cat: "Parts", subcat: "Guards" },
+    { cat: "Parts", subcat: "Oil" },
+    { cat: "Parts", subcat: "Battery" },
+    { cat: "Parts", subcat: "Lubrication" },
+    { cat: "Gear", subcat: "Protective" },
+    { cat: "Accessories", subcat: "Luggage" },
+    { cat: "Accessories", subcat: "Tools" },
+    { cat: "Accessories", subcat: "Pump" },
+    { cat: "Accessories", subcat: "Lock" },
+    { cat: "Accessories", subcat: "Safety" },
+    { cat: "Accessories", subcat: "Charger" },
+    { cat: "Accessories", subcat: "Mirror" },
+    { cat: "Gear", subcat: "Winter" },
+    { cat: "Gear", subcat: "Adventure" },
+    { cat: "Accessories", subcat: "Backpack" },
+  ];
 
-  const listing3 = await prisma.marketplaceListing.create({
-    data: {
-      title: "Royal Enfield Classic 350 - 2019",
-      description:
-        "Well maintained bike, single owner. All service records available.",
-      price: 125000,
-      currency: "INR",
-      category: "Motorcycle",
-      condition: "Excellent",
-      images: [],
-      status: "ACTIVE",
-      sellerId: user1.id,
-    },
-  });
-  console.log("✅ Created listing:", listing3.title);
+  const listings: any[] = [];
+  for (let i = 0; i < listingNames.length; i++) {
+    const coords = generateBangaloreCoords(i);
+    const pricing = [
+      5000, 8500, 15000, 28000, 125000, 250000, 2000, 3500, 1200, 25000,
+    ];
+    const condition = ["New", "Like New", "Good", "Fair"];
+    const status = Math.random() > 0.1 ? "ACTIVE" : "SOLD";
 
-  const listing4 = await prisma.marketplaceListing.create({
-    data: {
-      title: "GoPro Hero 10 with Mounts",
-      description:
-        "Perfect for recording your rides. Includes helmet and handlebar mounts.",
-      price: 28000,
-      currency: "INR",
-      category: "Accessories",
-      condition: "Good",
-      images: [],
-      status: "SOLD",
-      sellerId: user3.id,
-    },
-  });
-  console.log("✅ Created listing:", listing4.title);
+    const listing = await prisma.marketplaceListing.create({
+      data: {
+        title: listingNames[i],
+        description: `${listingNames[i]} - Premium quality, verified seller. Contact for details and inspection.`,
+        price: pricing[Math.floor(Math.random() * pricing.length)],
+        currency: "INR",
+        category: listingCategories[i].cat,
+        subcategory: listingCategories[i].subcat,
+        condition: condition[Math.floor(Math.random() * condition.length)],
+        images: [],
+        status: status,
+        latitude: coords.lat,
+        longitude: coords.lng,
+        sellerId: [adminUser.id, user1.id, user2.id, user3.id, user4.id][
+          Math.floor(Math.random() * 5)
+        ],
+      },
+    });
+    listings.push(listing);
+  }
+  console.log(
+    `✅ Created ${listings.length} marketplace listings with Bangalore coordinates`,
+  );
 
-  // Create Posts
-  const post1 = await prisma.post.create({
-    data: {
-      type: "content",
-      content: "Just completed an amazing 500km ride through the Himalayas! 🏔️",
-      images: [],
-      authorId: user1.id,
-    },
-  });
-  console.log("✅ Created post by:", user1.name);
+  // Create Posts (sample from rides and listings)
+  const posts: any[] = [];
+  for (let i = 0; i < Math.min(10, rides.length); i++) {
+    const post = await prisma.post.create({
+      data: {
+        type: "ride",
+        content: `Amazing ride upcoming: ${rides[i].title}! Join us for an unforgettable experience! 🏍️`,
+        images: [],
+        authorId: rides[i].creatorId,
+        rideId: rides[i].id,
+      },
+    });
+    posts.push(post);
+  }
 
-  const post2 = await prisma.post.create({
-    data: {
-      type: "ride",
-      content: "Join us for an epic ride to Lonavala this weekend!",
-      images: [],
-      authorId: adminUser.id,
-      rideId: ride1.id,
-    },
-  });
-  console.log("✅ Created post by:", adminUser.name);
+  for (let i = 0; i < Math.min(10, listings.length); i++) {
+    const post = await prisma.post.create({
+      data: {
+        type: "listing",
+        content: `Selling ${listings[i].title} - Great condition! Interested? Check it out! 🛵`,
+        images: [],
+        authorId: listings[i].sellerId,
+        listingId: listings[i].id,
+      },
+    });
+    posts.push(post);
+  }
 
-  const post3 = await prisma.post.create({
-    data: {
-      type: "listing",
-      content: "Selling my AGV helmet - brand new condition!",
-      images: [],
-      authorId: user4.id,
-      listingId: listing1.id,
-    },
-  });
-  console.log("✅ Created post by:", user4.name);
+  console.log(`✅ Created ${posts.length} posts`);
 
   // Create Likes
+  const likesData: any[] = [];
+  const userIds = [adminUser.id, user1.id, user2.id, user3.id, user4.id];
+  for (const post of posts) {
+    for (let j = 0; j < Math.floor(Math.random() * 4) + 1; j++) {
+      const userId = userIds[Math.floor(Math.random() * userIds.length)];
+      const exists = likesData.some(
+        (l) => l.postId === post.id && l.userId === userId,
+      );
+      if (!exists) {
+        likesData.push({ postId: post.id, userId: userId });
+      }
+    }
+  }
   await prisma.like.createMany({
-    data: [
-      { postId: post1.id, userId: user2.id },
-      { postId: post1.id, userId: user3.id },
-      { postId: post1.id, userId: adminUser.id },
-      { postId: post2.id, userId: user1.id },
-      { postId: post2.id, userId: user2.id },
-      { postId: post3.id, userId: user1.id },
-    ],
+    data: likesData,
   });
-  console.log("✅ Created likes");
+  console.log(`✅ Created ${likesData.length} likes`);
 
   // Create Comments
+  const commentsData: any[] = [];
+  const commentTexts = [
+    "Amazing! Count me in! 🔥",
+    "This looks incredible! When is the next one?",
+    "Can't wait! See you there!",
+    "Perfect ride for my skill level!",
+    "Is this beginner friendly?",
+    "Already signed up! 💪",
+    "Love riding with this crew!",
+    "Great deal! Still available?",
+    "Excellent condition! Interested!",
+    "Would you consider trading?",
+    "What's the best time to reach?",
+    "I'm in! Let's do this!",
+  ];
+
+  for (const post of posts) {
+    for (let j = 0; j < Math.floor(Math.random() * 3); j++) {
+      const userId = userIds[Math.floor(Math.random() * userIds.length)];
+      commentsData.push({
+        postId: post.id,
+        authorId: userId,
+        content: commentTexts[Math.floor(Math.random() * commentTexts.length)],
+      });
+    }
+  }
+
   await prisma.comment.createMany({
-    data: [
-      {
-        postId: post1.id,
-        authorId: user2.id,
-        content: "Wow! That sounds amazing! 🔥",
-      },
-      {
-        postId: post1.id,
-        authorId: user3.id,
-        content: "I want to do this ride too!",
-      },
-      { postId: post2.id, authorId: user1.id, content: "Count me in! 👍" },
-      {
-        postId: post3.id,
-        authorId: user2.id,
-        content: "Is this still available?",
-      },
-    ],
+    data: commentsData,
   });
-  console.log("✅ Created comments");
+  console.log(`✅ Created ${commentsData.length} comments`);
 
   // Create Follows
   await prisma.follow.createMany({
@@ -767,41 +898,62 @@ async function main() {
   });
   console.log("✅ Created follows");
 
-  // Create Reviews
+  // Create Reviews for listings
+  const reviewsData: any[] = [];
+  const reviewComments = [
+    "Excellent seller, fast and reliable!",
+    "Great quality, as described perfectly!",
+    "Highly recommended, 5 stars!",
+    "Good condition, exactly what I needed!",
+    "Very responsive seller, great experience!",
+    "Authentic product, very satisfied!",
+    "Fast delivery and good quality!",
+    "Would buy again from this seller!",
+  ];
+
+  const reviewKeySet = new Set<string>();
+  for (let i = 0; i < Math.min(listings.length, 20); i++) {
+    const listingWithReviews = listings[i];
+    for (let j = 0; j < Math.floor(Math.random() * 3) + 1; j++) {
+      const userId = userIds[Math.floor(Math.random() * userIds.length)];
+      const key = `${listingWithReviews.id}:${userId}`;
+      if (userId !== listingWithReviews.sellerId && !reviewKeySet.has(key)) {
+        reviewKeySet.add(key);
+        reviewsData.push({
+          listingId: listingWithReviews.id,
+          reviewerId: userId,
+          rating: Math.floor(Math.random() * 2) + 4,
+          comment:
+            reviewComments[Math.floor(Math.random() * reviewComments.length)],
+        });
+      }
+    }
+  }
+
   await prisma.review.createMany({
-    data: [
-      {
-        listingId: listing1.id,
-        reviewerId: user1.id,
-        rating: 5.0,
-        comment: "Great seller, fast response!",
-      },
-      {
-        listingId: listing2.id,
-        reviewerId: user2.id,
-        rating: 4.5,
-        comment: "Good quality jacket",
-      },
-      {
-        listingId: listing4.id,
-        reviewerId: user1.id,
-        rating: 5.0,
-        comment: "Excellent condition, as described",
-      },
-    ],
+    data: reviewsData,
   });
-  console.log("✅ Created reviews");
+  console.log(`✅ Created ${reviewsData.length} reviews`);
 
   console.log("\n🎉 Database seed completed successfully!");
   console.log("\n📊 Summary:");
   console.log("   - Users: 5 (1 admin, 4 riders)");
   console.log("   - Multi-role assignments: ✅");
-  console.log("   - Clubs: 3");
-  console.log("   - Rides: 5 (4 planned, 1 live)");
-  console.log("   - Marketplace Listings: 4");
-  console.log("   - Posts: 3");
-  console.log("   - Likes, Comments, Follows, Reviews: Multiple");
+  console.log(`   - Clubs: ${clubs.length} (all in Bangalore)`);
+  console.log(`   - Rides: ${rides.length} (all in Bangalore)`);
+  console.log(
+    `   - Marketplace Listings: ${listings.length} (all in Bangalore)`,
+  );
+  console.log(`   - Posts: ${posts.length}`);
+  console.log(`   - Likes: ${likesData.length}`);
+  console.log(`   - Comments: ${commentsData.length}`);
+  console.log(`   - Reviews: ${reviewsData.length}`);
+  console.log("   - Club Members: Multiple per club");
+  console.log("   - Ride Participants: Multiple per ride");
   console.log("   - Bikes, Badges, Preferences, Ride Stats, Friendships: ✅");
+  console.log(
+    "\n📍 All rides & clubs centered around Bangalore (12.9716°N, 77.5946°E) ± 0.15°",
+  );
   console.log("\n🔑 Test Credentials (password: password123):");
   console.log(
     "   admin@zoomies.com      → ADMIN + CLUB_OWNER         (web + mobile)",
@@ -818,6 +970,7 @@ async function main() {
   console.log(
     "   lisa@example.com       → SELLER + RIDER             (web + mobile)",
   );
+  console.log("\n✅ Ready for location-based discovery feed testing!");
 }
 
 main()

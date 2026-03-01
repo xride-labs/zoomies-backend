@@ -124,6 +124,8 @@ export const createRideSchema = z.object({
   duration: z.number().int().positive("Duration must be positive").optional(),
   scheduledAt: z.string().datetime().optional().or(z.date()),
   keepPermanently: z.boolean().default(false), // Flag to prevent auto-deletion
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
 });
 
 export const updateRideSchema = createRideSchema.partial();
@@ -157,6 +159,8 @@ export const createClubSchema = z.object({
   isPublic: z.boolean().default(true),
   image: z.string().url("Invalid image URL").optional(),
   coverImage: z.string().url("Invalid cover image URL").optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
 });
 
 export const updateClubSchema = createClubSchema.partial();
@@ -190,6 +194,8 @@ export const createListingSchema = z.object({
   subcategory: z.string().max(100).optional(),
   specifications: z.string().max(2000).optional(), // JSON string
   condition: z.enum(["New", "Like New", "Good", "Fair", "Poor"]).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
 });
 
 export const updateListingSchema = createListingSchema.partial().extend({
@@ -211,6 +217,29 @@ export const createReviewSchema = z.object({
     .max(5, "Rating must be at most 5"),
   comment: z.string().max(1000).optional(),
 });
+
+// ========================================
+// Discovery Feed Schemas
+// ========================================
+
+export const discoveryFeedQuerySchema = z.object({
+  lat: z.coerce
+    .number()
+    .min(-90, "Latitude must be >= -90")
+    .max(90, "Latitude must be <= 90"),
+  lng: z.coerce
+    .number()
+    .min(-180, "Longitude must be >= -180")
+    .max(180, "Longitude must be <= 180"),
+  radiusKm: z.coerce.number().positive().max(500).default(50),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(50).default(20),
+  rideType: z.enum(["Beginner", "Intermediate", "Expert"]).optional(),
+  difficulty: z.enum(["Leisurely", "Moderate", "Fast"]).optional(),
+  upcomingOnly: z.coerce.boolean().optional(),
+});
+
+export type DiscoveryFeedQuery = z.infer<typeof discoveryFeedQuerySchema>;
 
 // ========================================
 // Post/Feed Schemas
@@ -279,3 +308,4 @@ export type UpdateListingInput = z.infer<typeof updateListingSchema>;
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+export type DiscoveryFeedQueryInput = z.infer<typeof discoveryFeedQuerySchema>;

@@ -205,6 +205,10 @@ model Ride {
   endedAt         DateTime?  @map("ended_at") // When ride actually ended
   status          RideStatus @default(PLANNED)
 
+  // Geo coordinates for location-based discovery
+  latitude  Float? @map("latitude")
+  longitude Float? @map("longitude")
+
   // Lifecycle management
   keepPermanently Boolean @default(false) @map("keep_permanently") // Prevent auto-deletion
 
@@ -229,6 +233,10 @@ model Ride {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Indexes for geo-queries and feed performance
+  @@index([latitude, longitude], map: "rides_geo_idx")
+  @@index([status, scheduledAt], map: "rides_status_scheduled_idx")
+  @@index([createdAt], map: "rides_created_idx")
   @@map("rides")
 }
 
@@ -249,6 +257,10 @@ model Club {
   gallery       String[] // Array of image URLs
   reputation    Float? // Average rating of the club
 
+  // Geo coordinates for location-based discovery
+  latitude  Float? @map("latitude")
+  longitude Float? @map("longitude")
+
   ownerId String @map("owner_id")
   owner   User   @relation("ClubOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -259,6 +271,10 @@ model Club {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Indexes for geo-queries and feed performance
+  @@index([latitude, longitude], map: "clubs_geo_idx")
+  @@index([memberCount], map: "clubs_member_count_idx")
+  @@index([createdAt], map: "clubs_created_idx")
   @@map("clubs")
 }
 
@@ -281,6 +297,10 @@ model MarketplaceListing {
   condition      String?
   status         ListingStatus @default(ACTIVE)
 
+  // Geo coordinates for location-based discovery
+  latitude  Float? @map("latitude")
+  longitude Float? @map("longitude")
+
   sellerId String @map("seller_id")
   seller   User   @relation("SellerListings", fields: [sellerId], references: [id], onDelete: Cascade)
 
@@ -290,6 +310,8 @@ model MarketplaceListing {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@index([latitude, longitude], map: "listings_geo_idx")
+  @@index([status, createdAt], map: "listings_status_created_idx")
   @@map("marketplace_listings")
 }
 

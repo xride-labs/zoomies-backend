@@ -101,13 +101,16 @@ model User {
   reportsFiled        Report[]             @relation("ReportReporter")
 
   // New relations for comprehensive profile
-  bikes             Bike[]
-  badges            UserBadge[]
-  emergencyContacts EmergencyContact[]
-  preferences       UserPreferences?
-  rideStats         UserRideStats?
-  friendsInitiated  Friendship[]       @relation("FriendInitiator")
-  friendsReceived   Friendship[]       @relation("FriendReceiver")
+  bikes                  Bike[]
+  badges                 UserBadge[]
+  emergencyContacts      EmergencyContact[]
+  preferences            UserPreferences?
+  rideStats              UserRideStats?
+  friendsInitiated       Friendship[]        @relation("FriendInitiator")
+  friendsReceived        Friendship[]        @relation("FriendReceiver")
+  friendGroupsOwned      FriendGroup[]       @relation("FriendGroupOwner")
+  friendGroupMemberships FriendGroupMember[]
+  liveLocation           UserLiveLocation?
 
   @@map("users")
 }
@@ -226,6 +229,10 @@ model Ride {
 
   // Club relation (optional - for club-organized rides)
   clubId String? @map("club_id")
+
+  // Friend group relation (optional - for group-organized rides)
+  friendGroupId String?      @map("friend_group_id")
+  friendGroup   FriendGroup? @relation("FriendGroupRides", fields: [friendGroupId], references: [id], onDelete: SetNull)
 
   // Participants relation
   participants RideParticipant[]
@@ -656,4 +663,83 @@ model Friendship {
 
   @@unique([senderId, receiverId])
   @@map("friendships")
+}
+
+// Friend groups (crew / squad for organizing rides with specific friends)
+model FriendGroup {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  image       String? // Group avatar
+  creatorId   String  @map("creator_id")
+
+  creator User                @relation("FriendGroupOwner", fields: [creatorId], references: [id], onDelete: Cascade)
+  members FriendGroupMember[]
+  rides   Ride[]              @relation("FriendGroupRides")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("friend_groups")
+}
+
+model FriendGroupMember {
+  id      String @id @default(cuid())
+  groupId String @map("group_id")
+  userId  String @map("user_id")
+
+  group FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  @@unique([groupId, userId])
+  @@map("friend_group_members")
+}
+
+// Live location sharing (Snapchat-style friend map)
+model UserLiveLocation {
+  id        String  @id @default(cuid())
+  userId    String  @unique @map("user_id")
+  latitude  Float
+  longitude Float
+  altitude  Float?
+  heading   Float? // Direction in degrees (0-360)
+  speed     Float? // Speed in km/h
+  accuracy  Float? // GPS accuracy in meters
+  battery   Int? // Battery percentage (0-100)
+  isMoving  Boolean @default(false) @map("is_moving")
+  isOnRide  Boolean @default(false) @map("is_on_ride")
+  rideId    String? @map("ride_id") // If currently on a ride
+
+  // Sharing settings
+  sharingEnabled Boolean @default(true) @map("sharing_enabled")
+  shareWithAll   Boolean @default(false) @map("share_with_all") // Share with all friends
+  ghostMode      Boolean @default(false) @map("ghost_mode") // Hide from everyone
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime? @map("expires_at") // Auto-expire location after time
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([latitude, longitude])
+  @@index([updatedAt])
+  @@map("user_live_locations")
+}
+
+// Who can see a user's location (fine-grained control)
+model LocationSharePermission {
+  id            String  @id @default(cuid())
+  userId        String  @map("user_id") // The user sharing their location
+  friendId      String  @map("friend_id") // The friend who can see it
+  canSee        Boolean @default(true) @map("can_see")
+  canSeeSpeed   Boolean @default(true) @map("can_see_speed")
+  canSeeBattery Boolean @default(false) @map("can_see_battery")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, friendId])
+  @@map("location_share_permissions")
 }

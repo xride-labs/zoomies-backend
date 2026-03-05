@@ -21,6 +21,8 @@ import {
   feedRoutes,
   discoveryRoutes,
   chatRoutes,
+  locationRoutes,
+  friendGroupRoutes,
 } from "./routes/index.js";
 import { initializeScheduledJobs } from "./jobs/scheduler.js";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
@@ -126,6 +128,8 @@ app.use("/api/feed", feedRoutes);
 app.use("/api/posts", feedRoutes);
 app.use("/api/discover", discoveryRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/location", locationRoutes);
+app.use("/api/friend-groups", friendGroupRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -164,16 +168,16 @@ async function startServer() {
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
-║   🚀 Zoomies Backend Server (Better Auth)                  
-║                                                            
-║   Server running on: ${process.env.BETTER_AUTH_BASE_URL}:${PORT}              
-║   Environment: ${process.env.NODE_ENV || "development"}    
-║                                                            
-║   📚 API Documentation:                                    
+║   🚀 Zoomies Backend Server (Better Auth)
+║
+║   Server running on: ${process.env.BETTER_AUTH_BASE_URL}:${PORT}
+║   Environment: ${process.env.NODE_ENV || "development"}
+║
+║   📚 API Documentation:
 ║   - Swagger UI: ${process.env.BETTER_AUTH_BASE_URL}:${PORT}/api-docs
 ║   - ReDoc:      ${process.env.BETTER_AUTH_BASE_URL}:${PORT}/redoc
 ║   - OpenAPI:    ${process.env.BETTER_AUTH_BASE_URL}:${PORT}/api-docs.json
-║                                                            
+║
 ║   Better Auth endpoints (handled automatically):           ║
 ║   - POST /api/auth/sign-up/email                           ║
 ║   - POST /api/auth/sign-in/email                           ║
@@ -201,6 +205,13 @@ async function startServer() {
 ║   - POST /api/chat/conversations/:id/messages              ║
 ║   - GET  /api/chat/unread                                  ║
 ║   - WebSocket: ws://${process.env.BETTER_AUTH_BASE_URL}:${PORT}
+║                                                            ║
+║   Location endpoints (Snapchat-style map):                 ║
+║   - POST /api/location                                     ║
+║   - GET  /api/location/friends                             ║
+║   - GET  /api/location/settings                            ║
+║   - POST /api/location/ghost-mode                          ║
+║   - GET  /api/location/ride/:rideId                        ║
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
       `);

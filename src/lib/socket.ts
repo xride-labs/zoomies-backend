@@ -5,6 +5,7 @@ import { Redis } from "ioredis";
 import { auth } from "../config/auth.js";
 import { fromNodeHeaders } from "better-auth/node";
 import { ChatService } from "../services/chat.service.js";
+import { LocationService } from "../services/location.service.js";
 import { MessageType } from "../models/chat.model.js";
 import type { IAttachment } from "../models/chat.model.js";
 
@@ -35,8 +36,27 @@ interface JoinConversationPayload {
   conversationId: string;
 }
 
+interface LocationUpdatePayload {
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+  heading?: number;
+  speed?: number;
+  accuracy?: number;
+  battery?: number;
+  isMoving?: boolean;
+  isOnRide?: boolean;
+  rideId?: string;
+}
+
+interface JoinRidePayload {
+  rideId: string;
+}
+
 // ── Track online users (in-memory; Redis-backed in production) ────────────
 const onlineUsers = new Map<string, Set<string>>(); // userId → Set<socketId>
+// Track users subscribed to location updates
+const locationSubscribers = new Map<string, Set<string>>(); // rideId → Set<socketId>
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
@@ -450,6 +470,161 @@ export function createSocketServer(httpServer: HttpServer): Server {
       },
     );
 
+    // ─────────────────────────────────────────────────────────────────────
+    // ── LOCATION SHARING EVENTS (Snapchat-style map) ────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+
+    // ── update_location ────────────────────────────────────────────────
+
+    socket.on(
+      "update_location",
+      async (payload: LocationUpdatePayload, ack?: Function) => {
+        try {
+          // Save to database
+          await LocationService.updateLocation({
+            userId,
+            ...payload,
+          });
+
+          // Broadcast to friends who are subscribed
+          // (They join a room like `friends:${userId}` to receive updates)
+          socket.to(`friends:${userId}`).emit("friend_location_updated", {
+            userId,
+            userName,
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            heading: payload.heading,
+            speed: payload.speed,
+            isMoving: payload.isMoving,
+            isOnRide: payload.isOnRide,
+            rideId: payload.rideId,
+            timestamp: new Date().toISOString(),
+          });
+
+          // If on a ride, broadcast to ride participants
+          if (payload.isOnRide && payload.rideId) {
+            socket.to(`ride:${payload.rideId}`).emit("rider_location_updated", {
+              userId,
+              userName,
+              latitude: payload.latitude,
+              longitude: payload.longitude,
+              heading: payload.heading,
+              speed: payload.speed,
+              isMoving: payload.isMoving,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          ack?.({ success: true });
+        } catch (err) {
+          console.error("[SOCKET] update_location error:", err);
+          ack?.({ success: false, error: "Failed to update location" });
+        }
+      },
+    );
+
+    // ── subscribe_to_friend_locations ──────────────────────────────────
+
+    socket.on(
+      "subscribe_to_friend_locations",
+      async (payload: { friendIds: string[] }, ack?: Function) => {
+        try {
+          // Join rooms to receive location updates from these friends
+          for (const friendId of payload.friendIds) {
+            socket.join(`friends:${friendId}`);
+          }
+          console.log(
+            `[SOCKET] ${userId} subscribed to ${payload.friendIds.length} friend locations`,
+          );
+          ack?.({ success: true });
+        } catch (err) {
+          console.error("[SOCKET] subscribe_to_friend_locations error:", err);
+          ack?.({ success: false, error: "Internal error" });
+        }
+      },
+    );
+
+    // ── unsubscribe_from_friend_locations ──────────────────────────────
+
+    socket.on(
+      "unsubscribe_from_friend_locations",
+      (payload: { friendIds: string[] }, ack?: Function) => {
+        for (const friendId of payload.friendIds) {
+          socket.leave(`friends:${friendId}`);
+        }
+        ack?.({ success: true });
+      },
+    );
+
+    // ── join_ride_tracking ─────────────────────────────────────────────
+
+    socket.on(
+      "join_ride_tracking",
+      async (payload: JoinRidePayload, ack?: Function) => {
+        try {
+          socket.join(`ride:${payload.rideId}`);
+          console.log(
+            `[SOCKET] ${userId} joined ride tracking for ${payload.rideId}`,
+          );
+          ack?.({ success: true });
+        } catch (err) {
+          console.error("[SOCKET] join_ride_tracking error:", err);
+          ack?.({ success: false, error: "Internal error" });
+        }
+      },
+    );
+
+    // ── leave_ride_tracking ────────────────────────────────────────────
+
+    socket.on(
+      "leave_ride_tracking",
+      (payload: JoinRidePayload, ack?: Function) => {
+        socket.leave(`ride:${payload.rideId}`);
+        ack?.({ success: true });
+      },
+    );
+
+    // ── request_friend_locations ───────────────────────────────────────
+    // Get all friend locations once (for initial map load)
+
+    socket.on(
+      "request_friend_locations",
+      async (payload: {}, ack?: Function) => {
+        try {
+          const locations = await LocationService.getFriendLocations(userId);
+          ack?.({ success: true, locations });
+        } catch (err) {
+          console.error("[SOCKET] request_friend_locations error:", err);
+          ack?.({ success: false, error: "Internal error", locations: [] });
+        }
+      },
+    );
+
+    // ── toggle_ghost_mode ──────────────────────────────────────────────
+
+    socket.on(
+      "toggle_ghost_mode",
+      async (
+        payload: { enabled: boolean; durationMinutes?: number },
+        ack?: Function,
+      ) => {
+        try {
+          if (payload.enabled) {
+            await LocationService.enableGhostMode(
+              userId,
+              payload.durationMinutes,
+            );
+          } else {
+            await LocationService.disableGhostMode(userId);
+          }
+          ack?.({ success: true });
+        } catch (err) {
+          console.error("[SOCKET] toggle_ghost_mode error:", err);
+          ack?.({ success: false, error: "Internal error" });
+        }
+      },
+    );
+
     // ── disconnect ─────────────────────────────────────────────────────
 
     socket.on("disconnect", (reason) => {
@@ -464,7 +639,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
     });
   });
 
-  console.log("[SOCKET] Chat socket server initialized");
+  console.log("[SOCKET] Chat & Location socket server initialized");
   return io;
 }
 

@@ -108,7 +108,7 @@ router.post(
       ...req.body,
     });
     ApiResponse.success(res, null, "Location updated");
-  })
+  }),
 );
 
 /**
@@ -129,7 +129,7 @@ router.get(
     const userId = (req as any).user.id;
     const settings = await LocationService.getSharingSettings(userId);
     ApiResponse.success(res, settings);
-  })
+  }),
 );
 
 /**
@@ -175,7 +175,7 @@ router.patch(
     });
 
     ApiResponse.success(res, null, "Settings updated");
-  })
+  }),
 );
 
 /**
@@ -196,7 +196,7 @@ router.get(
     const userId = (req as any).user.id;
     const locations = await LocationService.getFriendLocations(userId);
     ApiResponse.success(res, { friends: locations });
-  })
+  }),
 );
 
 /**
@@ -233,7 +233,7 @@ router.get(
     }
 
     ApiResponse.success(res, location);
-  })
+  }),
 );
 
 /**
@@ -254,7 +254,7 @@ router.get(
     const userId = (req as any).user.id;
     const permissions = await LocationService.getAllPermissions(userId);
     ApiResponse.success(res, { permissions });
-  })
+  }),
 );
 
 /**
@@ -295,9 +295,9 @@ router.post(
       await LocationService.setFriendPermission(userId, req.body);
       ApiResponse.success(res, null, "Permission updated");
     } catch (err: any) {
-      ApiResponse.badRequest(res, err.message);
+      ApiResponse.error(res, err.message, 400);
     }
-  })
+  }),
 );
 
 /**
@@ -338,7 +338,7 @@ router.post(
       await LocationService.disableGhostMode(userId);
       ApiResponse.success(res, null, "Ghost mode disabled");
     }
-  })
+  }),
 );
 
 /**
@@ -369,13 +369,13 @@ router.get(
     try {
       const locations = await LocationService.getRideParticipantLocations(
         rideId,
-        userId
+        userId,
       );
       ApiResponse.success(res, { participants: locations });
     } catch (err: any) {
-      ApiResponse.badRequest(res, err.message);
+      ApiResponse.error(res, err.message, 400);
     }
-  })
+  }),
 );
 
 export default router;

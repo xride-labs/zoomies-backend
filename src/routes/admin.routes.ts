@@ -443,12 +443,25 @@ router.get(
   "/rides",
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    const { page = 1, limit = 20, status, creatorId } = req.query as any;
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      creatorId,
+      search,
+    } = req.query as any;
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
     if (status) where.status = status;
     if (creatorId) where.creatorId = creatorId;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { startLocation: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [rides, total] = await Promise.all([
       prisma.ride.findMany({
@@ -520,12 +533,25 @@ router.get(
   "/clubs",
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    const { page = 1, limit = 20, verified, ownerId } = req.query as any;
+    const {
+      page = 1,
+      limit = 20,
+      verified,
+      ownerId,
+      search,
+    } = req.query as any;
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
     if (verified !== undefined) where.verified = verified === "true";
     if (ownerId) where.ownerId = ownerId;
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { location: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [clubs, total] = await Promise.all([
       prisma.club.findMany({
@@ -881,12 +907,18 @@ router.get(
   "/marketplace",
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    const { page = 1, limit = 20, status, sellerId } = req.query as any;
+    const { page = 1, limit = 20, status, sellerId, search } = req.query as any;
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
     if (status) where.status = status;
     if (sellerId) where.sellerId = sellerId;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [listings, total] = await Promise.all([
       prisma.marketplaceListing.findMany({
@@ -909,6 +941,124 @@ router.get(
       total,
       totalPages: Math.ceil(total / Number(limit)),
     });
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/rides/{id}/status:
+ *   patch:
+ *     summary: Update ride status (admin)
+ *     tags: [Admin]
+ */
+router.patch(
+  "/rides/:id/status",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status)
+      return ApiResponse.error(
+        res,
+        "status is required",
+        400,
+        ErrorCode.VALIDATION_ERROR,
+      );
+
+    const ride = await prisma.ride.update({
+      where: { id },
+      data: { status },
+      select: { id: true, title: true, status: true },
+    });
+
+    ApiResponse.success(res, { ride }, "Ride status updated");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/rides/{id}:
+ *   delete:
+ *     summary: Delete a ride (admin)
+ *     tags: [Admin]
+ */
+router.delete(
+  "/rides/:id",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    await prisma.ride.delete({ where: { id } });
+    ApiResponse.success(res, null, "Ride deleted");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/clubs/{id}:
+ *   delete:
+ *     summary: Delete a club (admin)
+ *     tags: [Admin]
+ */
+router.delete(
+  "/clubs/:id",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    await prisma.club.delete({ where: { id } });
+    ApiResponse.success(res, null, "Club deleted");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/marketplace/{id}/status:
+ *   patch:
+ *     summary: Update listing status (admin)
+ *     tags: [Admin]
+ */
+router.patch(
+  "/marketplace/:id/status",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status)
+      return ApiResponse.error(
+        res,
+        "status is required",
+        400,
+        ErrorCode.VALIDATION_ERROR,
+      );
+
+    const listing = await prisma.marketplaceListing.update({
+      where: { id },
+      data: { status },
+      select: { id: true, title: true, status: true },
+    });
+
+    ApiResponse.success(res, { listing }, "Listing status updated");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/marketplace/{id}:
+ *   delete:
+ *     summary: Delete a listing (admin)
+ *     tags: [Admin]
+ */
+router.delete(
+  "/marketplace/:id",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    await prisma.marketplaceListing.delete({ where: { id } });
+    ApiResponse.success(res, null, "Listing deleted");
   }),
 );
 

@@ -10,3 +10,4 @@ export { default as discoveryRoutes } from "./discovery.routes.js";
 export { default as chatRoutes } from "./chat.routes.js";
 export { default as locationRoutes } from "./location.routes.js";
 export { default as friendGroupRoutes } from "./friend-group.routes.js";
+export { default as friendshipRoutes } from "./friendship.routes.js";

@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { phoneNumber } from "better-auth/plugins";
+import { phoneNumber, bearer } from "better-auth/plugins";
 import prisma from "../lib/prisma.js";
 import type { Request, Response, NextFunction } from "express";
 import { fromNodeHeaders } from "better-auth/node";
@@ -130,6 +130,13 @@ export const auth = betterAuth({
     },
   },
 
+  // Account linking — when a user signs in with Google using the same email
+  // as an existing email/password account, link both providers to the same user.
+  accountLinking: {
+    enabled: true,
+    trustedProviders: ["google"],
+  },
+
   // Session configuration
   session: {
     expiresIn: 30 * 24 * 60 * 60, // 30 days
@@ -190,6 +197,7 @@ export const auth = betterAuth({
 
   // Plugins
   plugins: [
+    bearer(),
     phoneNumber({
       sendOTP: async ({ phoneNumber: phone, code }) => {
         // Use existing Twilio integration
@@ -243,7 +251,9 @@ export async function getCurrentSession(
 
 /**
  * Middleware to protect routes - requires authentication
- * Supports Better Auth session
+ * Supports both Better Auth session cookies AND Bearer tokens (for mobile)
+ * The bearer() plugin converts Authorization headers to session cookies
+ * so auth.api.getSession() handles both flows.
  */
 export async function requireAuth(
   req: Request,
@@ -251,13 +261,10 @@ export async function requireAuth(
   next: NextFunction,
 ): Promise<void> {
   try {
-    console.log("[AUTH] requireAuth middleware - Checking session");
+    // The bearer plugin converts Authorization: Bearer <token> into a session
+    // cookie so getSession() works for both web (cookies) and mobile (Bearer).
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
-    });
-    console.log("[AUTH] requireAuth - Session retrieved", {
-      hasSession: !!session,
-      userId: session?.user?.id,
     });
 
     if (!session || !session.user) {
@@ -281,10 +288,6 @@ export async function requireAuth(
     });
 
     const roles = assignments.map((a) => a.role);
-    console.log("[AUTH] requireAuth - Roles loaded", {
-      userId: session.user.id,
-      roles,
-    });
 
     // Attach session to request
     req.session = {
@@ -302,9 +305,6 @@ export async function requireAuth(
         expiresAt: session.session.expiresAt,
       },
     };
-    console.log("[AUTH] requireAuth - Session attached to request", {
-      userId: session.user.id,
-    });
 
     next();
   } catch (error) {

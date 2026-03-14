@@ -7,8 +7,9 @@ import {
   validateParams,
   asyncHandler,
 } from "../middlewares/validation.js";
-import { idParamSchema } from "../validators/schemas.js";
+import { idParamSchema, feedQuerySchema } from "../validators/schemas.js";
 import { z } from "zod";
+import { validateQuery } from "../middlewares/validation.js";
 
 const router = Router();
 
@@ -45,16 +46,37 @@ const createCommentSchema = z.object({
  *         schema:
  *           type: integer
  *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by post content
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [ride, content, listing, club-activity]
+ *         description: Filter by post type
+ *       - in: query
+ *         name: authorId
+ *         schema:
+ *           type: string
+ *         description: Filter by author ID
  *     responses:
  *       200:
  *         description: List of feed posts
  */
 router.get(
   "/",
+  validateQuery(feedQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = 20;
+    const { page, limit, search, type, authorId } = req.query as any;
     const skip = (page - 1) * limit;
 
     // Get posts from users the current user follows + their own posts
@@ -64,12 +86,18 @@ router.get(
     });
 
     const followingIds = following.map((f) => f.followingId);
-    const userIds = [session.user.id, ...followingIds];
+    const userIds = authorId ? [authorId] : [session.user.id, ...followingIds];
+
+    const where: any = { authorId: { in: userIds } };
+    if (search) {
+      where.content = { contains: search, mode: "insensitive" };
+    }
+    if (type) {
+      where.type = type;
+    }
 
     const posts = await prisma.post.findMany({
-      where: {
-        authorId: { in: userIds },
-      },
+      where,
       include: {
         author: {
           select: {

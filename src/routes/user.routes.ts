@@ -14,6 +14,8 @@ import {
   idParamSchema,
   updateUserSchema,
   updateUserRoleSchema,
+  userRidesQuerySchema,
+  userClubsQuerySchema,
 } from "../validators/schemas.js";
 
 const router = Router();
@@ -615,6 +617,17 @@ router.delete(
  *         schema:
  *           type: integer
  *           default: 20
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED]
+ *         description: Filter by ride status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by ride title or description
  *     responses:
  *       200:
  *         description: Paginated list of user's rides
@@ -630,29 +643,39 @@ router.delete(
 router.get(
   "/:id/rides",
   validateParams(idParamSchema),
+  validateQuery(userRidesQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { page = 1, limit = 20 } = req.query as any;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { page, limit, status, search } = req.query as any;
+    const skip = (page - 1) * limit;
+
+    const where: any = { creatorId: id };
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [rides, total] = await Promise.all([
       prisma.ride.findMany({
-        where: { creatorId: id },
+        where,
         skip,
-        take: Number(limit),
+        take: limit,
         orderBy: { createdAt: "desc" },
         include: {
           _count: { select: { participants: true } },
         },
       }),
-      prisma.ride.count({ where: { creatorId: id } }),
+      prisma.ride.count({ where }),
     ]);
 
     ApiResponse.paginated(res, rides, {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
       total,
-      totalPages: Math.ceil(total / Number(limit)),
+      totalPages: Math.ceil(total / limit),
     });
   }),
 );
@@ -662,7 +685,7 @@ router.get(
  * /api/users/{id}/clubs:
  *   get:
  *     summary: Get user's clubs
- *     description: Get list of clubs owned by a user.
+ *     description: Get paginated list of clubs owned by a user.
  *     tags: [Users]
  *     security:
  *       - cookieAuth: []
@@ -673,23 +696,28 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by club name or description
  *     responses:
  *       200:
- *         description: List of user's clubs
+ *         description: Paginated list of user's clubs
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     clubs:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Club'
+ *               $ref: '#/components/schemas/PaginatedResponse'
  *       401:
  *         $ref: '#/components/responses/Unauthorized'
  *       404:
@@ -698,17 +726,39 @@ router.get(
 router.get(
   "/:id/clubs",
   validateParams(idParamSchema),
+  validateQuery(userClubsQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const { page, limit, search } = req.query as any;
+    const skip = (page - 1) * limit;
 
-    const clubs = await prisma.club.findMany({
-      where: { ownerId: id },
-      include: {
-        _count: { select: { members: true } },
-      },
+    const where: any = { ownerId: id };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const [clubs, total] = await Promise.all([
+      prisma.club.findMany({
+        where,
+        include: {
+          _count: { select: { members: true } },
+        },
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.club.count({ where }),
+    ]);
+
+    ApiResponse.paginated(res, clubs, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
-
-    ApiResponse.success(res, { clubs });
   }),
 );
 

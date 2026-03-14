@@ -2,7 +2,8 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAuth } from "../config/auth.js";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
-import { asyncHandler } from "../middlewares/validation.js";
+import { asyncHandler, validateQuery } from "../middlewares/validation.js";
+import { friendGroupQuerySchema } from "../validators/schemas.js";
 
 const router = Router();
 
@@ -18,9 +19,29 @@ router.use(requireAuth);
  *     security:
  *       - cookieAuth: []
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by group name or description
+ *     responses:
+ *       200:
+ *         description: Paginated list of friend groups
  */
 router.get(
   "/",
+  validateQuery(friendGroupQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId)
@@ -31,21 +52,48 @@ router.get(
         ErrorCode.UNAUTHORIZED,
       );
 
-    const groups = await prisma.friendGroup.findMany({
-      where: {
-        OR: [{ creatorId: userId }, { members: { some: { userId } } }],
-      },
-      include: {
-        creator: { select: { id: true, name: true, avatar: true } },
-        members: {
-          include: { user: { select: { id: true, name: true, avatar: true } } },
-        },
-        _count: { select: { members: true, rides: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
+    const { page, limit, search } = req.query as any;
+    const skip = (page - 1) * limit;
 
-    return ApiResponse.success(res, { groups });
+    const where: any = {
+      OR: [{ creatorId: userId }, { members: { some: { userId } } }],
+    };
+    if (search) {
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { description: { contains: search, mode: "insensitive" } },
+          ],
+        },
+      ];
+    }
+
+    const [groups, total] = await Promise.all([
+      prisma.friendGroup.findMany({
+        where,
+        include: {
+          creator: { select: { id: true, name: true, avatar: true } },
+          members: {
+            include: {
+              user: { select: { id: true, name: true, avatar: true } },
+            },
+          },
+          _count: { select: { members: true, rides: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.friendGroup.count({ where }),
+    ]);
+
+    ApiResponse.paginated(res, groups, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    });
   }),
 );
 
@@ -429,7 +477,7 @@ router.post(
       );
 
     const {
-      title, 
+      title,
       description,
       startLocation,
       endLocation,

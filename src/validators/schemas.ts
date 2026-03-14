@@ -137,6 +137,7 @@ export const rideQuerySchema = paginationSchema.extend({
   experienceLevel: z.enum(["Beginner", "Intermediate", "Expert"]).optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
+  search: z.string().optional(),
 });
 
 export const joinRideSchema = z.object({
@@ -208,6 +209,7 @@ export const listingQuerySchema = paginationSchema.extend({
   maxPrice: z.coerce.number().positive().optional(),
   condition: z.string().optional(),
   status: z.enum(["ACTIVE", "SOLD", "INACTIVE"]).optional(),
+  search: z.string().optional(),
 });
 
 export const createReviewSchema = z.object({
@@ -291,6 +293,45 @@ export const adminStatsQuerySchema = z.object({
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   granularity: z.enum(["day", "week", "month"]).default("day"),
+});
+
+export const clubDiscoverQuerySchema = paginationSchema.extend({
+  search: z.string().optional(),
+  clubType: z.string().optional(),
+  location: z.string().optional(),
+});
+
+export const myClubsQuerySchema = paginationSchema.extend({
+  search: z.string().optional(),
+});
+
+export const myListingsQuerySchema = paginationSchema.extend({
+  status: z.enum(["ACTIVE", "SOLD", "INACTIVE"]).optional(),
+  category: z.string().optional(),
+  search: z.string().optional(),
+});
+
+export const feedQuerySchema = paginationSchema.extend({
+  search: z.string().optional(),
+  type: z.enum(["ride", "content", "listing", "club-activity"]).optional(),
+  authorId: z.string().cuid().optional(),
+});
+
+export const friendRequestsQuerySchema = paginationSchema;
+
+export const friendGroupQuerySchema = paginationSchema.extend({
+  search: z.string().optional(),
+});
+
+export const userRidesQuerySchema = paginationSchema.extend({
+  status: z
+    .enum(["PLANNED", "IN_PROGRESS", "COMPLETED", "CANCELLED"])
+    .optional(),
+  search: z.string().optional(),
+});
+
+export const userClubsQuerySchema = paginationSchema.extend({
+  search: z.string().optional(),
 });
 
 // Type exports

@@ -17,6 +17,8 @@ import {
   createClubSchema,
   updateClubSchema,
   clubQuerySchema,
+  clubDiscoverQuerySchema,
+  myClubsQuerySchema,
   idParamSchema,
   updateMemberRoleSchema,
 } from "../validators/schemas.js";
@@ -50,6 +52,21 @@ router.use(requireAuth);
  *           type: integer
  *           default: 20
  *         description: Number of items per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by club name or description
+ *       - in: query
+ *         name: verified
+ *         schema:
+ *           type: boolean
+ *         description: Filter by verification status
+ *       - in: query
+ *         name: isPublic
+ *         schema:
+ *           type: boolean
+ *         description: Filter by public/private status
  *     responses:
  *       200:
  *         description: List of clubs
@@ -125,22 +142,53 @@ router.get(
  * /api/clubs/my:
  *   get:
  *     summary: Get my clubs
- *     description: Get all clubs where the current user is a member
+ *     description: Get all clubs where the current user is a member or owner
  *     tags: [Clubs]
  *     security:
  *       - cookieAuth: []
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by club name or description
  *     responses:
  *       200:
  *         description: List of user's clubs
  */
 router.get(
   "/my",
+  validateQuery(myClubsQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
+    const { page, limit, search } = req.query as any;
+    const skip = (page - 1) * limit;
+
+    const clubSearch = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" as const } },
+            { description: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {};
 
     const memberships = await prisma.clubMember.findMany({
-      where: { userId: session.user.id },
+      where: {
+        userId: session.user.id,
+        club: clubSearch,
+      },
       include: {
         club: {
           include: {
@@ -156,7 +204,10 @@ router.get(
 
     // Also include clubs where user is the owner
     const ownedClubs = await prisma.club.findMany({
-      where: { ownerId: session.user.id },
+      where: {
+        ownerId: session.user.id,
+        ...clubSearch,
+      },
       include: {
         owner: {
           select: { id: true, name: true, avatar: true },
@@ -165,7 +216,7 @@ router.get(
       },
     });
 
-    const clubs = [
+    const allClubs = [
       ...memberships.map((m) => ({
         ...m.club,
         role: m.role,
@@ -180,10 +231,18 @@ router.get(
 
     // Deduplicate (owner might also be a member)
     const uniqueClubs = Array.from(
-      new Map(clubs.map((c) => [c.id, c])).values(),
+      new Map(allClubs.map((c) => [c.id, c])).values(),
     );
 
-    ApiResponse.success(res, { clubs: uniqueClubs });
+    const total = uniqueClubs.length;
+    const paginatedClubs = uniqueClubs.slice(skip, skip + limit);
+
+    ApiResponse.paginated(res, paginatedClubs, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    });
   }),
 );
 
@@ -192,7 +251,7 @@ router.get(
  * /api/clubs/discover:
  *   get:
  *     summary: Discover public clubs
- *     description: Get paginated list of public clubs for discovery
+ *     description: Get paginated list of public clubs for discovery (excludes clubs user is already in)
  *     tags: [Clubs]
  *     security:
  *       - cookieAuth: []
@@ -203,17 +262,36 @@ router.get(
  *         schema:
  *           type: integer
  *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by club name or description
+ *       - in: query
+ *         name: clubType
+ *         schema:
+ *           type: string
+ *         description: Filter by club type
+ *       - in: query
+ *         name: location
+ *         schema:
+ *           type: string
+ *         description: Filter by location (partial match)
  *     responses:
  *       200:
  *         description: List of discoverable clubs
  */
 router.get(
   "/discover",
+  validateQuery(clubDiscoverQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const page = parseInt(req.query.page as string) || 1;
-    const location = req.query.location as string | undefined;
-    const limit = 20;
+    const { page, limit, search, clubType, location } = req.query as any;
     const skip = (page - 1) * limit;
 
     // Get clubs user is NOT a member of
@@ -232,12 +310,22 @@ router.get(
       ...userOwnedClubs.map((c) => c.id),
     ];
 
+    const where: any = {
+      isPublic: true,
+      id: { notIn: excludeIds },
+    };
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+    if (clubType) where.clubType = clubType;
+    if (location) where.location = { contains: location, mode: "insensitive" };
+
     const clubs = await prisma.club.findMany({
-      where: {
-        isPublic: true,
-        id: { notIn: excludeIds },
-        ...(location && { location }),
-      },
+      where,
       include: {
         owner: {
           select: { id: true, name: true, avatar: true },
@@ -301,6 +389,7 @@ router.get(
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const session = (req as any).session;
 
     const club = await prisma.club.findUnique({
       where: { id },
@@ -317,7 +406,7 @@ router.get(
           orderBy: { joinedAt: "desc" },
           take: 20,
         },
-        _count: { select: { members: true } },
+        _count: { select: { members: true, joinRequests: true } },
       },
     });
 
@@ -329,7 +418,24 @@ router.get(
       );
     }
 
-    ApiResponse.success(res, { club });
+    // Check if the current user has a pending join request
+    let joinRequestStatus: string | null = null;
+    if (session?.user?.id) {
+      const joinRequest = await prisma.clubJoinRequest.findUnique({
+        where: { clubId_userId: { clubId: id, userId: session.user.id } },
+        select: { status: true },
+      });
+      joinRequestStatus = joinRequest?.status || null;
+    }
+
+    // Count pending requests (for admins)
+    const pendingRequestCount = await prisma.clubJoinRequest.count({
+      where: { clubId: id, status: "PENDING" },
+    });
+
+    ApiResponse.success(res, {
+      club: { ...club, joinRequestStatus, pendingRequestCount },
+    });
   }),
 );
 
@@ -626,13 +732,6 @@ router.post(
       );
     }
 
-    if (!club.isPublic) {
-      return ApiResponse.forbidden(
-        res,
-        "This club is private. Request an invitation from the owner.",
-      );
-    }
-
     // Check if already a member
     const existing = await prisma.clubMember.findUnique({
       where: { clubId_userId: { clubId: id, userId: session.user.id } },
@@ -642,6 +741,43 @@ router.post(
       return ApiResponse.conflict(res, "You are already a member of this club");
     }
 
+    // For private clubs, create a join request instead of directly adding
+    if (!club.isPublic) {
+      // Check for existing pending request
+      const existingRequest = await prisma.clubJoinRequest.findUnique({
+        where: { clubId_userId: { clubId: id, userId: session.user.id } },
+      });
+
+      if (existingRequest?.status === "PENDING") {
+        return ApiResponse.conflict(
+          res,
+          "You already have a pending join request",
+        );
+      }
+
+      // Create or upsert (handles re-requesting after rejection)
+      const joinRequest = await prisma.clubJoinRequest.upsert({
+        where: { clubId_userId: { clubId: id, userId: session.user.id } },
+        create: {
+          clubId: id,
+          userId: session.user.id,
+          message: req.body.message || null,
+          status: "PENDING",
+        },
+        update: {
+          status: "PENDING",
+          message: req.body.message || null,
+        },
+      });
+
+      return ApiResponse.created(
+        res,
+        { joinRequest },
+        "Join request sent — waiting for admin approval",
+      );
+    }
+
+    // Public clubs — add directly
     const membership = await prisma.clubMember.create({
       data: {
         clubId: id,
@@ -829,10 +965,19 @@ router.get(
   validateParams(idParamSchema),
   requireClubMembership("ADMIN", "id"),
   asyncHandler(async (req: Request, res: Response) => {
-    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
-    ApiResponse.success(res, {
-      requests: [],
+    const { id } = req.params;
+
+    const requests = await prisma.clubJoinRequest.findMany({
+      where: { clubId: id, status: "PENDING" },
+      include: {
+        user: {
+          select: { id: true, name: true, avatar: true, email: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
     });
+
+    ApiResponse.success(res, { requests });
   }),
 );
 
@@ -855,8 +1000,38 @@ router.post(
   validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
   requireClubMembership("ADMIN", "id"),
   asyncHandler(async (req: Request, res: Response) => {
-    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
-    ApiResponse.success(res, null, "Request approved");
+    const { id, userId } = req.params;
+
+    const joinRequest = await prisma.clubJoinRequest.findUnique({
+      where: { clubId_userId: { clubId: id, userId } },
+    });
+
+    if (!joinRequest || joinRequest.status !== "PENDING") {
+      return ApiResponse.notFound(res, "No pending join request found");
+    }
+
+    // Update request status
+    await prisma.clubJoinRequest.update({
+      where: { id: joinRequest.id },
+      data: { status: "APPROVED" },
+    });
+
+    // Add user as a member
+    await prisma.clubMember.create({
+      data: {
+        clubId: id,
+        userId,
+        role: "MEMBER",
+      },
+    });
+
+    // Update member count
+    await prisma.club.update({
+      where: { id },
+      data: { memberCount: { increment: 1 } },
+    });
+
+    ApiResponse.success(res, null, "Request approved — member added");
   }),
 );
 
@@ -879,7 +1054,21 @@ router.post(
   validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
   requireClubMembership("ADMIN", "id"),
   asyncHandler(async (req: Request, res: Response) => {
-    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
+    const { id, userId } = req.params;
+
+    const joinRequest = await prisma.clubJoinRequest.findUnique({
+      where: { clubId_userId: { clubId: id, userId } },
+    });
+
+    if (!joinRequest || joinRequest.status !== "PENDING") {
+      return ApiResponse.notFound(res, "No pending join request found");
+    }
+
+    await prisma.clubJoinRequest.update({
+      where: { id: joinRequest.id },
+      data: { status: "REJECTED" },
+    });
+
     ApiResponse.success(res, null, "Request rejected");
   }),
 );
@@ -902,7 +1091,21 @@ router.delete(
   "/:id/join",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    // TODO: Placeholder - run prisma generate and migrate to enable ClubJoinRequest model
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const joinRequest = await prisma.clubJoinRequest.findUnique({
+      where: { clubId_userId: { clubId: id, userId: session.user.id } },
+    });
+
+    if (!joinRequest || joinRequest.status !== "PENDING") {
+      return ApiResponse.notFound(res, "No pending join request found");
+    }
+
+    await prisma.clubJoinRequest.delete({
+      where: { id: joinRequest.id },
+    });
+
     ApiResponse.success(res, null, "Join request cancelled");
   }),
 );

@@ -57,6 +57,29 @@ router.use(requireAuth);
  *           type: string
  *           enum: [PLANNED, IN_PROGRESS, COMPLETED, CANCELLED]
  *         description: Filter by ride status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by title, description or start location
+ *       - in: query
+ *         name: experienceLevel
+ *         schema:
+ *           type: string
+ *           enum: [BEGINNER, INTERMEDIATE, ADVANCED, EXPERT]
+ *         description: Filter by experience level
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter rides scheduled on or after this date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter rides scheduled on or before this date
  *     responses:
  *       200:
  *         description: List of rides
@@ -89,7 +112,7 @@ router.get(
   "/",
   validateQuery(rideQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit, status, experienceLevel, startDate, endDate } =
+    const { page, limit, status, experienceLevel, startDate, endDate, search } =
       req.query as any;
     const skip = (page - 1) * limit;
 
@@ -100,6 +123,13 @@ router.get(
       where.scheduledAt = {};
       if (startDate) where.scheduledAt.gte = new Date(startDate);
       if (endDate) where.scheduledAt.lte = new Date(endDate);
+    }
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { startLocation: { contains: search, mode: "insensitive" } },
+      ];
     }
 
     const [rides, total] = await Promise.all([
@@ -165,6 +195,7 @@ router.get(
   "/:id",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
     const { id } = req.params;
 
     const ride = await prisma.ride.findUnique({
@@ -191,7 +222,24 @@ router.get(
       );
     }
 
-    ApiResponse.success(res, { ride });
+    // Include current user's participant status and pending request count for the creator
+    let participantStatus: string | null = null;
+    let pendingRequestCount = 0;
+
+    if (session?.user?.id) {
+      const myParticipation = ride.participants.find(
+        (p: any) => p.user?.id === session.user.id,
+      );
+      participantStatus = myParticipation?.status || null;
+
+      if (ride.creatorId === session.user.id) {
+        pendingRequestCount = ride.participants.filter(
+          (p: any) => p.status === "REQUESTED",
+        ).length;
+      }
+    }
+
+    ApiResponse.success(res, { ride, participantStatus, pendingRequestCount });
   }),
 );
 

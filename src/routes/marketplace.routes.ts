@@ -13,6 +13,7 @@ import {
   createListingSchema,
   updateListingSchema,
   listingQuerySchema,
+  myListingsQuerySchema,
   idParamSchema,
   createReviewSchema,
   paginationSchema,
@@ -61,6 +62,22 @@ router.use(requireAuth);
  *         schema:
  *           type: number
  *         description: Maximum price filter
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by listing title or description
+ *       - in: query
+ *         name: condition
+ *         schema:
+ *           type: string
+ *         description: Filter by item condition
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, SOLD, INACTIVE]
+ *         description: Filter by listing status (default ACTIVE)
  *     responses:
  *       200:
  *         description: List of marketplace listings
@@ -93,8 +110,16 @@ router.get(
   "/",
   validateQuery(listingQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit, category, minPrice, maxPrice, condition, status } =
-      req.query as any;
+    const {
+      page,
+      limit,
+      category,
+      minPrice,
+      maxPrice,
+      condition,
+      status,
+      search,
+    } = req.query as any;
     const skip = (page - 1) * limit;
 
     const where: any = { status: status || "ACTIVE" };
@@ -104,6 +129,17 @@ router.get(
       where.price = {};
       if (minPrice !== undefined) where.price.gte = minPrice;
       if (maxPrice !== undefined) where.price.lte = maxPrice;
+    }
+    if (search) {
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { title: { contains: search, mode: "insensitive" } },
+            { description: { contains: search, mode: "insensitive" } },
+          ],
+        },
+      ];
     }
 
     const [listings, total] = await Promise.all([
@@ -153,6 +189,22 @@ router.get(
  *           type: integer
  *           default: 20
  *         description: Number of items per page
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, SOLD, INACTIVE]
+ *         description: Filter by listing status
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Filter by category
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by title or description
  *     responses:
  *       200:
  *         description: List of user's listings
@@ -183,13 +235,21 @@ router.get(
  */
 router.get(
   "/my-listings",
-  validateQuery(paginationSchema),
+  validateQuery(myListingsQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const { page, limit } = req.query as any;
+    const { page, limit, status, category, search } = req.query as any;
     const skip = (page - 1) * limit;
 
-    const where = { sellerId: session.user.id };
+    const where: any = { sellerId: session.user.id };
+    if (status) where.status = status;
+    if (category) where.category = category;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     const [listings, total] = await Promise.all([
       prisma.marketplaceListing.findMany({

@@ -25,6 +25,45 @@ const changePasswordSchema = z.object({
 });
 
 /**
+ * Mobile OAuth callback — converts the web session cookie into a redirect with a bearer token.
+ * Better Auth social login redirects here after success; we read the session from the cookie
+ * and redirect to the mobile deep link with the token in the URL fragment.
+ */
+router.get(
+  "/oauth/mobile-callback",
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
+      });
+
+      if (!session?.session?.token) {
+        return res.redirect("zoomies://auth/callback?error=no_session");
+      }
+
+      // Ensure RIDER role exists for the user (may be a brand new Google signup)
+      await prisma.userRoleAssignment.upsert({
+        where: { userId_role: { userId: session.user.id, role: "RIDER" } },
+        create: { userId: session.user.id, role: "RIDER" },
+        update: {},
+      });
+
+      const token = session.session.token;
+      const userName = encodeURIComponent(session.user.name || "");
+      const userEmail = encodeURIComponent(session.user.email || "");
+      const userId = session.user.id;
+
+      return res.redirect(
+        `zoomies://auth/callback?token=${token}&userId=${userId}&name=${userName}&email=${userEmail}`,
+      );
+    } catch (error) {
+      console.error("[AUTH] Mobile OAuth callback error:", error);
+      return res.redirect("zoomies://auth/callback?error=auth_failed");
+    }
+  }),
+);
+
+/**
  * @swagger
  * /api/account/verify-email:
  *   post:

@@ -37,7 +37,7 @@ export async function connectMongoDB(): Promise<typeof mongoose | null> {
       serverSelectionTimeoutMS: 5000, // 5 second timeout
       connectTimeoutMS: 5000,
     };
-
+    console.log("[MongoDB] Attempting to connect to MongoDB at:", MONGODB_URI);
     cached!.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
       console.log("✅ MongoDB connected successfully");
       return mongoose;

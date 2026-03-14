@@ -23,6 +23,7 @@ import {
   chatRoutes,
   locationRoutes,
   friendGroupRoutes,
+  friendshipRoutes,
 } from "./routes/index.js";
 import { initializeScheduledJobs } from "./jobs/scheduler.js";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
@@ -130,6 +131,7 @@ app.use("/api/discover", discoveryRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/friend-groups", friendGroupRoutes);
+app.use("/api/friends", friendshipRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

@@ -638,9 +638,9 @@ export function setupSwagger(app: Express): void {
   });
 
   console.log("📚 API Documentation available at:");
-  console.log("   - Swagger UI: http://localhost:3001/api-docs");
-  console.log("   - ReDoc: http://localhost:3001/redoc");
-  console.log("   - OpenAPI JSON: http://localhost:3001/api-docs.json");
+  console.log("   - Swagger UI: http://localhost:5000/api-docs");
+  console.log("   - ReDoc: http://localhost:5000/redoc");
+  console.log("   - OpenAPI JSON: http://localhost:5000/api-docs.json");
 }
 
 export { swaggerSpec };

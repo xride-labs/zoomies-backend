@@ -31,7 +31,7 @@ router.use(requireAuth);
 router.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -157,7 +157,7 @@ router.get(
   "/requests",
   validateQuery(friendRequestsQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -208,7 +208,7 @@ router.get(
 router.post(
   "/request",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -277,7 +277,7 @@ router.post(
 router.patch(
   "/:id/accept",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -324,7 +324,7 @@ router.patch(
 router.patch(
   "/:id/decline",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -364,7 +364,7 @@ router.patch(
 router.delete(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,

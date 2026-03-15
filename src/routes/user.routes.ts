@@ -16,6 +16,8 @@ import {
   updateUserRoleSchema,
   userRidesQuerySchema,
   userClubsQuerySchema,
+  createBikeSchema,
+  updateBikeSchema,
 } from "../validators/schemas.js";
 
 const router = Router();
@@ -759,6 +761,92 @@ router.get(
       total,
       totalPages: Math.ceil(total / limit),
     });
+  }),
+);
+
+// ========================================
+// Bike Management (Current User)
+// ========================================
+
+router.post(
+  "/me/bikes",
+  requireAuth,
+  validateBody(createBikeSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const bikeData = req.body;
+
+    if (bikeData.isPrimary) {
+      await prisma.bike.updateMany({
+        where: { userId: session.user.id },
+        data: { isPrimary: false },
+      });
+    }
+
+    const bike = await prisma.bike.create({
+      data: {
+        ...bikeData,
+        userId: session.user.id,
+      },
+    });
+
+    ApiResponse.created(res, bike, "Bike added to garage");
+  }),
+);
+
+router.patch(
+  "/me/bikes/:bikeId",
+  requireAuth,
+  validateBody(updateBikeSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { bikeId } = req.params;
+    const bikeData = req.body;
+
+    const existing = await prisma.bike.findFirst({
+      where: { id: bikeId, userId: session.user.id },
+    });
+
+    if (!existing) {
+      return ApiResponse.notFound(res, "Bike not found in your garage");
+    }
+
+    if (bikeData.isPrimary) {
+      await prisma.bike.updateMany({
+        where: { userId: session.user.id, id: { not: bikeId } },
+        data: { isPrimary: false },
+      });
+    }
+
+    const updated = await prisma.bike.update({
+      where: { id: bikeId },
+      data: bikeData,
+    });
+
+    ApiResponse.success(res, updated, "Bike updated");
+  }),
+);
+
+router.delete(
+  "/me/bikes/:bikeId",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { bikeId } = req.params;
+
+    const existing = await prisma.bike.findFirst({
+      where: { id: bikeId, userId: session.user.id },
+    });
+
+    if (!existing) {
+      return ApiResponse.notFound(res, "Bike not found in your garage");
+    }
+
+    await prisma.bike.delete({
+      where: { id: bikeId },
+    });
+
+    ApiResponse.success(res, null, "Bike removed from garage");
   }),
 );
 

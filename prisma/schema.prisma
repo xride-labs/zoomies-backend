@@ -63,6 +63,7 @@ model User {
   // Profile fields
   bio      String?
   location String?
+    interests String[] @default([]) // List of user interests (e.g. touring, sports)
 
   // Experience system
   xpPoints        Int?   @default(0) @map("xp_points") // Total experience points
@@ -742,4 +743,15 @@ model LocationSharePermission {
 
   @@unique([userId, friendId])
   @@map("location_share_permissions")
+}
+
+model Verification {
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
 }

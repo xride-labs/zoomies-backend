@@ -43,7 +43,7 @@ router.get(
   "/",
   validateQuery(friendGroupQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -107,7 +107,7 @@ router.get(
 router.get(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -169,7 +169,7 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -227,7 +227,7 @@ router.post(
 router.patch(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -285,7 +285,7 @@ router.patch(
 router.delete(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -327,7 +327,7 @@ router.delete(
 router.post(
   "/:id/members",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,
@@ -397,7 +397,7 @@ router.post(
 router.delete(
   "/:id/members/:userId",
   asyncHandler(async (req: Request, res: Response) => {
-    const currentUserId = (req as any).user?.id;
+    const currentUserId = (req as any).session?.user?.id;
     if (!currentUserId)
       return ApiResponse.error(
         res,
@@ -455,7 +455,7 @@ router.delete(
 router.post(
   "/:id/rides",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.user?.id;
     if (!userId)
       return ApiResponse.error(
         res,

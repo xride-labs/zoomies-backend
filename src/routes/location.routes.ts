@@ -102,7 +102,7 @@ router.post(
   "/",
   validateBody(updateLocationSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     await LocationService.updateLocation({
       userId,
       ...req.body,
@@ -126,7 +126,7 @@ router.post(
 router.get(
   "/settings",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const settings = await LocationService.getSharingSettings(userId);
     ApiResponse.success(res, settings);
   }),
@@ -162,7 +162,7 @@ router.patch(
   "/settings",
   validateBody(updateSettingsSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const { expiresInMinutes, ...rest } = req.body;
 
     const expiresAt = expiresInMinutes
@@ -193,7 +193,7 @@ router.patch(
 router.get(
   "/friends",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const locations = await LocationService.getFriendLocations(userId);
     ApiResponse.success(res, { friends: locations });
   }),
@@ -223,7 +223,7 @@ router.get(
   "/friends/:friendId",
   validateParams(friendIdParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const { friendId } = req.params;
 
     const location = await LocationService.getFriendLocation(userId, friendId);
@@ -251,7 +251,7 @@ router.get(
 router.get(
   "/permissions",
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const permissions = await LocationService.getAllPermissions(userId);
     ApiResponse.success(res, { permissions });
   }),
@@ -289,7 +289,7 @@ router.post(
   "/permissions",
   validateBody(setPermissionSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
 
     try {
       await LocationService.setFriendPermission(userId, req.body);
@@ -328,7 +328,7 @@ router.post(
   "/ghost-mode",
   validateBody(ghostModeSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const { enabled, durationMinutes } = req.body;
 
     if (enabled) {
@@ -363,7 +363,7 @@ router.get(
   "/ride/:rideId",
   validateParams(rideIdParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
+    const userId = (req as any).session?.user?.id;
     const { rideId } = req.params;
 
     try {

@@ -388,8 +388,7 @@ router.patch(
       userId: session.user.id,
       fields: Object.keys(req.body),
     });
-    const { name, bio, location, dob, bloodType, avatar, coverImage } =
-      req.body;
+    const { name, bio, location, dob, bloodType, avatar, coverImage, interests, activityLevel, level } = req.body;
 
     const user = await prisma.user.update({
       where: { id: session.user.id },
@@ -401,6 +400,9 @@ router.patch(
         ...(bloodType !== undefined && { bloodType }),
         ...(avatar !== undefined && { avatar }),
         ...(coverImage !== undefined && { coverImage }),
+          ...(interests !== undefined && { interests }),
+          ...(activityLevel !== undefined && { activityLevel }),
+          ...(level !== undefined && { level }),
       },
       select: {
         id: true,

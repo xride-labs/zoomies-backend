@@ -95,8 +95,44 @@ export const updateProfileSchema = z.object({
     .optional(),
   avatar: z.string().url("Invalid avatar URL").optional(),
   coverImage: z.string().url("Invalid cover image URL").optional(),
+  interests: z.array(z.string()).optional(),
+  activityLevel: z.enum(["Casual", "Regular", "Enthusiast", "Pro"]).optional(),
+  level: z.number().int().min(0).max(100).optional(),
 });
 
+export const createBikeSchema = z.object({
+  make: z.string().min(1),
+  model: z.string().min(1),
+  year: z.number().int().min(1900),
+  type: z
+    .enum([
+      "SPORT",
+      "CRUISER",
+      "TOURING",
+      "ADVENTURE",
+      "NAKED",
+      "CAFE_RACER",
+      "DUAL_SPORT",
+      "SCOOTER",
+      "COMMUTER",
+      "SUPERBIKE",
+      "OTHER",
+    ])
+    .optional(),
+  engineCc: z.number().int().positive().optional(),
+  color: z.string().optional(),
+  licensePlate: z.string().optional(),
+  vin: z.string().optional(),
+  odo: z.number().int().min(0).optional(),
+  isPrimary: z.boolean().optional(),
+  image: z.string().url().optional(),
+  modifications: z.any().optional(),
+});
+
+export const updateBikeSchema = createBikeSchema.partial();
+
+export type CreateBikeInput = z.infer<typeof createBikeSchema>;
+export type UpdateBikeInput = z.infer<typeof updateBikeSchema>;
 export const updateUserSchema = updateProfileSchema.extend({
   email: z.string().email("Invalid email format").optional(),
   username: z.string().min(2).max(50).optional(),

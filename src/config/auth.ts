@@ -309,13 +309,14 @@ export async function requireAuth(
     next();
   } catch (error) {
     console.error("[Auth] Session error:", error);
-    res.status(401).json({
+    // Don't log the user out on network/db errors during session validation
+    res.status(500).json({
       success: false,
-      message: "Invalid or expired session",
+      message: "An internal error occurred during authentication",
       error: {
-        code: "SESSION_EXPIRED",
+        code: "AUTH_INTERNAL_ERROR",
         details: {
-          hint: "Please sign in again",
+          hint: "Please try again later",
         },
       },
     });

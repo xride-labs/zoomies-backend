@@ -33,6 +33,7 @@ import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
 import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
 import { requireMonitoringAccess } from "./middlewares/monitoring.js";
 import { createSocketServer } from "./lib/socket.js";
+import { connectPostgres } from "./lib/prisma.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -152,6 +153,9 @@ async function startServer() {
   try {
     console.log("[SERVER] Starting Zoomies Backend Server...");
 
+    // Connect to PostgreSQL (required for auth and core APIs)
+    await connectPostgres();
+
     // Connect to MongoDB (required for chat)
     try {
       await connectMongoDB();
@@ -173,18 +177,30 @@ async function startServer() {
     initializeSelfPing(Number(PORT));
 
     httpServer.listen(PORT, () => {
+      const baseUrl =
+        process.env.BETTER_AUTH_BASE_URL || `http://localhost:${PORT}`;
+      const isProduction = process.env.NODE_ENV === "production";
+
+      if (isProduction) {
+        console.log("[SERVER] Zoomies backend started successfully");
+        console.log(`[SERVER] Environment: production`);
+        console.log(`[SERVER] Base URL: ${baseUrl}`);
+        console.log(`[SERVER] Health: ${baseUrl}/health`);
+        return;
+      }
+
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
 ║   🚀 Zoomies Backend Server (Better Auth)
 ║
-║   Server running on: ${process.env.BETTER_AUTH_BASE_URL}:${PORT}
+║   Server running on: ${baseUrl}
 ║   Environment: ${process.env.NODE_ENV || "development"}
 ║
 ║   📚 API Documentation:
-║   - Swagger UI: ${process.env.BETTER_AUTH_BASE_URL}:${PORT}/api-docs
-║   - ReDoc:      ${process.env.BETTER_AUTH_BASE_URL}:${PORT}/redoc
-║   - OpenAPI:    ${process.env.BETTER_AUTH_BASE_URL}:${PORT}/api-docs.json
+║   - Swagger UI: ${baseUrl}/api-docs
+║   - ReDoc:      ${baseUrl}/redoc
+║   - OpenAPI:    ${baseUrl}/api-docs.json
 ║
 ║   Better Auth endpoints (handled automatically):           ║
 ║   - POST /api/auth/sign-up/email                           ║
@@ -212,7 +228,7 @@ async function startServer() {
 ║   - GET  /api/chat/conversations/:id/messages              ║
 ║   - POST /api/chat/conversations/:id/messages              ║
 ║   - GET  /api/chat/unread                                  ║
-║   - WebSocket: ws://${process.env.BETTER_AUTH_BASE_URL}:${PORT}
+║   - WebSocket: ws://localhost:${PORT}
 ║                                                            ║
 ║   Location endpoints (Snapchat-style map):                 ║
 ║   - POST /api/location                                     ║

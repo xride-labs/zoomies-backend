@@ -97,7 +97,8 @@ This API uses **Better Auth** for authentication with multiple providers:
     },
     {
       name: "Media",
-      description: "Media upload endpoints - All images and videos are delivered via Cloudinary",
+      description:
+        "Media upload endpoints - All images and videos are delivered via Cloudinary",
     },
     {
       name: "Admin",
@@ -639,10 +640,14 @@ export function setupSwagger(app: Express): void {
     `);
   });
 
-  console.log("📚 API Documentation available at:");
-  console.log("   - Swagger UI: http://localhost:5000/api-docs");
-  console.log("   - ReDoc: http://localhost:5000/redoc");
-  console.log("   - OpenAPI JSON: http://localhost:5000/api-docs.json");
+  if (process.env.NODE_ENV === "production") {
+    console.log("[DOCS] Swagger/ReDoc routes enabled");
+  } else {
+    console.log("📚 API Documentation available at:");
+    console.log("   - Swagger UI: http://localhost:5000/api-docs");
+    console.log("   - ReDoc: http://localhost:5000/redoc");
+    console.log("   - OpenAPI JSON: http://localhost:5000/api-docs.json");
+  }
 }
 
 export { swaggerSpec };

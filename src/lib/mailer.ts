@@ -1,5 +1,3 @@
-import nodemailer from "nodemailer";
-
 export type EmailPayload = {
   to: string;
   subject: string;
@@ -8,50 +6,71 @@ export type EmailPayload = {
   replyTo?: string;
 };
 
-const emailUser = process.env.EMAIL_USER;
-const emailPass = process.env.EMAIL_APP_PASSWORD;
-const emailFrom = process.env.EMAIL_FROM || emailUser;
+const brevoApiUrl = "https://api.brevo.com/v3/smtp/email";
+const brevoApiKey = process.env.BREVO_API_KEY;
+const senderEmail = process.env.BREVO_SENDER_EMAIL;
+const senderName = process.env.BREVO_SENDER_NAME || "Zoomies";
+const fallbackReplyTo = process.env.BREVO_REPLY_TO;
 
-let cachedTransporter: nodemailer.Transporter | null = null;
+function isBrevoConfigured(): boolean {
+  return Boolean(brevoApiKey && senderEmail);
+}
 
-function getTransporter(): nodemailer.Transporter | null {
-  if (cachedTransporter) {
-    return cachedTransporter;
+function normalizeName(name?: string | null): string | undefined {
+  if (!name) {
+    return undefined;
   }
+  const trimmed = name.trim();
+  return trimmed.length ? trimmed : undefined;
+}
 
-  if (!emailUser || !emailPass) {
-    return null;
+function getFirstName(name?: string | null): string | undefined {
+  const normalized = normalizeName(name);
+  if (!normalized) {
+    return undefined;
   }
-
-  cachedTransporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: emailUser,
-      pass: emailPass,
-    },
-  });
-
-  return cachedTransporter;
+  return normalized.split(/\s+/)[0];
 }
 
 export async function sendEmail(payload: EmailPayload): Promise<boolean> {
-  const transporter = getTransporter();
-
-  if (!transporter || !emailFrom) {
+  if (!isBrevoConfigured() || !senderEmail || !brevoApiKey) {
     console.warn(
-      "[Email] Skipped sending email: EMAIL_USER/EMAIL_APP_PASSWORD not configured",
+      "[Email] Skipped sending email: BREVO_API_KEY/BREVO_SENDER_EMAIL not configured",
     );
     return false;
   }
 
-  await transporter.sendMail({
-    from: emailFrom,
-    to: payload.to,
-    subject: payload.subject,
-    html: payload.html,
-    text: payload.text,
-    replyTo: payload.replyTo,
+  const response = await fetch(brevoApiUrl, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "api-key": brevoApiKey,
+    },
+    body: JSON.stringify({
+      sender: {
+        email: senderEmail,
+        name: senderName,
+      },
+      to: [{ email: payload.to }],
+      subject: payload.subject,
+      htmlContent: payload.html,
+      textContent: payload.text,
+      replyTo: payload.replyTo
+        ? { email: payload.replyTo }
+        : fallbackReplyTo
+          ? { email: fallbackReplyTo }
+          : undefined,
+    }),
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(
+      `[Email] Brevo send failed (${response.status}): ${errorText}`,
+    );
+    return false;
+  }
 
   return true;
 }
@@ -59,11 +78,16 @@ export async function sendEmail(payload: EmailPayload): Promise<boolean> {
 export async function sendVerificationEmail(params: {
   to: string;
   name?: string | null;
-  token: string;
+  token?: string;
+  verifyUrl?: string;
 }): Promise<boolean> {
   const appUrl = process.env.FRONTEND_URL || "http://localhost:3000";
   const encodedEmail = encodeURIComponent(params.to);
-  const verifyUrl = `${appUrl}/verify-email?token=${params.token}&email=${encodedEmail}`;
+  const verifyUrl =
+    params.verifyUrl ||
+    (params.token
+      ? `${appUrl}/verify-email?token=${params.token}&email=${encodedEmail}`
+      : `${appUrl}/verify-email?email=${encodedEmail}`);
   const greeting = params.name ? `Hi ${params.name},` : "Hi there,";
 
   return sendEmail({
@@ -113,5 +137,52 @@ export async function sendAlertEmail(params: {
     subject: params.subject,
     text: params.message,
     html: `<p>${params.message}</p>`,
+  });
+}
+
+export async function sendResetPasswordEmail(params: {
+  to: string;
+  name?: string | null;
+  resetUrl: string;
+}): Promise<boolean> {
+  const greeting = params.name ? `Hi ${params.name},` : "Hi there,";
+
+  return sendEmail({
+    to: params.to,
+    subject: "Reset your Zoomies password",
+    text: `${greeting}\n\nUse this link to reset your password: ${params.resetUrl}\n\nIf you did not request this, you can ignore this email.`,
+    html: `<p>${greeting}</p><p>Use this link to reset your password:</p><p><a href="${params.resetUrl}">${params.resetUrl}</a></p><p>If you did not request this, you can ignore this email.</p>`,
+  });
+}
+
+export async function sendOtpEmail(params: {
+  to: string;
+  otp: string;
+  name?: string | null;
+}): Promise<boolean> {
+  const recipient = getFirstName(params.name);
+  const greeting = recipient ? `Hi ${recipient},` : "Hi there,";
+
+  return sendEmail({
+    to: params.to,
+    subject: "Your Zoomies OTP code",
+    text: `${greeting}\n\nYour Zoomies verification code is: ${params.otp}\nThis code expires in 10 minutes.`,
+    html: `<p>${greeting}</p><p>Your Zoomies verification code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 2px;">${params.otp}</p><p>This code expires in 10 minutes.</p>`,
+  });
+}
+
+export async function sendWelcomeEmail(params: {
+  to: string;
+  name?: string | null;
+}): Promise<boolean> {
+  const recipient = getFirstName(params.name);
+  const greeting = recipient ? `Hi ${recipient},` : "Hi there,";
+  const appUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+  return sendEmail({
+    to: params.to,
+    subject: "Welcome to Zoomies",
+    text: `${greeting}\n\nWelcome to Zoomies. Your account is ready and you can start exploring rides now: ${appUrl}\n\nRide safe,\nTeam Zoomies`,
+    html: `<p>${greeting}</p><p>Welcome to <strong>Zoomies</strong>. Your account is ready and you can start exploring rides now.</p><p><a href="${appUrl}">Open Zoomies</a></p><p>Ride safe,<br/>Team Zoomies</p>`,
   });
 }

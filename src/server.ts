@@ -25,7 +25,10 @@ import {
   friendGroupRoutes,
   friendshipRoutes,
 } from "./routes/index.js";
-import { initializeScheduledJobs } from "./jobs/scheduler.js";
+import {
+  initializeScheduledJobs,
+  initializeSelfPing,
+} from "./jobs/scheduler.js";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
 import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
 import { requireMonitoringAccess } from "./middlewares/monitoring.js";
@@ -165,6 +168,9 @@ async function startServer() {
     // Initialize scheduled background jobs
     console.log("[SERVER] Initializing scheduled jobs...");
     initializeScheduledJobs();
+
+    // Keep the backend warm on free-tier hosts with periodic self-pings.
+    initializeSelfPing(Number(PORT));
 
     httpServer.listen(PORT, () => {
       console.log(`

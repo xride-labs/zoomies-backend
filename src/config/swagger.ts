@@ -31,7 +31,9 @@ This API uses **Better Auth** for authentication with multiple providers:
 - Development: \`http://localhost:5000\`
 - Production: \`https://api.zoomies.app\`
 
-### Authentication Flow (Recommended)
+### Authentication Flows
+
+**Email / Password Flow**
 **New user (email/password)**
 1. **Sign Up**: \`POST /api/auth/sign-up/email\` (Better Auth)
 2. **Verify Email**: \`POST /api/auth/verify-email\` (token sent by email)

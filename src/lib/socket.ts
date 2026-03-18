@@ -157,7 +157,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "join_conversation",
-      async (payload: JoinConversationPayload, ack?: Function) => {
+      async (payload: JoinConversationPayload, ack?: (...args: any[]) => void) => {
         try {
           const { conversationId } = payload;
 
@@ -203,7 +203,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "leave_conversation",
-      (payload: JoinConversationPayload, ack?: Function) => {
+      (payload: JoinConversationPayload, ack?: (...args: any[]) => void) => {
         socket.leave(`conversation:${payload.conversationId}`);
         ack?.({ success: true });
       },
@@ -213,7 +213,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "send_message",
-      async (payload: SendMessagePayload, ack?: Function) => {
+      async (payload: SendMessagePayload, ack?: (...args: any[]) => void) => {
         try {
           const { conversationId, text, messageType, attachments, replyTo } =
             payload;
@@ -313,7 +313,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     // ── mark_read ──────────────────────────────────────────────────────
 
-    socket.on("mark_read", async (payload: MarkReadPayload, ack?: Function) => {
+    socket.on("mark_read", async (payload: MarkReadPayload, ack?: (...args: any[]) => void) => {
       try {
         const { conversationId } = payload;
 
@@ -345,7 +345,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "edit_message",
       async (
         payload: { conversationId: string; messageId: string; text: string },
-        ack?: Function,
+        ack?: (...args: any[]) => void,
       ) => {
         try {
           const message = await ChatService.editMessage(
@@ -381,7 +381,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "delete_message",
       async (
         payload: { conversationId: string; messageId: string },
-        ack?: Function,
+        ack?: (...args: any[]) => void,
       ) => {
         try {
           const message = await ChatService.deleteMessage(
@@ -414,7 +414,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "add_reaction",
       async (
         payload: { conversationId: string; messageId: string; emoji: string },
-        ack?: Function,
+        ack?: (...args: any[]) => void,
       ) => {
         try {
           await ChatService.addReaction(
@@ -447,7 +447,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "remove_reaction",
       async (
         payload: { conversationId: string; messageId: string },
-        ack?: Function,
+        ack?: (...args: any[]) => void,
       ) => {
         try {
           await ChatService.removeReaction(payload.messageId, userId);
@@ -478,7 +478,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "update_location",
-      async (payload: LocationUpdatePayload, ack?: Function) => {
+      async (payload: LocationUpdatePayload, ack?: (...args: any[]) => void) => {
         try {
           // Save to database
           await LocationService.updateLocation({
@@ -527,7 +527,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "subscribe_to_friend_locations",
-      async (payload: { friendIds: string[] }, ack?: Function) => {
+      async (payload: { friendIds: string[] }, ack?: (...args: any[]) => void) => {
         try {
           // Join rooms to receive location updates from these friends
           for (const friendId of payload.friendIds) {
@@ -548,7 +548,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "unsubscribe_from_friend_locations",
-      (payload: { friendIds: string[] }, ack?: Function) => {
+      (payload: { friendIds: string[] }, ack?: (...args: any[]) => void) => {
         for (const friendId of payload.friendIds) {
           socket.leave(`friends:${friendId}`);
         }
@@ -560,7 +560,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "join_ride_tracking",
-      async (payload: JoinRidePayload, ack?: Function) => {
+      async (payload: JoinRidePayload, ack?: (...args: any[]) => void) => {
         try {
           socket.join(`ride:${payload.rideId}`);
           console.log(
@@ -578,7 +578,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "leave_ride_tracking",
-      (payload: JoinRidePayload, ack?: Function) => {
+      (payload: JoinRidePayload, ack?: (...args: any[]) => void) => {
         socket.leave(`ride:${payload.rideId}`);
         ack?.({ success: true });
       },
@@ -589,7 +589,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "request_friend_locations",
-      async (payload: {}, ack?: Function) => {
+      async (payload: Record<string, never>, ack?: (...args: any[]) => void) => {
         try {
           const locations = await LocationService.getFriendLocations(userId);
           ack?.({ success: true, locations });
@@ -606,7 +606,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "toggle_ghost_mode",
       async (
         payload: { enabled: boolean; durationMinutes?: number },
-        ack?: Function,
+        ack?: (...args: any[]) => void,
       ) => {
         try {
           if (payload.enabled) {

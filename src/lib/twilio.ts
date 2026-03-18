@@ -42,11 +42,6 @@ export async function sendOTPViaSMS(
     console.error(
       "Twilio is not configured. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER",
     );
-    // In development, log the OTP instead
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[DEV] OTP for ${phoneNumber}: ${otp}`);
-      return true;
-    }
     return false;
   }
 

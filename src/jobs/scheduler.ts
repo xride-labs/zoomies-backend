@@ -10,6 +10,9 @@ const RIDE_RETENTION_DAYS = parseInt(
   10,
 );
 
+const DEFAULT_SELF_PING_INTERVAL_MINUTES = 10;
+const SELF_PING_TIMEOUT_MS = 10_000;
+
 /**
  * Ride cleanup job - runs daily at 2 AM
  * Deletes rides that ended more than RIDE_RETENTION_DAYS ago
@@ -20,6 +23,7 @@ export async function cleanupOldRides(): Promise<{
   errors: string[];
 }> {
   const errors: string[] = [];
+  // eslint-disable-next-line prefer-const
   let deleted = 0;
 
   try {
@@ -101,6 +105,7 @@ export async function cleanupOrphanedMedia(): Promise<{
   errors: string[];
 }> {
   const errors: string[] = [];
+  // eslint-disable-next-line prefer-const
   let deleted = 0;
 
   try {
@@ -260,6 +265,113 @@ export function initializeScheduledJobs(): void {
   });
 
   console.log("[Jobs] All scheduled jobs initialized successfully");
+}
+
+function resolveSelfPingUrl(port: number): string | null {
+  const explicit = process.env.SELF_PING_URL?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const externalBase =
+    process.env.RENDER_EXTERNAL_URL?.trim() ||
+    process.env.BETTER_AUTH_BASE_URL?.trim();
+
+  if (externalBase) {
+    return `${externalBase.replace(/\/$/, "")}/health`;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return `http://localhost:${port}/health`;
+  }
+
+  return null;
+}
+
+async function pingServer(url: string): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SELF_PING_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "zoomies-backend-self-ping/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      console.warn(
+        `[KeepAlive] Self-ping returned ${response.status} ${response.statusText}`,
+      );
+      return;
+    }
+
+    console.log(`[KeepAlive] Self-ping successful (${response.status})`);
+  } catch (error) {
+    console.warn(
+      `[KeepAlive] Self-ping failed: ${(error as Error).message}`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Periodically pings the deployed backend to keep warm on free-tier hosts.
+ */
+export function initializeSelfPing(port: number): void {
+  const isEnabled = (process.env.SELF_PING_ENABLED || "true") === "true";
+  if (!isEnabled) {
+    console.log("[KeepAlive] Self-ping disabled by SELF_PING_ENABLED");
+    return;
+  }
+
+  const productionOnly =
+    (process.env.SELF_PING_PRODUCTION_ONLY || "true") === "true";
+  if (productionOnly && process.env.NODE_ENV !== "production") {
+    console.log(
+      "[KeepAlive] Self-ping skipped outside production (SELF_PING_PRODUCTION_ONLY=true)",
+    );
+    return;
+  }
+
+  const intervalMinutes = Number.parseFloat(
+    process.env.SELF_PING_INTERVAL_MINUTES ||
+      String(DEFAULT_SELF_PING_INTERVAL_MINUTES),
+  );
+
+  if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+    console.warn(
+      `[KeepAlive] Invalid SELF_PING_INTERVAL_MINUTES value: ${process.env.SELF_PING_INTERVAL_MINUTES}`,
+    );
+    return;
+  }
+
+  const pingUrl = resolveSelfPingUrl(port);
+  if (!pingUrl) {
+    console.warn(
+      "[KeepAlive] Skipped self-ping: set SELF_PING_URL or RENDER_EXTERNAL_URL in production",
+    );
+    return;
+  }
+
+  const intervalMs = intervalMinutes * 60 * 1000;
+  console.log(
+    `[KeepAlive] Self-ping enabled: ${pingUrl} every ${intervalMinutes} minute(s)`,
+  );
+
+  // Trigger a warm-up ping shortly after startup.
+  setTimeout(() => {
+    void pingServer(pingUrl);
+  }, 30_000);
+
+  const timer = setInterval(() => {
+    void pingServer(pingUrl);
+  }, intervalMs);
+
+  timer.unref();
 }
 
 /**

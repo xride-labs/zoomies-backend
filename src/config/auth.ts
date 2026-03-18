@@ -4,7 +4,12 @@ import { phoneNumber, bearer } from "better-auth/plugins";
 import prisma from "../lib/prisma.js";
 import type { Request, Response, NextFunction } from "express";
 import { fromNodeHeaders } from "better-auth/node";
-// import { sendVerificationEmail } from "../lib/mailer.js"; // TODO: Enable when email is configured
+import {
+  sendOtpEmail,
+  sendResetPasswordEmail,
+  sendVerificationEmail,
+  sendWelcomeEmail,
+} from "../lib/mailer.js";
 
 // User roles enum (sync with Prisma schema)
 export enum UserRole {
@@ -32,7 +37,9 @@ export interface AuthSession {
 }
 
 // Extend Express Request type
+// eslint-disable-next-line @typescript-eslint/no-namespace
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       session?: AuthSession;
@@ -80,25 +87,39 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
     requireEmailVerification: false, // Set to true in production
-    // Send verification email on signup
     sendResetPassword: async ({ user, url }) => {
-      console.log(
-        `[AUTH] Password reset requested for ${user.email}, URL: ${url}`,
-      );
+      if (!user.email) {
+        return;
+      }
+
+      const sent = await sendResetPasswordEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl: url,
+      });
+
+      if (!sent) {
+        throw new Error("Failed to send reset password email");
+      }
     },
   },
 
   // Email verification configuration
-  // NOTE: Email sending is disabled until SMTP is configured.
-  // Verification tokens are still created; check server logs for the token.
   emailVerification: {
-    sendVerificationEmail: async ({ user, url, token }) => {
-      console.log(`[AUTH] Verification email for ${user.email}`);
-      console.log(`[AUTH] Verification URL: ${url}`);
-      console.log(`[AUTH] Verification token: ${token}`);
-      // TODO: Enable when email SMTP is configured
-      // const { sendVerificationEmail } = await import("../lib/mailer.js");
-      // await sendVerificationEmail({ to: user.email, name: user.name, token });
+    sendVerificationEmail: async ({ user, url }) => {
+      if (!user.email) {
+        return;
+      }
+
+      const sent = await sendVerificationEmail({
+        to: user.email,
+        name: user.name,
+        verifyUrl: url,
+      });
+
+      if (!sent) {
+        throw new Error("Failed to send verification email");
+      }
     },
     sendOnSignUp: true,
   },
@@ -116,6 +137,18 @@ export const auth = betterAuth({
             console.log(`[AUTH] RIDER role assigned to ${user.id}`);
           } catch (error) {
             console.warn(`[AUTH] Failed to assign RIDER role:`, error);
+          }
+
+          if (user.email) {
+            const sent = await sendWelcomeEmail({
+              to: user.email,
+              name: user.name,
+            });
+            if (!sent) {
+              console.warn(
+                `[AUTH] Failed to send welcome email for ${user.email}`,
+              );
+            }
           }
         },
       },
@@ -199,16 +232,21 @@ export const auth = betterAuth({
   plugins: [
     bearer(),
     phoneNumber({
-      sendOTP: async ({ phoneNumber: phone, code }) => {
-        // Use existing Twilio integration
-        const { sendOTPViaSMS } = await import("../lib/twilio.js");
-        const sent = await sendOTPViaSMS(phone, code);
-        if (!sent && process.env.NODE_ENV !== "development") {
-          throw new Error("Failed to send OTP");
+      sendOTP: async ({ phoneNumber: recipient, code }) => {
+        const isEmailOtp = recipient.includes("@");
+
+        if (isEmailOtp) {
+          const sent = await sendOtpEmail({ to: recipient, otp: code });
+          if (!sent) {
+            throw new Error("Failed to send OTP email");
+          }
+          return;
         }
-        // In development, log the OTP
-        if (process.env.NODE_ENV === "development") {
-          console.log(`[DEV] OTP for ${phone}: ${code}`);
+
+        const { sendOTPViaSMS } = await import("../lib/twilio.js");
+        const sent = await sendOTPViaSMS(recipient, code);
+        if (!sent) {
+          throw new Error("Failed to send OTP via SMS");
         }
       },
     }),

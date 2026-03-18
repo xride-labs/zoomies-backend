@@ -5,8 +5,94 @@ const prisma = new PrismaClient();
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
+async function seedProductionAdmin(passwordHash: string): Promise<void> {
+  console.log("🌱 Running production-safe seed (no destructive deletes)...");
+
+  const adminUser = await prisma.user.upsert({
+    where: { email: "admin@zoomies.com" },
+    update: {
+      name: "Admin User",
+      emailVerified: true,
+      phoneVerified: true,
+      bio: "Platform administrator & club manager",
+      location: "Mumbai, India",
+      dob: new Date("1992-02-01"),
+      bloodType: "O+",
+      avatar:
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/zoomies/rides/avatar_hgoxkz.jpg",
+      coverImage:
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/zoomies/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
+      xpPoints: 5200,
+      level: 12,
+      levelTitle: "Road Commander",
+      activityLevel: "Enthusiast",
+      reputationScore: 5.0,
+      helmetVerified: true,
+      lastSafetyCheck: new Date("2026-01-12"),
+    },
+    create: {
+      email: "admin@zoomies.com",
+      name: "Admin User",
+      emailVerified: true,
+      phoneVerified: true,
+      bio: "Platform administrator & club manager",
+      location: "Mumbai, India",
+      dob: new Date("1992-02-01"),
+      bloodType: "O+",
+      avatar:
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/zoomies/rides/avatar_hgoxkz.jpg",
+      coverImage:
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/zoomies/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
+      xpPoints: 5200,
+      level: 12,
+      levelTitle: "Road Commander",
+      activityLevel: "Enthusiast",
+      reputationScore: 5.0,
+      helmetVerified: true,
+      lastSafetyCheck: new Date("2026-01-12"),
+    },
+  });
+
+  await prisma.userRoleAssignment.createMany({
+    data: [
+      { userId: adminUser.id, role: "ADMIN" as const },
+      { userId: adminUser.id, role: "CLUB_OWNER" as const },
+    ],
+    skipDuplicates: true,
+  });
+
+  await prisma.account.upsert({
+    where: {
+      providerId_accountId: {
+        providerId: "credential",
+        accountId: adminUser.id,
+      },
+    },
+    update: {
+      userId: adminUser.id,
+      password: passwordHash,
+    },
+    create: {
+      userId: adminUser.id,
+      providerId: "credential",
+      accountId: adminUser.id,
+      password: passwordHash,
+    },
+  });
+
+  console.log("✅ Production seed completed safely");
+  console.log("🔑 admin@zoomies.com / password123  -> ADMIN + CLUB_OWNER");
+}
+
 async function main() {
   console.log(`🌱 Starting ${IS_PROD ? "PRODUCTION" : "DEVELOPMENT"} seed...`);
+
+  const hashedPassword = await hashPassword("password123");
+
+  if (IS_PROD) {
+    await seedProductionAdmin(hashedPassword);
+    return;
+  }
 
   // Clear existing data
   console.log("🗑️  Clearing existing data...");
@@ -37,8 +123,6 @@ async function main() {
   await prisma.media.deleteMany();
   await prisma.userRoleAssignment.deleteMany();
   await prisma.user.deleteMany();
-
-  const hashedPassword = await hashPassword("password123");
 
   // ── Helper ──────────────────────────────────────────────────────
   async function createUserWithRoles(
@@ -92,12 +176,6 @@ async function main() {
     hashedPassword,
   );
   console.log("✅ Created admin user:", adminUser.email);
-
-  if (IS_PROD) {
-    console.log("\n🎉 Production seed completed!");
-    console.log("🔑 admin@zoomies.com / password123  → ADMIN + CLUB_OWNER");
-    return;
-  }
 
   // ══════════════════════════════════════════════════════════════════
   //  DEV-ONLY DATA BELOW

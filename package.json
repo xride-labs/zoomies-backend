@@ -22,7 +22,7 @@
     "db:push": "npx prisma db push",
     "db:pull": "npx prisma db pull",
     "db:seed": "tsx prisma/seed.ts",
-    "db:seed:prod": "NODE_ENV=production tsx prisma/seed.ts",
+    "db:seed:prod": "NODE_ENV=production node dist/prisma/seed.js",
     "postinstall": "npm run prisma:generate",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",

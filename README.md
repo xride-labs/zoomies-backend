@@ -70,12 +70,13 @@ The server will start at `http://localhost:3001`.
 | GET | `/auth/signout` | Sign out |
 | GET | `/auth/session` | Get current session |
 | GET | `/auth/providers` | List available providers |
-| POST | `/api/auth/register` | Register with email/password |
-| POST | `/api/auth/send-otp` | Send OTP to phone |
-| POST | `/api/auth/verify-otp` | Verify OTP code |
-| GET | `/api/auth/me` | Get current user profile |
-| PATCH | `/api/auth/me` | Update user profile |
-| POST | `/api/auth/change-password` | Change password |
+| POST | `/api/auth/sign-up/email` | Register with email/password |
+| POST | `/api/auth/sign-in/email` | Login with email/password |
+| POST | `/api/auth/phone-number/send-otp` | Send OTP to phone |
+| POST | `/api/auth/phone-number/verify` | Verify OTP code |
+| GET | `/api/account/me` | Get current user profile |
+| PATCH | `/api/account/me` | Update user profile |
+| POST | `/api/account/change-password` | Change password |
 
 ### Users
 
@@ -131,15 +132,15 @@ Sign in with Google account. Configure `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`
 
 ### Email/Password
 
-Traditional credentials-based authentication. Use `/api/auth/register` to create accounts.
+Traditional credentials-based authentication. Use `/api/auth/sign-up/email` to create accounts.
 
 ### Phone OTP
 
 SMS-based authentication via Twilio:
 
-1. Call `/api/auth/send-otp` with phone number
+1. Call `/api/auth/phone-number/send-otp` with phone number
 2. User receives SMS with 6-digit code
-3. Sign in via Auth.js with `phone-otp` provider
+3. Sign in via `/api/auth/phone-number/verify`
 
 ## Database Schema
 

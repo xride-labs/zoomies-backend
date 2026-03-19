@@ -23,9 +23,8 @@ This API uses **Better Auth** for authentication with multiple providers:
 - **Email/Password** - Traditional credentials
 
 **Important:**
-- \`/api/auth/sign-up/email\` and \`/api/auth/sign-in/email\` are Better Auth endpoints.
-- \`/api/auth/register\` is a custom legacy-compatible endpoint that creates a user and credential account.
-- Prefer Better Auth endpoints for new integrations.
+- \`/api/auth/sign-up/email\` and \`/api/auth/sign-in/email\` are the primary Better Auth endpoints for registration and login.
+- Profile and account management use the \`/api/account/*\` endpoints.
 
 ### Base URL
 - Development: \`http://localhost:5000\`
@@ -36,20 +35,15 @@ This API uses **Better Auth** for authentication with multiple providers:
 **Email / Password Flow**
 **New user (email/password)**
 1. **Sign Up**: \`POST /api/auth/sign-up/email\` (Better Auth)
-2. **Verify Email**: \`POST /api/auth/verify-email\` (token sent by email)
+2. **Verify Email**: \`POST /api/account/verify-email\` (token sent by email)
 3. **Sign In**: \`POST /api/auth/sign-in/email\`
-4. **Use Session**: \`GET /api/auth/session\` or \`GET /api/auth/me\`
+4. **Use Session**: \`GET /api/auth/session\` or \`GET /api/account/me\`
 5. **Sign Out**: \`POST /api/auth/sign-out\`
 
 **Existing user (email/password)**
 1. **Sign In**: \`POST /api/auth/sign-in/email\`
-2. **Use Session**: \`GET /api/auth/session\` or \`GET /api/auth/me\`
+2. **Use Session**: \`GET /api/auth/session\` or \`GET /api/account/me\`
 3. **Sign Out**: \`POST /api/auth/sign-out\`
-
-**Legacy register (if required)**
-1. **Register**: \`POST /api/auth/register\`
-2. **Verify Email**: \`POST /api/auth/verify-email\`
-3. **Sign In**: \`POST /api/auth/sign-in/email\`
     `,
     contact: {
       name: "Zoomies Support",

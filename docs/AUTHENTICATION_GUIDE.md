@@ -154,17 +154,16 @@ These endpoints are handled by Better Auth at `/api/auth/*`:
 | POST | `/api/auth/phone-number/verify` | Verify OTP and sign in |
 | GET | `/api/auth/callback/:provider` | OAuth callback |
 
-### Custom Auth Endpoints
+### Custom Account Endpoints
 
-Additional custom endpoints for the Zoomies app:
+Additional custom endpoints for the Zoomies app (handled via `accountRoutes`):
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/auth/register` | Custom registration (assigns roles, no session) |
-| POST | `/api/auth/verify-email` | Verify email with token |
-| GET | `/api/auth/me` | Get current user profile |
-| PATCH | `/api/auth/me` | Update current user profile |
-| POST | `/api/auth/change-password` | Change password |
+| POST | `/api/account/verify-email` | Verify email with token |
+| GET | `/api/account/me` | Get current user profile (with roles) |
+| PATCH | `/api/account/me` | Update current user profile |
+| POST | `/api/account/change-password` | Change password |
 
 ---
 

@@ -7,6 +7,7 @@ import { createServer } from "http";
 dotenv.config();
 
 import { auth } from "./config/auth.js";
+import { CORS_OPTIONS } from "./config/trustedOrigins.js";
 import { toNodeHandler } from "better-auth/node";
 import { connectMongoDB } from "./lib/mongodb.js";
 import { setupSwagger } from "./config/swagger.js";
@@ -42,20 +43,8 @@ const PORT = process.env.PORT || 5000;
 // Trust proxy (required for secure cookies behind reverse proxies)
 app.set("trust proxy", true);
 
-// CORS configuration
-const corsOptions = {
-  origin: [
-    process.env.FRONTEND_URL || "http://localhost:3000",
-    process.env.MOBILE_APP_URL || "exp://localhost:8081",
-    "http://localhost:3000",
-    "http://localhost:8081",
-  ],
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-};
-
-app.use(cors(corsOptions));
+// Apply CORS configuration
+app.use(cors(CORS_OPTIONS));
 
 // Metrics middleware
 app.use(metricsMiddleware);

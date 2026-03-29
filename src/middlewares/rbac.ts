@@ -56,15 +56,16 @@ export function requireRole(...allowedRoles: UserRole[]) {
 
 // ─── Pre-built guards ────────────────────────────────────────────────
 
-export const requireAdmin = requireRole(UserRole.ADMIN);
+export const requireAdmin = requireRole(UserRole.ADMIN, UserRole.CO_ADMIN);
 export const requireSuperAdmin = requireRole(UserRole.ADMIN);
 export const requireClubOwnerOrAdmin = requireRole(
   UserRole.CLUB_OWNER,
+  UserRole.CO_ADMIN,
   UserRole.ADMIN,
 );
 
 /**
- * Require web-portal access (ADMIN | CLUB_OWNER | SELLER).
+ * Require web-portal access (ADMIN | CO_ADMIN | CLUB_OWNER | SELLER).
  */
 export function requireWebAccess(
   req: Request,

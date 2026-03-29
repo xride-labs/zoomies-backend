@@ -51,6 +51,7 @@ interface LocationUpdatePayload {
 
 interface JoinRidePayload {
   rideId: string;
+  userId?: string;
 }
 
 // ── Track online users (in-memory; Redis-backed in production) ────────────
@@ -157,7 +158,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "join_conversation",
-      async (payload: JoinConversationPayload, ack?: (...args: any[]) => void) => {
+      async (
+        payload: JoinConversationPayload,
+        ack?: (...args: any[]) => void,
+      ) => {
         try {
           const { conversationId } = payload;
 
@@ -313,31 +317,37 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     // ── mark_read ──────────────────────────────────────────────────────
 
-    socket.on("mark_read", async (payload: MarkReadPayload, ack?: (...args: any[]) => void) => {
-      try {
-        const { conversationId } = payload;
+    socket.on(
+      "mark_read",
+      async (payload: MarkReadPayload, ack?: (...args: any[]) => void) => {
+        try {
+          const { conversationId } = payload;
 
-        const allowed = await ChatService.isParticipant(conversationId, userId);
-        if (!allowed) {
-          ack?.({ success: false, error: "Access denied" });
-          return;
+          const allowed = await ChatService.isParticipant(
+            conversationId,
+            userId,
+          );
+          if (!allowed) {
+            ack?.({ success: false, error: "Access denied" });
+            return;
+          }
+
+          await ChatService.markAsRead(conversationId, userId);
+
+          // Notify sender that their messages were read
+          socket.to(`conversation:${conversationId}`).emit("message_read", {
+            conversationId,
+            userId,
+            readAt: new Date().toISOString(),
+          });
+
+          ack?.({ success: true });
+        } catch (err) {
+          console.error("[SOCKET] mark_read error:", err);
+          ack?.({ success: false, error: "Internal error" });
         }
-
-        await ChatService.markAsRead(conversationId, userId);
-
-        // Notify sender that their messages were read
-        socket.to(`conversation:${conversationId}`).emit("message_read", {
-          conversationId,
-          userId,
-          readAt: new Date().toISOString(),
-        });
-
-        ack?.({ success: true });
-      } catch (err) {
-        console.error("[SOCKET] mark_read error:", err);
-        ack?.({ success: false, error: "Internal error" });
-      }
-    });
+      },
+    );
 
     // ── edit_message (real-time broadcast) ─────────────────────────────
 
@@ -474,60 +484,103 @@ export function createSocketServer(httpServer: HttpServer): Server {
     // ── LOCATION SHARING EVENTS (Snapchat-style map) ────────────────────
     // ─────────────────────────────────────────────────────────────────────
 
-    // ── update_location ────────────────────────────────────────────────
+    // ── update_location / update-location ─────────────────────────────
 
-    socket.on(
-      "update_location",
-      async (payload: LocationUpdatePayload, ack?: (...args: any[]) => void) => {
-        try {
-          // Save to database
-          await LocationService.updateLocation({
-            userId,
-            ...payload,
+    const handleLocationUpdate = async (
+      incoming: LocationUpdatePayload & {
+        lat?: number;
+        lon?: number;
+      },
+      ack?: (...args: any[]) => void,
+    ) => {
+      try {
+        const latitude = incoming.latitude ?? incoming.lat;
+        const longitude = incoming.longitude ?? incoming.lon;
+
+        if (typeof latitude !== "number" || typeof longitude !== "number") {
+          ack?.({
+            success: false,
+            error: "latitude and longitude are required",
           });
+          return;
+        }
 
-          // Broadcast to friends who are subscribed
-          // (They join a room like `friends:${userId}` to receive updates)
-          socket.to(`friends:${userId}`).emit("friend_location_updated", {
+        const payload: LocationUpdatePayload = {
+          latitude,
+          longitude,
+          altitude: incoming.altitude,
+          heading: incoming.heading,
+          speed: incoming.speed,
+          accuracy: incoming.accuracy,
+          battery: incoming.battery,
+          isMoving: incoming.isMoving,
+          isOnRide: incoming.isOnRide,
+          rideId: incoming.rideId,
+        };
+
+        // Save to database
+        await LocationService.updateLocation({
+          userId,
+          ...payload,
+        });
+
+        // Broadcast to friends who are subscribed
+        socket.to(`friends:${userId}`).emit("friend_location_updated", {
+          userId,
+          userName,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          heading: payload.heading,
+          speed: payload.speed,
+          isMoving: payload.isMoving,
+          isOnRide: payload.isOnRide,
+          rideId: payload.rideId,
+          timestamp: new Date().toISOString(),
+        });
+
+        // If on a ride, broadcast with both legacy and current event names
+        if (payload.isOnRide && payload.rideId) {
+          const riderPayload = {
             userId,
+            name: userName,
             userName,
             latitude: payload.latitude,
             longitude: payload.longitude,
+            lat: payload.latitude,
+            lon: payload.longitude,
             heading: payload.heading,
             speed: payload.speed,
+            altitude: payload.altitude,
             isMoving: payload.isMoving,
-            isOnRide: payload.isOnRide,
-            rideId: payload.rideId,
             timestamp: new Date().toISOString(),
-          });
+          };
 
-          // If on a ride, broadcast to ride participants
-          if (payload.isOnRide && payload.rideId) {
-            socket.to(`ride:${payload.rideId}`).emit("rider_location_updated", {
-              userId,
-              userName,
-              latitude: payload.latitude,
-              longitude: payload.longitude,
-              heading: payload.heading,
-              speed: payload.speed,
-              isMoving: payload.isMoving,
-              timestamp: new Date().toISOString(),
-            });
-          }
-
-          ack?.({ success: true });
-        } catch (err) {
-          console.error("[SOCKET] update_location error:", err);
-          ack?.({ success: false, error: "Failed to update location" });
+          socket
+            .to(`ride:${payload.rideId}`)
+            .emit("rider_location_updated", riderPayload);
+          socket
+            .to(`ride:${payload.rideId}`)
+            .emit("participant-location", riderPayload);
         }
-      },
-    );
+
+        ack?.({ success: true });
+      } catch (err) {
+        console.error("[SOCKET] update_location error:", err);
+        ack?.({ success: false, error: "Failed to update location" });
+      }
+    };
+
+    socket.on("update_location", handleLocationUpdate);
+    socket.on("update-location", handleLocationUpdate);
 
     // ── subscribe_to_friend_locations ──────────────────────────────────
 
     socket.on(
       "subscribe_to_friend_locations",
-      async (payload: { friendIds: string[] }, ack?: (...args: any[]) => void) => {
+      async (
+        payload: { friendIds: string[] },
+        ack?: (...args: any[]) => void,
+      ) => {
         try {
           // Join rooms to receive location updates from these friends
           for (const friendId of payload.friendIds) {
@@ -556,40 +609,117 @@ export function createSocketServer(httpServer: HttpServer): Server {
       },
     );
 
-    // ── join_ride_tracking ─────────────────────────────────────────────
+    // ── join_ride_tracking / join-ride ────────────────────────────────
 
-    socket.on(
-      "join_ride_tracking",
-      async (payload: JoinRidePayload, ack?: (...args: any[]) => void) => {
-        try {
-          socket.join(`ride:${payload.rideId}`);
-          console.log(
-            `[SOCKET] ${userId} joined ride tracking for ${payload.rideId}`,
-          );
-          ack?.({ success: true });
-        } catch (err) {
-          console.error("[SOCKET] join_ride_tracking error:", err);
-          ack?.({ success: false, error: "Internal error" });
-        }
-      },
-    );
+    const handleJoinRideTracking = async (
+      payload: JoinRidePayload,
+      ack?: (...args: any[]) => void,
+    ) => {
+      try {
+        socket.join(`ride:${payload.rideId}`);
 
-    // ── leave_ride_tracking ────────────────────────────────────────────
+        const joinedPayload = {
+          userId,
+          name: userName,
+          timestamp: new Date().toISOString(),
+        };
+        socket
+          .to(`ride:${payload.rideId}`)
+          .emit("participant-joined", joinedPayload);
+        socket
+          .to(`ride:${payload.rideId}`)
+          .emit("rider_joined_tracking", joinedPayload);
 
-    socket.on(
-      "leave_ride_tracking",
-      (payload: JoinRidePayload, ack?: (...args: any[]) => void) => {
-        socket.leave(`ride:${payload.rideId}`);
+        console.log(
+          `[SOCKET] ${userId} joined ride tracking for ${payload.rideId}`,
+        );
         ack?.({ success: true });
+      } catch (err) {
+        console.error("[SOCKET] join_ride_tracking error:", err);
+        ack?.({ success: false, error: "Internal error" });
+      }
+    };
+
+    socket.on("join_ride_tracking", handleJoinRideTracking);
+    socket.on("join-ride", handleJoinRideTracking);
+
+    // ── leave_ride_tracking / leave-ride ──────────────────────────────
+
+    const handleLeaveRideTracking = (
+      payload: JoinRidePayload,
+      ack?: (...args: any[]) => void,
+    ) => {
+      socket.leave(`ride:${payload.rideId}`);
+
+      const leftPayload = {
+        userId,
+        timestamp: new Date().toISOString(),
+      };
+      socket.to(`ride:${payload.rideId}`).emit("participant-left", leftPayload);
+      socket
+        .to(`ride:${payload.rideId}`)
+        .emit("rider_left_tracking", leftPayload);
+
+      ack?.({ success: true });
+    };
+
+    socket.on("leave_ride_tracking", handleLeaveRideTracking);
+    socket.on("leave-ride", handleLeaveRideTracking);
+
+    // ── emergency-alert / trigger_emergency ───────────────────────────
+
+    const handleEmergencyAlert = (
+      payload: {
+        rideId: string;
+        latitude?: number;
+        longitude?: number;
+        lat?: number;
+        lon?: number;
+        name?: string;
+        message?: string;
       },
-    );
+      ack?: (...args: any[]) => void,
+    ) => {
+      const latitude = payload.latitude ?? payload.lat;
+      const longitude = payload.longitude ?? payload.lon;
+
+      if (typeof latitude !== "number" || typeof longitude !== "number") {
+        ack?.({ success: false, error: "latitude and longitude are required" });
+        return;
+      }
+
+      const emergencyPayload = {
+        userId,
+        name: payload.name || userName,
+        latitude,
+        longitude,
+        lat: latitude,
+        lon: longitude,
+        message: payload.message || "Emergency! I need help!",
+        timestamp: new Date().toISOString(),
+      };
+
+      socket
+        .to(`ride:${payload.rideId}`)
+        .emit("emergency_alert", emergencyPayload);
+      socket
+        .to(`ride:${payload.rideId}`)
+        .emit("emergency-alert", emergencyPayload);
+      ack?.({ success: true });
+    };
+
+    socket.on("trigger_emergency", handleEmergencyAlert);
+    socket.on("emergency-alert", handleEmergencyAlert);
 
     // ── request_friend_locations ───────────────────────────────────────
     // Get all friend locations once (for initial map load)
 
     socket.on(
       "request_friend_locations",
-      async (payload: Record<string, never>, ack?: (...args: any[]) => void) => {
+      async (
+        payload: Record<string, never>,
+        ack?: (...args: any[]) => void,
+      ) => {
         try {
           const locations = await LocationService.getFriendLocations(userId);
           ack?.({ success: true, locations });

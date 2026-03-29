@@ -140,7 +140,9 @@ export const updateUserSchema = updateProfileSchema.extend({
 });
 
 export const userQuerySchema = paginationSchema.extend({
-  role: z.enum(["ADMIN", "CLUB_OWNER", "RIDER", "SELLER"]).optional(),
+  role: z
+    .enum(["ADMIN", "CO_ADMIN", "CLUB_OWNER", "RIDER", "SELLER"])
+    .optional(),
   search: z.string().optional(),
 });
 
@@ -317,7 +319,62 @@ export const uploadMediaSchema = z.object({
 // ========================================
 
 export const updateUserRoleSchema = z.object({
-  role: z.enum(["ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]),
+  role: z.enum(["ADMIN", "CO_ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]),
+});
+
+export const adminUsersQuerySchema = paginationSchema.extend({
+  role: z
+    .enum(["ADMIN", "CO_ADMIN", "CLUB_OWNER", "RIDER", "SELLER"])
+    .optional(),
+  status: z.enum(["active", "pending"]).optional(),
+  search: z.string().optional(),
+});
+
+export const createAdminUserSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
+  name: z.string().min(2).max(100).optional(),
+  username: z.string().min(2).max(50).optional(),
+  phone: z.string().min(10).max(20).optional(),
+  bio: z.string().max(500).optional(),
+  location: z.string().max(200).optional(),
+  activityLevel: z.enum(["Casual", "Regular", "Enthusiast", "Pro"]).optional(),
+  emailVerified: z.boolean().optional(),
+  phoneVerified: z.boolean().optional(),
+  roles: z
+    .array(z.enum(["ADMIN", "CO_ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]))
+    .min(1)
+    .optional(),
+});
+
+export const updateAdminUserSchema = z
+  .object({
+    email: z.string().email("Invalid email format").optional(),
+    name: z.string().min(2).max(100).optional(),
+    username: z.string().min(2).max(50).optional(),
+    phone: z.string().min(10).max(20).nullable().optional(),
+    bio: z.string().max(500).nullable().optional(),
+    location: z.string().max(200).nullable().optional(),
+    activityLevel: z
+      .enum(["Casual", "Regular", "Enthusiast", "Pro"])
+      .optional(),
+    emailVerified: z.boolean().optional(),
+    phoneVerified: z.boolean().optional(),
+    roles: z
+      .array(z.enum(["ADMIN", "CO_ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]))
+      .optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field must be provided",
+  });
+
+export const weeklyActivityQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(7),
 });
 
 export const updateReportSchema = z.object({
@@ -329,6 +386,23 @@ export const adminStatsQuerySchema = z.object({
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   granularity: z.enum(["day", "week", "month"]).default("day"),
+});
+
+export const createReportSchema = z.object({
+  type: z.enum([
+    "post",
+    "comment",
+    "ride",
+    "club",
+    "listing",
+    "user",
+    "message",
+  ]),
+  title: z.string().min(3).max(160),
+  description: z.string().min(5).max(2000).optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  reportedItemId: z.string().cuid(),
+  reportedItemType: z.string().min(2).max(50).optional(),
 });
 
 export const clubDiscoverQuerySchema = paginationSchema.extend({

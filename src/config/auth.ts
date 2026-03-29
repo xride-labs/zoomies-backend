@@ -14,6 +14,7 @@ import {
 // User roles enum (sync with Prisma schema)
 export enum UserRole {
   ADMIN = "ADMIN",
+  CO_ADMIN = "CO_ADMIN",
   CLUB_OWNER = "CLUB_OWNER",
   RIDER = "RIDER",
   SELLER = "SELLER",
@@ -51,6 +52,10 @@ declare global {
  * Better Auth configuration
  */
 export const auth = betterAuth({
+  logger: {
+    level: process.env.NODE_ENV === "production" ? "warn" : "debug",
+  },
+
   // Secret for signing tokens/cookies
   secret: process.env.BETTER_AUTH_SECRET,
 
@@ -139,14 +144,35 @@ export const auth = betterAuth({
             console.warn(`[AUTH] Failed to assign RIDER role:`, error);
           }
 
+          // Keep legacy avatar in sync when OAuth providers populate image.
+          try {
+            const oauthImage = (user as any).image as string | undefined;
+            const currentAvatar = (user as any).avatar as string | undefined;
+            if (oauthImage && !currentAvatar) {
+              await prisma.user.update({
+                where: { id: user.id },
+                data: { avatar: oauthImage },
+              });
+            }
+          } catch (error) {
+            console.warn(`[AUTH] Failed to sync avatar from image:`, error);
+          }
+
           if (user.email) {
-            const sent = await sendWelcomeEmail({
-              to: user.email,
-              name: user.name,
-            });
-            if (!sent) {
+            try {
+              const sent = await sendWelcomeEmail({
+                to: user.email,
+                name: user.name,
+              });
+              if (!sent) {
+                console.warn(
+                  `[AUTH] Failed to send welcome email for ${user.email}`,
+                );
+              }
+            } catch (error) {
               console.warn(
-                `[AUTH] Failed to send welcome email for ${user.email}`,
+                `[AUTH] Welcome email threw for ${user.email}:`,
+                error,
               );
             }
           }
@@ -161,13 +187,6 @@ export const auth = betterAuth({
       clientId: process.env.AUTH_GOOGLE_ID || "",
       clientSecret: process.env.AUTH_GOOGLE_SECRET || "",
     },
-  },
-
-  // Account linking — when a user signs in with Google using the same email
-  // as an existing email/password account, link both providers to the same user.
-  accountLinking: {
-    enabled: true,
-    trustedProviders: ["google"],
   },
 
   // Session configuration
@@ -189,7 +208,7 @@ export const auth = betterAuth({
         required: false,
       },
       phoneVerified: {
-        type: "date",
+        type: "boolean",
         required: false,
       },
       username: {
@@ -226,6 +245,12 @@ export const auth = betterAuth({
   // Account configuration
   account: {
     modelName: "Account",
+    // When a user signs in with Google using the same email as an
+    // existing account, link the provider instead of creating a new user.
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google"],
+    },
   },
 
   // Plugins
@@ -275,7 +300,8 @@ export async function getCurrentSession(
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
-      image: (session.user as any).avatar ?? null,
+      image:
+        (session.user as any).avatar ?? (session.user as any).image ?? null,
       phone: session.user.phone ?? null,
       roles: [],
     },
@@ -333,7 +359,8 @@ export async function requireAuth(
         id: session.user.id,
         email: session.user.email,
         name: session.user.name,
-        image: (session.user as any).avatar ?? null,
+        image:
+          (session.user as any).avatar ?? (session.user as any).image ?? null,
         phone: (session.user as any).phone || null,
         roles,
       },
@@ -387,7 +414,8 @@ export async function optionalAuth(
           id: session.user.id,
           email: session.user.email,
           name: session.user.name,
-          image: (session.user as any).avatar ?? null,
+          image:
+            (session.user as any).avatar ?? (session.user as any).image ?? null,
           phone: (session.user as any).phone || null,
           roles,
         },

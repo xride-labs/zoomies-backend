@@ -4,12 +4,41 @@ import { hashPassword } from "better-auth/crypto";
 const prisma = new PrismaClient();
 
 const IS_PROD = process.env.NODE_ENV === "production";
+const PRIMARY_ADMIN_EMAIL = "admin@zoomies.com";
+const GOOGLE_ADMIN_EMAIL = "krithikm923@gmail.com";
+
+async function ensureGoogleAdminSeedUser(): Promise<void> {
+  const googleAdmin = await prisma.user.upsert({
+    where: { email: GOOGLE_ADMIN_EMAIL },
+    update: {
+      name: "Krithik M",
+      emailVerified: true,
+    },
+    create: {
+      email: GOOGLE_ADMIN_EMAIL,
+      name: "Krithik M",
+      emailVerified: true,
+      bio: "Platform admin user",
+      location: "Bangalore, India",
+    },
+  });
+
+  await prisma.userRoleAssignment.createMany({
+    data: [
+      { userId: googleAdmin.id, role: "ADMIN" as const },
+      { userId: googleAdmin.id, role: "RIDER" as const },
+    ],
+    skipDuplicates: true,
+  });
+
+  console.log(`✅ Ensured ${GOOGLE_ADMIN_EMAIL} has ADMIN + RIDER roles`);
+}
 
 async function seedProductionAdmin(passwordHash: string): Promise<void> {
   console.log("🌱 Running production-safe seed (no destructive deletes)...");
 
   const adminUser = await prisma.user.upsert({
-    where: { email: "admin@zoomies.com" },
+    where: { email: PRIMARY_ADMIN_EMAIL },
     update: {
       name: "Admin User",
       emailVerified: true,
@@ -31,7 +60,7 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
       lastSafetyCheck: new Date("2026-01-12"),
     },
     create: {
-      email: "admin@zoomies.com",
+      email: PRIMARY_ADMIN_EMAIL,
       name: "Admin User",
       emailVerified: true,
       phoneVerified: true,
@@ -52,6 +81,8 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
       lastSafetyCheck: new Date("2026-01-12"),
     },
   });
+
+  await ensureGoogleAdminSeedUser();
 
   await prisma.userRoleAssignment.createMany({
     data: [
@@ -81,7 +112,8 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
   });
 
   console.log("✅ Production seed completed safely");
-  console.log("🔑 admin@zoomies.com / password123  -> ADMIN + CLUB_OWNER");
+  console.log(`🔑 ${PRIMARY_ADMIN_EMAIL} / password123  -> ADMIN + CLUB_OWNER`);
+  console.log(`🟢 ${GOOGLE_ADMIN_EMAIL} -> ADMIN + RIDER`);
 }
 
 async function main() {
@@ -150,7 +182,7 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════
   const adminUser = await createUserWithRoles(
     {
-      email: "admin@zoomies.com",
+      email: PRIMARY_ADMIN_EMAIL,
       username: "admin",
       name: "Admin User",
       phone: "+1234567890",
@@ -176,6 +208,8 @@ async function main() {
     hashedPassword,
   );
   console.log("✅ Created admin user:", adminUser.email);
+
+  await ensureGoogleAdminSeedUser();
 
   // ══════════════════════════════════════════════════════════════════
   //  DEV-ONLY DATA BELOW

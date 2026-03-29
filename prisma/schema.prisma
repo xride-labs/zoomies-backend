@@ -7,6 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  //@ts-expect - Prisma doesn't recognize the DATABASE_URL format with multiple hosts for CockroachDB, but it works at runtime
   url      = env("DATABASE_URL")
 }
 
@@ -55,7 +56,8 @@ model User {
   dob           DateTime? // Date of birth
   bloodType     String?   @map("blood_type") // e.g., "O+", "A-", "B+", "AB-"
   emailVerified Boolean   @default(false) @map("email_verified")
-  avatar        String? // Profile picture URL
+  image         String? // OAuth profile image (Better Auth default field)
+  avatar        String? // App profile picture URL (legacy/custom field)
   coverImage    String?   @map("cover_image") // Cover/banner image URL
   phone         String?   @unique // For mobile OTP
   phoneVerified Boolean   @default(false) @map("phone_verified")
@@ -113,6 +115,17 @@ model User {
   friendGroupMemberships FriendGroupMember[]
   liveLocation           UserLiveLocation?
 
+  // Ride rating relations
+  rideRatingsGiven    RideRating[] @relation("RideRatingGiver")
+  rideRatingsReceived RideRating[] @relation("RideRatingReceiver")
+
+  // Marketplace relations
+  listingOffersMade ListingOffer[]    @relation("ListingOffersBuyer")
+  listingInterests  ListingInterest[] @relation("ListingInterests")
+
+  // Notification relations
+  notifications Notification[]
+
   @@map("users")
 }
 
@@ -121,6 +134,7 @@ model User {
 // User roles for role-based access control
 enum UserRole {
   ADMIN // Super admin with full platform access (web + mobile)
+  CO_ADMIN // Delegated admin with broad dashboard access
   CLUB_OWNER // Club creator/manager (web + mobile)
   RIDER // Default role for new signups - active motorcycle rider (mobile)
   SELLER // Marketplace seller - assigned when user lists items (web + mobile)
@@ -238,6 +252,9 @@ model Ride {
   // Participants relation
   participants RideParticipant[]
 
+  // Ratings (post-ride ratings of participants)
+  ratings RideRating[] @relation("RideRatings")
+
   // Tracking data (populated during/after live ride)
   trackingData RideTrackingData?
 
@@ -344,6 +361,10 @@ model MarketplaceListing {
 
   // Reviews relation
   reviews Review[]
+
+  // Offers and interests (FB Marketplace-style negotiation)
+  offers    ListingOffer[]    @relation("ListingOffers")
+  interests ListingInterest[] @relation("ListingInterests")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -784,4 +805,143 @@ model Verification {
   updatedAt  DateTime? @updatedAt
 
   @@map("verification")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RIDE RATINGS - Post-ride user ratings and reputation
+// ─────────────────────────────────────────────────────────────────────────────
+
+model RideRating {
+  id          String   @id @default(cuid())
+  rideId      String   @map("ride_id")
+  ratedById   String   @map("rated_by_id") // Who is giving the rating
+  ratedUserId String   @map("rated_user_id") // Who is being rated
+  rating      Int      @db.SmallInt // 1-5 stars
+  comment     String?
+  tags        String[] // Quick tags: "Safe", "Friendly", "Skilled", "Reliable", etc.
+
+  ride      Ride @relation("RideRatings", fields: [rideId], references: [id], onDelete: Cascade)
+  ratedBy   User @relation("RideRatingGiver", fields: [ratedById], references: [id], onDelete: Cascade)
+  ratedUser User @relation("RideRatingReceiver", fields: [ratedUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([rideId, ratedById, ratedUserId], map: "unique_ride_rating")
+  @@index([ratedUserId], map: "idx_rated_user")
+  @@map("ride_ratings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARKETPLACE OFFERS - Facebook Marketplace-style negotiation flow
+// From interest shown → offer made → negotiation → deal done
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ListingOfferStatus {
+  INTERESTED // Initial interest shown
+  OFFER_MADE // Buyer made an offer
+  NEGOTIATING // Counter-offers in progress
+  ACCEPTED // Seller accepted offer
+  DEAL_DONE // Completion/payment done
+  REJECTED // Offer rejected
+  WITHDRAWN // Buyer withdrew offer
+  EXPIRED // Offer expired (time limit)
+}
+
+model ListingOffer {
+  id        String             @id @default(cuid())
+  listingId String             @map("listing_id")
+  buyerId   String             @map("buyer_id")
+  status    ListingOfferStatus @default(INTERESTED)
+
+  // Offer details
+  originalPrice Float?  @map("original_price") // Listing price
+  offeredPrice  Float?  @map("offered_price") // What buyer is offering
+  message       String? // Buyer's message/negotiation note
+
+  // Negotiation history (JSON array of offer/counter-offer chain)
+  negotiationHistory String? @map("negotiation_history") // JSON formatted
+
+  // Timeline
+  lastMessageAt DateTime? @map("last_message_at")
+  expiresAt     DateTime? @map("expires_at") // Offer expires after X days
+
+  listing MarketplaceListing @relation("ListingOffers", fields: [listingId], references: [id], onDelete: Cascade)
+  buyer   User               @relation("ListingOffersBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([listingId, buyerId], map: "unique_buyer_per_listing")
+  @@index([status], map: "idx_offer_status")
+  @@index([buyerId], map: "idx_buyer_id")
+  @@map("listing_offers")
+}
+
+model ListingInterest {
+  id        String @id @default(cuid())
+  listingId String @map("listing_id")
+  userId    String @map("user_id") // User who showed interest
+
+  listing MarketplaceListing @relation("ListingInterests", fields: [listingId], references: [id], onDelete: Cascade)
+  user    User               @relation("ListingInterests", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([listingId, userId], map: "unique_listing_interest")
+  @@map("listing_interests")
+}
+
+// Extend MarketplaceListing with offers relation
+// (Add to the MarketplaceListing model manually)
+// offers ListingOffer[]
+// interests ListingInterest[]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS - Track notifications sent to users
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum NotificationType {
+  RIDE_INVITE // Invited to a ride
+  RIDE_JOINED // Someone joined your ride
+  RIDE_COMPLETED // Ride completed reminder
+  CLUB_INVITE // Invited to club
+  CLUB_REQUEST // New member request
+  LISTING_OFFER // Received offer on listing
+  LISTING_INTERESTED // Someone interested in listing
+  MESSAGE // New chat message
+  FOLLOW // New follower
+  COMMENT // Comment on your post
+  LIKE // Like on your post
+  FRIEND_REQUEST // Friend request received
+}
+
+model Notification {
+  id      String           @id @default(cuid())
+  userId  String           @map("user_id")
+  type    NotificationType
+  title   String
+  message String?
+
+  // Link to the related entity
+  relatedType String? @map("related_type") // "ride", "club", "listing", "user", "post", etc
+  relatedId   String? @map("related_id")
+
+  // Delivery tracking
+  isRead Boolean   @default(false) @map("is_read")
+  readAt DateTime? @map("read_at")
+
+  // Delivery channels
+  sentViaEmail Boolean @default(false) @map("sent_via_email")
+  sentViaPush  Boolean @default(false) @map("sent_via_push")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], map: "idx_notification_user")
+  @@index([isRead], map: "idx_notification_read")
+  @@index([createdAt], map: "idx_notification_created")
+  @@map("notifications")
 }

@@ -7,6 +7,7 @@
 // Mirror the Prisma enum – kept in sync manually to avoid importing generated client everywhere.
 export enum UserRole {
   ADMIN = "ADMIN",
+  CO_ADMIN = "CO_ADMIN",
   CLUB_OWNER = "CLUB_OWNER",
   RIDER = "RIDER",
   SELLER = "SELLER",
@@ -17,6 +18,7 @@ export enum UserRole {
 /** Roles that may access the **web** admin / manager portal */
 export const WEB_ACCESS_ROLES: UserRole[] = [
   UserRole.ADMIN,
+  UserRole.CO_ADMIN,
   UserRole.CLUB_OWNER,
   UserRole.SELLER,
 ];
@@ -26,6 +28,7 @@ export const MOBILE_ACCESS_ROLES: UserRole[] = [
   UserRole.RIDER,
   UserRole.CLUB_OWNER,
   UserRole.SELLER,
+  UserRole.CO_ADMIN,
   UserRole.ADMIN,
 ];
 
@@ -49,6 +52,11 @@ export function hasAllRoles(
 
 /** Check if user is any kind of admin */
 export function isAdmin(userRoles: UserRole[]): boolean {
+  return hasAnyRole(userRoles, [UserRole.ADMIN, UserRole.CO_ADMIN]);
+}
+
+/** Check if user is a super admin. */
+export function isSuperAdmin(userRoles: UserRole[]): boolean {
   return userRoles.includes(UserRole.ADMIN);
 }
 
@@ -75,20 +83,20 @@ export function normalizeRoles(roles: UserRole[]): UserRole[] {
  */
 export const PERMISSIONS = {
   // Admin
-  VIEW_ADMIN_DASHBOARD: [UserRole.ADMIN],
-  MANAGE_USERS: [UserRole.ADMIN],
+  VIEW_ADMIN_DASHBOARD: [UserRole.ADMIN, UserRole.CO_ADMIN],
+  MANAGE_USERS: [UserRole.ADMIN, UserRole.CO_ADMIN],
   MANAGE_ADMINS: [UserRole.ADMIN],
   VIEW_METRICS: [UserRole.ADMIN],
-  MODERATE_CONTENT: [UserRole.ADMIN],
-  VERIFY_CLUBS: [UserRole.ADMIN],
+  MODERATE_CONTENT: [UserRole.ADMIN, UserRole.CO_ADMIN],
+  VERIFY_CLUBS: [UserRole.ADMIN, UserRole.CO_ADMIN],
 
   // Club owner
-  MANAGE_OWN_CLUBS: [UserRole.ADMIN, UserRole.CLUB_OWNER],
-  MANAGE_CLUB_RIDES: [UserRole.ADMIN, UserRole.CLUB_OWNER],
-  MANAGE_CLUB_MEMBERS: [UserRole.ADMIN, UserRole.CLUB_OWNER],
+  MANAGE_OWN_CLUBS: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.CLUB_OWNER],
+  MANAGE_CLUB_RIDES: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.CLUB_OWNER],
+  MANAGE_CLUB_MEMBERS: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.CLUB_OWNER],
 
   // Seller
-  MANAGE_LISTINGS: [UserRole.ADMIN, UserRole.SELLER],
+  MANAGE_LISTINGS: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.SELLER],
 
   // Rider / User (mobile)
   JOIN_RIDES: [UserRole.RIDER, UserRole.CLUB_OWNER, UserRole.SELLER],
@@ -96,6 +104,7 @@ export const PERMISSIONS = {
     UserRole.RIDER,
     UserRole.CLUB_OWNER,
     UserRole.SELLER,
+    UserRole.CO_ADMIN,
     UserRole.ADMIN,
   ],
   JOIN_CLUBS: [UserRole.RIDER, UserRole.CLUB_OWNER, UserRole.SELLER],
@@ -103,12 +112,14 @@ export const PERMISSIONS = {
     UserRole.RIDER,
     UserRole.CLUB_OWNER,
     UserRole.SELLER,
+    UserRole.CO_ADMIN,
     UserRole.ADMIN,
   ],
   CREATE_LISTINGS: [
     UserRole.RIDER,
     UserRole.CLUB_OWNER,
     UserRole.SELLER,
+    UserRole.CO_ADMIN,
     UserRole.ADMIN,
   ],
 } as const;

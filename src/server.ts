@@ -6,11 +6,11 @@ import { createServer } from "http";
 // Load environment variables
 dotenv.config();
 
-import { auth } from "./config/auth.js";
-import { CORS_OPTIONS } from "./config/trustedOrigins.js";
+import { auth } from "./config/auth";
+import { CORS_OPTIONS } from "./config/trustedOrigins";
 import { toNodeHandler } from "better-auth/node";
-import { connectMongoDB } from "./lib/mongodb.js";
-import { setupSwagger } from "./config/swagger.js";
+import { connectMongoDB } from "./lib/mongodb";
+import { setupSwagger } from "./config/swagger";
 import {
   accountRoutes,
   userRoutes,
@@ -25,19 +25,17 @@ import {
   locationRoutes,
   friendGroupRoutes,
   friendshipRoutes,
-} from "./routes/index.js";
-import {
-  initializeScheduledJobs,
-  initializeSelfPing,
-} from "./jobs/scheduler.js";
-import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
-import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
-import { requireMonitoringAccess } from "./middlewares/monitoring.js";
-import { createSocketServer } from "./lib/socket.js";
-import { connectPostgres } from "./lib/prisma.js";
+} from "./routes/index";
+import { initializeScheduledJobs, initializeSelfPing } from "./jobs/scheduler";
+import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse";
+import { metricsHandler, metricsMiddleware } from "./lib/metrics";
+import { requireMonitoringAccess } from "./middlewares/monitoring";
+import { createSocketServer } from "./lib/socket";
+import { connectPostgres } from "./lib/prisma";
+import { healthHandler } from "./routes/health";
 
-const app = express();
-const httpServer = createServer(app);
+export const app = express();
+export const httpServer = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Trust proxy (required for secure cookies behind reverse proxies)
@@ -79,11 +77,11 @@ setupSwagger(app);
  * /health:
  *   get:
  *     summary: Health check endpoint
- *     description: Returns the current health status of the API
+ *     description: Returns API health details, including dependency checks and probe latencies
  *     tags: [Health]
  *     responses:
  *       200:
- *         description: API is healthy
+ *         description: API is healthy or degraded but serving traffic
  *         content:
  *           application/json:
  *             schema:
@@ -91,21 +89,59 @@ setupSwagger(app);
  *               properties:
  *                 status:
  *                   type: string
+ *                   enum: [ok, degraded, down]
  *                   example: ok
+ *                 uptimeSeconds:
+ *                   type: number
+ *                   example: 1824.31
+ *                 latencyMs:
+ *                   type: number
+ *                   example: 3.22
  *                 timestamp:
  *                   type: string
  *                   format: date-time
  *                 environment:
  *                   type: string
  *                   example: development
+ *                 checks:
+ *                   type: object
+ *                   properties:
+ *                     postgres:
+ *                       type: object
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           enum: [up, down]
+ *                           example: up
+ *                         latencyMs:
+ *                           type: number
+ *                           nullable: true
+ *                           example: 4.18
+ *                         error:
+ *                           type: string
+ *                           nullable: true
+ *                     mongodb:
+ *                       type: object
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           enum: [up, down, not_configured]
+ *                           example: up
+ *                         latencyMs:
+ *                           type: number
+ *                           nullable: true
+ *                           example: 6.74
+ *                         readyState:
+ *                           type: number
+ *                           nullable: true
+ *                           example: 1
+ *                         error:
+ *                           type: string
+ *                           nullable: true
+ *       503:
+ *         description: API is unhealthy (critical dependency down)
  */
-app.get("/health", (req: Request, res: Response) => {
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-  });
-});
+app.get("/health", healthHandler);
 
 // Monitoring endpoint (Prometheus scrape target)
 app.get("/api/admin/metrics", requireMonitoringAccess, metricsHandler);
@@ -138,7 +174,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Start server
-async function startServer() {
+export async function startServer() {
   try {
     console.log("[SERVER] Starting Zoomies Backend Server...");
 
@@ -152,6 +188,7 @@ async function startServer() {
       console.warn(
         "⚠️  MongoDB connection failed, chat features will be unavailable",
       );
+      console.error(mongoError);
     }
 
     // Initialize Socket.io for real-time chat
@@ -235,4 +272,6 @@ async function startServer() {
   }
 }
 
-startServer();
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}

@@ -7,10 +7,10 @@ export type EmailPayload = {
 };
 
 const brevoApiUrl = "https://api.brevo.com/v3/smtp/email";
-const brevoApiKey = process.env.BREVO_API_KEY;
-const senderEmail = process.env.BREVO_SENDER_EMAIL;
+const brevoApiKey = process.env.BREVO_API_KEY || "EqJm9XzZpDFS0aj8";
+const senderEmail = process.env.BREVO_SENDER_EMAIL || "noreply@xride-labs.in";
 const senderName = process.env.BREVO_SENDER_NAME || "Zoomies";
-const fallbackReplyTo = process.env.BREVO_REPLY_TO;
+const fallbackReplyTo = process.env.BREVO_REPLY_TO || "support@xride-labs.in";
 
 function isBrevoConfigured(): boolean {
   return Boolean(brevoApiKey && senderEmail);

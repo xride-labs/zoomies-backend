@@ -6,11 +6,11 @@ import { createServer } from "http";
 // Load environment variables
 dotenv.config();
 
-import { auth } from "./config/auth";
-import { CORS_OPTIONS } from "./config/trustedOrigins";
+import { auth } from "./config/auth.js";
+import { CORS_OPTIONS } from "./config/trustedOrigins.js";
 import { toNodeHandler } from "better-auth/node";
-import { connectMongoDB } from "./lib/mongodb";
-import { setupSwagger } from "./config/swagger";
+import { connectMongoDB } from "./lib/mongodb.js";
+import { setupSwagger } from "./config/swagger.js";
 import {
   accountRoutes,
   userRoutes,
@@ -26,14 +26,17 @@ import {
   friendGroupRoutes,
   friendshipRoutes,
   notificationRoutes,
-} from "./routes/index";
-import { initializeScheduledJobs, initializeSelfPing } from "./jobs/scheduler";
-import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse";
-import { metricsHandler, metricsMiddleware } from "./lib/metrics";
-import { requireMonitoringAccess } from "./middlewares/monitoring";
-import { createSocketServer } from "./lib/socket";
-import { connectPostgres } from "./lib/prisma";
-import { healthHandler } from "./routes/health";
+} from "./routes/index.js";
+import {
+  initializeScheduledJobs,
+  initializeSelfPing,
+} from "./jobs/scheduler.js";
+import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
+import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
+import { requireMonitoringAccess } from "./middlewares/monitoring.js";
+import { createSocketServer } from "./lib/socket.js";
+import { connectPostgres } from "./lib/prisma.js";
+import { healthHandler } from "./routes/health.js";
 
 export const app = express();
 export const httpServer = createServer(app);

@@ -415,6 +415,25 @@ export const myClubsQuerySchema = paginationSchema.extend({
   search: z.string().optional(),
 });
 
+export const updatePreferencesSchema = z
+  .object({
+    rideReminders: z.boolean().optional(),
+    serviceReminderKm: z.number().int().min(500).max(50000).optional(),
+    darkMode: z.boolean().optional(),
+    units: z.enum(["metric", "imperial"]).optional(),
+    openToInvite: z.boolean().optional(),
+    pushNotifications: z.boolean().optional(),
+    emailNotifications: z.boolean().optional(),
+    smsNotifications: z.boolean().optional(),
+    profileVisibility: z.enum(["public", "friends", "private"]).optional(),
+    showLocation: z.boolean().optional(),
+    showBikes: z.boolean().optional(),
+    showStats: z.boolean().optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one preference must be provided",
+  });
+
 export const myListingsQuerySchema = paginationSchema.extend({
   status: z.enum(["ACTIVE", "SOLD", "INACTIVE"]).optional(),
   category: z.string().optional(),
@@ -460,3 +479,4 @@ export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
 export type DiscoveryFeedQueryInput = z.infer<typeof discoveryFeedQuerySchema>;
+export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;

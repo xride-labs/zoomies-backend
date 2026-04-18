@@ -11,3 +11,4 @@ export { default as chatRoutes } from "./chat/chat.routes.js";
 export { default as locationRoutes } from "./location/location.routes.js";
 export { default as friendGroupRoutes } from "./friend-group/friend-group.routes.js";
 export { default as friendshipRoutes } from "./friendship/friendship.routes.js";
+export { default as notificationRoutes } from "./notification/notification.routes.js";

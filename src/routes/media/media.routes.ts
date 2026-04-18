@@ -678,12 +678,22 @@ router.post(
 
     try {
       const result = await uploadClubGallery(file, clubId);
+      const updatedClub = await prisma.club.update({
+        where: { id: clubId },
+        data: {
+          gallery: {
+            push: result.secureUrl,
+          },
+        },
+        select: { id: true, gallery: true },
+      });
 
       ApiResponse.success(
         res,
         {
           media: result,
           imageUrl: result.secureUrl,
+          gallery: updatedClub.gallery,
         },
         "Club gallery image uploaded successfully",
       );

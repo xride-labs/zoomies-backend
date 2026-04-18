@@ -7,6 +7,7 @@ import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { validateBody, asyncHandler } from "../../middlewares/validation.js";
 import {
   updateProfileSchema,
+  updatePreferencesSchema,
   verifyEmailSchema,
 } from "../../validators/schemas.js";
 import { z } from "zod";
@@ -337,6 +338,63 @@ router.get(
     });
 
     ApiResponse.success(res, { user: response });
+  }),
+);
+
+router.get(
+  "/preferences",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+
+    const preferences = await prisma.userPreferences.findUnique({
+      where: { userId: session.user.id },
+    });
+
+    ApiResponse.success(res, {
+      preferences:
+        preferences ||
+        ({
+          rideReminders: true,
+          serviceReminderKm: 3000,
+          darkMode: false,
+          units: "metric",
+          openToInvite: true,
+          pushNotifications: true,
+          emailNotifications: true,
+          smsNotifications: false,
+          profileVisibility: "public",
+          showLocation: true,
+          showBikes: true,
+          showStats: true,
+        } as const),
+    });
+  }),
+);
+
+router.patch(
+  "/preferences",
+  requireAuth,
+  validateBody(updatePreferencesSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+
+    const preferences = await prisma.userPreferences.upsert({
+      where: { userId: session.user.id },
+      create: {
+        userId: session.user.id,
+        ...req.body,
+      },
+      update: {
+        ...req.body,
+      },
+    });
+
+    ApiResponse.success(
+      res,
+      { preferences },
+      "Preferences updated successfully",
+    );
   }),
 );
 

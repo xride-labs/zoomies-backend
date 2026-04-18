@@ -104,16 +104,17 @@ model User {
   reportsFiled        Report[]             @relation("ReportReporter")
 
   // New relations for comprehensive profile
-  bikes                  Bike[]
-  badges                 UserBadge[]
-  emergencyContacts      EmergencyContact[]
-  preferences            UserPreferences?
-  rideStats              UserRideStats?
-  friendsInitiated       Friendship[]        @relation("FriendInitiator")
-  friendsReceived        Friendship[]        @relation("FriendReceiver")
-  friendGroupsOwned      FriendGroup[]       @relation("FriendGroupOwner")
-  friendGroupMemberships FriendGroupMember[]
-  liveLocation           UserLiveLocation?
+  bikes                   Bike[]
+  badges                  UserBadge[]
+  emergencyContacts       EmergencyContact[]
+  preferences             UserPreferences?
+  rideStats               UserRideStats?
+  friendsInitiated        Friendship[]             @relation("FriendInitiator")
+  friendsReceived         Friendship[]             @relation("FriendReceiver")
+  friendGroupsOwned       FriendGroup[]            @relation("FriendGroupOwner")
+  friendGroupMemberships  FriendGroupMember[]
+  friendGroupJoinRequests FriendGroupJoinRequest[]
+  liveLocation            UserLiveLocation?
 
   // Ride rating relations
   rideRatingsGiven    RideRating[] @relation("RideRatingGiver")
@@ -322,6 +323,7 @@ model Club {
   // Members relation
   members      ClubMember[]
   joinRequests ClubJoinRequest[]
+  groups       FriendGroup[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -719,20 +721,48 @@ model Friendship {
 
 // Friend groups (crew / squad for organizing rides with specific friends)
 model FriendGroup {
-  id          String  @id @default(cuid())
-  name        String
-  description String?
-  image       String? // Group avatar
-  creatorId   String  @map("creator_id")
+  id                   String  @id @default(cuid())
+  name                 String
+  description          String?
+  image                String? // Group avatar
+  creatorId            String  @map("creator_id")
+  clubId               String? @map("club_id")
+  joinApprovalRequired Boolean @default(false) @map("join_approval_required")
 
-  creator User                @relation("FriendGroupOwner", fields: [creatorId], references: [id], onDelete: Cascade)
-  members FriendGroupMember[]
-  rides   Ride[]              @relation("FriendGroupRides")
+  creator      User                     @relation("FriendGroupOwner", fields: [creatorId], references: [id], onDelete: Cascade)
+  club         Club?                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members      FriendGroupMember[]
+  joinRequests FriendGroupJoinRequest[]
+  rides        Ride[]                   @relation("FriendGroupRides")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@index([clubId])
   @@map("friend_groups")
+}
+
+enum FriendGroupJoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model FriendGroupJoinRequest {
+  id        String                       @id @default(cuid())
+  groupId   String                       @map("group_id")
+  userId    String                       @map("user_id")
+  message   String?
+  status    FriendGroupJoinRequestStatus @default(PENDING)
+  createdAt DateTime                     @default(now()) @map("created_at")
+  updatedAt DateTime                     @updatedAt @map("updated_at")
+
+  group FriendGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId, status])
+  @@map("friend_group_join_requests")
 }
 
 model FriendGroupMember {

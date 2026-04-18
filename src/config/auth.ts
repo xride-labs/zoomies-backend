@@ -91,7 +91,9 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    requireEmailVerification: false, // Set to true in production
+    requireEmailVerification:
+      process.env.AUTH_REQUIRE_EMAIL_VERIFICATION === "true" ||
+      process.env.NODE_ENV === "production",
     sendResetPassword: async ({ user, url }) => {
       if (!user.email) {
         return;

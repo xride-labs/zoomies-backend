@@ -4,6 +4,7 @@ import { requireAuth } from "../../config/auth.js";
 import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { asyncHandler, validateQuery } from "../../middlewares/validation.js";
 import { friendGroupQuerySchema } from "../../validators/schemas.js";
+import { createNotification, notifyUsers } from "../../lib/notifications.js";
 
 const router = Router();
 
@@ -381,6 +382,14 @@ router.post(
           userId: uid,
         })),
       });
+
+      await notifyUsers(newIds, {
+        type: "CLUB_INVITE",
+        title: `You were added to ${group.name}`,
+        message: "Open the squad to see members and upcoming rides.",
+        relatedType: "friend-group",
+        relatedId: req.params.id,
+      });
     }
 
     return ApiResponse.success(res, { added: newIds.length });
@@ -486,11 +495,8 @@ router.post(
       duration,
       experienceLevel,
       pace,
-      maxParticipants,
       startLat,
       startLng,
-      endLat,
-      endLng,
     } = req.body;
 
     if (!title || !startLocation) {
@@ -538,6 +544,27 @@ router.post(
           userId: m.userId,
         })),
         skipDuplicates: true,
+      });
+
+      const notifyTargets = groupMembers
+        .map((member: { userId: string }) => member.userId)
+        .filter((memberId: string) => memberId !== userId);
+
+      await notifyUsers(notifyTargets, {
+        type: "RIDE_INVITE",
+        title: `New squad ride: ${ride.title}`,
+        message: `${(req as any).session?.user?.name || "A rider"} planned a new ride for your squad.`,
+        relatedType: "ride",
+        relatedId: ride.id,
+      });
+
+      await createNotification({
+        userId,
+        type: "RIDE_JOINED",
+        title: "Ride created successfully",
+        message: `${groupMembers.length} squad members were added to ${ride.title}.`,
+        relatedType: "ride",
+        relatedId: ride.id,
       });
     }
 

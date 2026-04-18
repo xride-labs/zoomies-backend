@@ -25,6 +25,7 @@ import {
   locationRoutes,
   friendGroupRoutes,
   friendshipRoutes,
+  notificationRoutes,
 } from "./routes/index";
 import { initializeScheduledJobs, initializeSelfPing } from "./jobs/scheduler";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse";
@@ -161,6 +162,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/friend-groups", friendGroupRoutes);
 app.use("/api/friends", friendshipRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

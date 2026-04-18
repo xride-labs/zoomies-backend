@@ -10,7 +10,7 @@
     "start": "node dist/src/server.js",
     "start:with-db": "npm run prisma:deploy && npm run db:seed:prod && npm run start",
     "deploy:render": "npm run prisma:deploy && npm run db:seed:prod",
-    "build:render": "npm run build && npm run deploy:render",
+    "build:render": "npm run build",
     "prisma:generate": "npx prisma generate",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:deploy": "npx prisma migrate deploy",

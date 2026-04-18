@@ -11,7 +11,6 @@ import {
 import {
   requireOwnershipOrAdmin,
   requireClubMembership,
-  UserRole,
 } from "../../middlewares/rbac.js";
 import {
   createClubSchema,
@@ -23,11 +22,63 @@ import {
   updateMemberRoleSchema,
 } from "../../validators/schemas.js";
 import { sendClubJoinEmail } from "../../lib/mailer.js";
+import { notifyUsers, createNotification } from "../../lib/notifications.js";
+import { z } from "zod";
 
 const router = Router();
 
 // All club routes require authentication
 router.use(requireAuth);
+
+const clubGroupQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(50).default(20),
+  search: z.string().max(120).optional(),
+});
+
+const createClubGroupSchema = z.object({
+  name: z.string().min(2).max(120),
+  description: z.string().max(1000).optional(),
+  image: z.string().url().optional(),
+  joinApprovalRequired: z.boolean().default(true),
+  memberIds: z.array(z.string().cuid()).max(200).optional(),
+});
+
+const joinClubGroupSchema = z.object({
+  message: z.string().max(500).optional(),
+});
+
+const clubGroupParamsSchema = idParamSchema.extend({
+  groupId: idParamSchema.shape.id,
+});
+
+const clubGroupRequestParamsSchema = idParamSchema.extend({
+  groupId: idParamSchema.shape.id,
+  userId: idParamSchema.shape.id,
+});
+
+const clubRideQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(50).default(20),
+  status: z
+    .enum(["PLANNED", "IN_PROGRESS", "COMPLETED", "CANCELLED"])
+    .optional(),
+  search: z.string().max(120).optional(),
+});
+
+const createClubGroupRideSchema = z.object({
+  title: z.string().min(2).max(200),
+  description: z.string().max(5000).optional(),
+  startLocation: z.string().min(2).max(200),
+  endLocation: z.string().max(200).optional(),
+  scheduledAt: z.string().datetime().optional(),
+  distance: z.number().positive().optional(),
+  duration: z.number().int().positive().optional(),
+  experienceLevel: z.string().max(100).optional(),
+  pace: z.string().max(100).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+});
 
 /**
  * @swagger
@@ -439,6 +490,83 @@ router.get(
   }),
 );
 
+router.get(
+  "/:id/rides",
+  validateParams(idParamSchema),
+  validateQuery(clubRideQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const session = (req as any).session;
+    const { page, limit, status, search } = req.query as any;
+    const skip = (page - 1) * limit;
+
+    const club = await prisma.club.findUnique({
+      where: { id },
+      select: { id: true, isPublic: true, ownerId: true },
+    });
+
+    if (!club) {
+      return ApiResponse.notFound(
+        res,
+        "Club not found",
+        ErrorCode.CLUB_NOT_FOUND,
+      );
+    }
+
+    if (!club.isPublic && club.ownerId !== session.user.id) {
+      const membership = await prisma.clubMember.findUnique({
+        where: {
+          clubId_userId: {
+            clubId: id,
+            userId: session.user.id,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!membership) {
+        return ApiResponse.forbidden(
+          res,
+          "You are not a member of this private club",
+        );
+      }
+    }
+
+    const where: any = { clubId: id };
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { startLocation: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const [rides, total] = await Promise.all([
+      prisma.ride.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { scheduledAt: "desc" },
+        include: {
+          creator: {
+            select: { id: true, name: true, avatar: true },
+          },
+          _count: { select: { participants: true } },
+        },
+      }),
+      prisma.ride.count({ where }),
+    ]);
+
+    ApiResponse.paginated(res, rides, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    });
+  }),
+);
+
 /**
  * @swagger
  * /api/clubs:
@@ -770,6 +898,32 @@ router.post(
         },
       });
 
+      const [clubAdmins, requester] = await Promise.all([
+        prisma.clubMember.findMany({
+          where: {
+            clubId: id,
+            role: { in: ["ADMIN", "FOUNDER"] },
+          },
+          select: { userId: true },
+        }),
+        prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { name: true },
+        }),
+      ]);
+
+      const approverIds = Array.from(
+        new Set([club.ownerId, ...clubAdmins.map((entry) => entry.userId)]),
+      ).filter((userId) => userId !== session.user.id);
+
+      await notifyUsers(approverIds, {
+        type: "CLUB_REQUEST",
+        title: `New request to join ${club.name}`,
+        message: `${requester?.name || "A rider"} requested to join your club community.`,
+        relatedType: "club",
+        relatedId: id,
+      });
+
       return ApiResponse.created(
         res,
         { joinRequest },
@@ -809,6 +963,26 @@ router.post(
     //     console.warn("[Email] Club join email failed:", error);
     //   }
     // }
+
+    if (club.ownerId !== session.user.id) {
+      const joinedBy = membership.user?.name || "A rider";
+      await createNotification({
+        userId: club.ownerId,
+        type: "CLUB_INVITE",
+        title: `${joinedBy} joined ${club.name}`,
+        message: `${joinedBy} is now part of your club community.`,
+        relatedType: "club",
+        relatedId: id,
+      });
+
+      if (club.owner?.email) {
+        await sendClubJoinEmail({
+          to: club.owner.email,
+          clubName: club.name,
+          memberName: joinedBy,
+        });
+      }
+    }
 
     ApiResponse.created(res, { membership }, "Joined club successfully");
   }),
@@ -1001,6 +1175,12 @@ router.post(
   requireClubMembership("ADMIN", "id"),
   asyncHandler(async (req: Request, res: Response) => {
     const { id, userId } = req.params;
+    const approvedBy = (req as any).session?.user?.name || "Club admin";
+
+    const club = await prisma.club.findUnique({
+      where: { id },
+      select: { name: true },
+    });
 
     const joinRequest = await prisma.clubJoinRequest.findUnique({
       where: { clubId_userId: { clubId: id, userId } },
@@ -1031,6 +1211,15 @@ router.post(
       data: { memberCount: { increment: 1 } },
     });
 
+    await createNotification({
+      userId,
+      type: "CLUB_INVITE",
+      title: `Your request to join ${club?.name || "club"} was approved`,
+      message: `${approvedBy} approved your request. Welcome to the community!`,
+      relatedType: "club",
+      relatedId: id,
+    });
+
     ApiResponse.success(res, null, "Request approved — member added");
   }),
 );
@@ -1055,6 +1244,12 @@ router.post(
   requireClubMembership("ADMIN", "id"),
   asyncHandler(async (req: Request, res: Response) => {
     const { id, userId } = req.params;
+    const rejectedBy = (req as any).session?.user?.name || "Club admin";
+
+    const club = await prisma.club.findUnique({
+      where: { id },
+      select: { name: true },
+    });
 
     const joinRequest = await prisma.clubJoinRequest.findUnique({
       where: { clubId_userId: { clubId: id, userId } },
@@ -1067,6 +1262,15 @@ router.post(
     await prisma.clubJoinRequest.update({
       where: { id: joinRequest.id },
       data: { status: "REJECTED" },
+    });
+
+    await createNotification({
+      userId,
+      type: "CLUB_REQUEST",
+      title: `Your request to join ${club?.name || "club"} was declined`,
+      message: `${rejectedBy} declined your join request. You can try again later.`,
+      relatedType: "club",
+      relatedId: id,
     });
 
     ApiResponse.success(res, null, "Request rejected");
@@ -1253,6 +1457,576 @@ router.delete(
     });
 
     ApiResponse.success(res, null, "Member removed successfully");
+  }),
+);
+
+async function canManageClubGroup(
+  clubId: string,
+  groupId: string,
+  userId: string,
+): Promise<boolean> {
+  const [group, club] = await Promise.all([
+    prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId },
+      select: { creatorId: true },
+    }),
+    prisma.club.findUnique({
+      where: { id: clubId },
+      select: { ownerId: true },
+    }),
+  ]);
+
+  if (!group) {
+    return false;
+  }
+
+  if (group.creatorId === userId || club?.ownerId === userId) {
+    return true;
+  }
+
+  const clubMembership = await prisma.clubMember.findUnique({
+    where: {
+      clubId_userId: {
+        clubId,
+        userId,
+      },
+    },
+    select: { role: true },
+  });
+
+  return clubMembership?.role === "ADMIN" || clubMembership?.role === "FOUNDER";
+}
+
+router.get(
+  "/:id/groups",
+  validateParams(idParamSchema),
+  requireClubMembership("MEMBER", "id"),
+  validateQuery(clubGroupQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const session = (req as any).session;
+    const { page, limit, search } = req.query as any;
+    const skip = (page - 1) * limit;
+
+    const where: any = { clubId: id };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const [groups, total] = await Promise.all([
+      prisma.friendGroup.findMany({
+        where,
+        include: {
+          creator: {
+            select: { id: true, name: true, avatar: true },
+          },
+          members: {
+            include: {
+              user: {
+                select: { id: true, name: true, avatar: true },
+              },
+            },
+            take: 8,
+            orderBy: { joinedAt: "asc" },
+          },
+          joinRequests: {
+            where: { userId: session.user.id },
+            select: { status: true },
+            take: 1,
+          },
+          _count: {
+            select: {
+              members: true,
+              rides: true,
+              joinRequests: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.friendGroup.count({ where }),
+    ]);
+
+    const enriched = groups.map((group) => {
+      const isMember = group.members.some(
+        (member) => member.userId === session.user.id,
+      );
+      const requestStatus = group.joinRequests[0]?.status || null;
+
+      return {
+        ...group,
+        isMember,
+        requestStatus,
+      };
+    });
+
+    ApiResponse.paginated(res, enriched, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    });
+  }),
+);
+
+router.post(
+  "/:id/groups",
+  validateParams(idParamSchema),
+  requireClubMembership("MEMBER", "id"),
+  validateBody(createClubGroupSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const session = (req as any).session;
+    const { name, description, image, joinApprovalRequired, memberIds } =
+      req.body;
+
+    const club = await prisma.club.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+
+    if (!club) {
+      return ApiResponse.notFound(
+        res,
+        "Club not found",
+        ErrorCode.CLUB_NOT_FOUND,
+      );
+    }
+
+    const existingIds = new Set<string>([session.user.id]);
+    for (const memberId of memberIds || []) {
+      existingIds.add(memberId);
+    }
+
+    const normalizedMemberIds = Array.from(existingIds);
+
+    const validClubMembers = await prisma.clubMember.findMany({
+      where: {
+        clubId: id,
+        userId: { in: normalizedMemberIds },
+      },
+      select: { userId: true },
+    });
+
+    const validMemberIds = new Set(
+      validClubMembers.map((entry) => entry.userId),
+    );
+    validMemberIds.add(session.user.id);
+
+    const group = await prisma.friendGroup.create({
+      data: {
+        clubId: id,
+        name,
+        description,
+        image,
+        joinApprovalRequired,
+        creatorId: session.user.id,
+        members: {
+          create: Array.from(validMemberIds).map((userId) => ({ userId })),
+        },
+      },
+      include: {
+        creator: { select: { id: true, name: true, avatar: true } },
+        members: {
+          include: {
+            user: { select: { id: true, name: true, avatar: true } },
+          },
+        },
+        _count: { select: { members: true, rides: true } },
+      },
+    });
+
+    const notifyTargets = group.members
+      .map((member) => member.userId)
+      .filter((userId) => userId !== session.user.id);
+
+    await notifyUsers(notifyTargets, {
+      type: "CLUB_INVITE",
+      title: `New group in ${club.name}`,
+      message: `${group.creator?.name || "A member"} created ${group.name}.`,
+      relatedType: "club-group",
+      relatedId: group.id,
+    });
+
+    ApiResponse.created(res, { group }, "Club group created successfully");
+  }),
+);
+
+router.post(
+  "/:id/groups/:groupId/join",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  validateBody(joinClubGroupSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const group = await prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId: id },
+      select: {
+        id: true,
+        name: true,
+        creatorId: true,
+        joinApprovalRequired: true,
+      },
+    });
+
+    if (!group) {
+      return ApiResponse.notFound(res, "Club group not found");
+    }
+
+    const existingMembership = await prisma.friendGroupMember.findUnique({
+      where: { groupId_userId: { groupId, userId: session.user.id } },
+    });
+
+    if (existingMembership) {
+      return ApiResponse.conflict(
+        res,
+        "You are already a member of this group",
+      );
+    }
+
+    if (!group.joinApprovalRequired) {
+      const membership = await prisma.friendGroupMember.create({
+        data: {
+          groupId,
+          userId: session.user.id,
+        },
+      });
+
+      if (group.creatorId !== session.user.id) {
+        await createNotification({
+          userId: group.creatorId,
+          type: "CLUB_INVITE",
+          title: `New member in ${group.name}`,
+          message: `${session.user.name || "A rider"} joined your group.`,
+          relatedType: "club-group",
+          relatedId: groupId,
+        });
+      }
+
+      return ApiResponse.created(
+        res,
+        { membership },
+        "Joined group successfully",
+      );
+    }
+
+    const joinRequest = await prisma.friendGroupJoinRequest.upsert({
+      where: { groupId_userId: { groupId, userId: session.user.id } },
+      create: {
+        groupId,
+        userId: session.user.id,
+        message: req.body.message || null,
+        status: "PENDING",
+      },
+      update: {
+        status: "PENDING",
+        message: req.body.message || null,
+      },
+    });
+
+    if (group.creatorId !== session.user.id) {
+      await createNotification({
+        userId: group.creatorId,
+        type: "CLUB_REQUEST",
+        title: `Join request for ${group.name}`,
+        message: `${session.user.name || "A rider"} requested to join your group.`,
+        relatedType: "club-group",
+        relatedId: groupId,
+      });
+    }
+
+    ApiResponse.created(
+      res,
+      { joinRequest },
+      "Join request sent — waiting for group admin approval",
+    );
+  }),
+);
+
+router.delete(
+  "/:id/groups/:groupId/join",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { groupId } = req.params;
+    const session = (req as any).session;
+
+    const pending = await prisma.friendGroupJoinRequest.findUnique({
+      where: { groupId_userId: { groupId, userId: session.user.id } },
+      select: { id: true, status: true },
+    });
+
+    if (!pending || pending.status !== "PENDING") {
+      return ApiResponse.notFound(res, "No pending join request found");
+    }
+
+    await prisma.friendGroupJoinRequest.delete({
+      where: { id: pending.id },
+    });
+
+    ApiResponse.success(res, null, "Join request cancelled");
+  }),
+);
+
+router.get(
+  "/:id/groups/:groupId/requests",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const canManage = await canManageClubGroup(id, groupId, session.user.id);
+    if (!canManage) {
+      return ApiResponse.forbidden(
+        res,
+        "Only group admins can view join requests",
+      );
+    }
+
+    const requests = await prisma.friendGroupJoinRequest.findMany({
+      where: {
+        groupId,
+        status: "PENDING",
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    ApiResponse.success(res, { requests });
+  }),
+);
+
+router.post(
+  "/:id/groups/:groupId/requests/:userId/approve",
+  validateParams(clubGroupRequestParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId, userId } = req.params;
+    const session = (req as any).session;
+
+    const canManage = await canManageClubGroup(id, groupId, session.user.id);
+    if (!canManage) {
+      return ApiResponse.forbidden(
+        res,
+        "Only group admins can approve requests",
+      );
+    }
+
+    const request = await prisma.friendGroupJoinRequest.findUnique({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId,
+        },
+      },
+    });
+
+    if (!request || request.status !== "PENDING") {
+      return ApiResponse.notFound(res, "No pending join request found");
+    }
+
+    await prisma.friendGroupJoinRequest.update({
+      where: { id: request.id },
+      data: { status: "APPROVED" },
+    });
+
+    await prisma.friendGroupMember.upsert({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId,
+        },
+      },
+      create: {
+        groupId,
+        userId,
+      },
+      update: {},
+    });
+
+    await createNotification({
+      userId,
+      type: "CLUB_INVITE",
+      title: "Your group request was approved",
+      message: `${session.user.name || "A group admin"} approved your request.`,
+      relatedType: "club-group",
+      relatedId: groupId,
+    });
+
+    ApiResponse.success(res, null, "Request approved");
+  }),
+);
+
+router.post(
+  "/:id/groups/:groupId/requests/:userId/reject",
+  validateParams(clubGroupRequestParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId, userId } = req.params;
+    const session = (req as any).session;
+
+    const canManage = await canManageClubGroup(id, groupId, session.user.id);
+    if (!canManage) {
+      return ApiResponse.forbidden(
+        res,
+        "Only group admins can reject requests",
+      );
+    }
+
+    const request = await prisma.friendGroupJoinRequest.findUnique({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId,
+        },
+      },
+    });
+
+    if (!request || request.status !== "PENDING") {
+      return ApiResponse.notFound(res, "No pending join request found");
+    }
+
+    await prisma.friendGroupJoinRequest.update({
+      where: { id: request.id },
+      data: { status: "REJECTED" },
+    });
+
+    await createNotification({
+      userId,
+      type: "CLUB_REQUEST",
+      title: "Your group request was declined",
+      message: `${session.user.name || "A group admin"} declined your request.`,
+      relatedType: "club-group",
+      relatedId: groupId,
+    });
+
+    ApiResponse.success(res, null, "Request rejected");
+  }),
+);
+
+router.post(
+  "/:id/groups/:groupId/rides",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  validateBody(createClubGroupRideSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const [group, membership] = await Promise.all([
+      prisma.friendGroup.findFirst({
+        where: { id: groupId, clubId: id },
+        select: { id: true, name: true },
+      }),
+      prisma.friendGroupMember.findUnique({
+        where: {
+          groupId_userId: {
+            groupId,
+            userId: session.user.id,
+          },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!group) {
+      return ApiResponse.notFound(res, "Club group not found");
+    }
+
+    if (!membership) {
+      return ApiResponse.forbidden(
+        res,
+        "You must join this group before creating rides",
+      );
+    }
+
+    const {
+      title,
+      description,
+      startLocation,
+      endLocation,
+      scheduledAt,
+      distance,
+      duration,
+      experienceLevel,
+      pace,
+      latitude,
+      longitude,
+    } = req.body;
+
+    const ride = await prisma.ride.create({
+      data: {
+        title,
+        description: description || null,
+        startLocation,
+        endLocation: endLocation || null,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        distance: distance ?? null,
+        duration: duration ?? null,
+        experienceLevel: experienceLevel || null,
+        pace: pace || null,
+        latitude: latitude ?? null,
+        longitude: longitude ?? null,
+        creatorId: session.user.id,
+        clubId: id,
+        friendGroupId: groupId,
+      },
+      include: {
+        creator: {
+          select: { id: true, name: true, avatar: true },
+        },
+        _count: {
+          select: { participants: true },
+        },
+      },
+    });
+
+    const groupMembers = await prisma.friendGroupMember.findMany({
+      where: { groupId },
+      select: { userId: true },
+    });
+
+    if (groupMembers.length) {
+      await prisma.rideParticipant.createMany({
+        data: groupMembers.map((member) => ({
+          rideId: ride.id,
+          userId: member.userId,
+          status: "ACCEPTED",
+        })),
+        skipDuplicates: true,
+      });
+
+      const notifyTargets = groupMembers
+        .map((member) => member.userId)
+        .filter((userId) => userId !== session.user.id);
+
+      await notifyUsers(notifyTargets, {
+        type: "RIDE_INVITE",
+        title: `New ride in ${group.name}`,
+        message: `${session.user.name || "A rider"} scheduled ${title}.`,
+        relatedType: "ride",
+        relatedId: ride.id,
+      });
+    }
+
+    ApiResponse.created(res, { ride }, "Group ride created successfully");
   }),
 );
 

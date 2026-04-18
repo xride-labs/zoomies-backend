@@ -563,13 +563,15 @@ This API uses **Better Auth** for authentication with multiple providers:
   },
 };
 
+const toGlobPath = (value: string): string => value.replace(/\\/g, "/");
+
 const options: swaggerJsdoc.Options = {
   swaggerDefinition,
   apis: [
-    path.join(__dirname, "../routes/*.ts"),
-    path.join(__dirname, "../routes/*.js"),
-    path.join(__dirname, "../server.ts"),
-    path.join(__dirname, "../server.js"),
+    toGlobPath(path.resolve(__dirname, "../routes/**/*.ts")),
+    toGlobPath(path.resolve(__dirname, "../routes/**/*.js")),
+    toGlobPath(path.resolve(__dirname, "../server.ts")),
+    toGlobPath(path.resolve(__dirname, "../server.js")),
   ],
 };
 

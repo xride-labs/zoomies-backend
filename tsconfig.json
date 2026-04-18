@@ -21,7 +21,6 @@
     "emitDecoratorMetadata": true,
     "ignoreDeprecations": "5.0",
     "types": [
-      "jest",
       "node"
     ]
   },

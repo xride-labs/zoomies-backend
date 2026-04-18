@@ -217,7 +217,8 @@ export async function startServer() {
         return;
       }
 
-      console.log(`
+      if (isProduction) {
+        console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
 ║   🚀 Zoomies Backend Server (Better Auth)
@@ -267,6 +268,7 @@ export async function startServer() {
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
       `);
+      }
     });
   } catch (error) {
     console.error("Failed to start server:", error);

@@ -12,3 +12,5 @@ export { default as locationRoutes } from "./location/location.routes.js";
 export { default as friendGroupRoutes } from "./friend-group/friend-group.routes.js";
 export { default as friendshipRoutes } from "./friendship/friendship.routes.js";
 export { default as notificationRoutes } from "./notification/notification.routes.js";
+export { default as paymentsRoutes } from "./payments/payments.routes.js";
+export { default as eventRoutes } from "./event/event.routes.js";

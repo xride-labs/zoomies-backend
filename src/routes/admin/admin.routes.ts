@@ -1522,4 +1522,64 @@ router.delete(
   }),
 );
 
+// Toggle Ride Featured Status
+router.patch(
+  "/rides/:id/featured",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { isFeatured } = req.body;
+    const ride = await prisma.ride.update({
+      where: { id },
+      data: { isFeatured: Boolean(isFeatured) },
+    });
+    ApiResponse.success(
+      res,
+      ride,
+      `Ride featured status updated to ${isFeatured}`,
+    );
+  }),
+);
+
+// Toggle Event Featured Status
+router.patch(
+  "/events/:id/featured",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { isFeatured } = req.body;
+    const eventRecord = await prisma.event.update({
+      where: { id },
+      data: { isFeatured: Boolean(isFeatured) },
+    });
+    ApiResponse.success(
+      res,
+      eventRecord,
+      `Event featured status updated to ${isFeatured}`,
+    );
+  }),
+);
+
+// Toggle Club Featured Status
+router.patch(
+  "/clubs/:id/featured",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { isFeatured } = req.body;
+    const club = await prisma.club.update({
+      where: { id },
+      data: { isFeatured: Boolean(isFeatured) },
+    });
+    ApiResponse.success(
+      res,
+      club,
+      `Club featured status updated to ${isFeatured}`,
+    );
+  }),
+);
+
 export default router;

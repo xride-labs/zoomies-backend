@@ -5,6 +5,7 @@ import { auth, requireAuth } from "../../config/auth.js";
 import { fromNodeHeaders } from "better-auth/node";
 import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { validateBody, asyncHandler } from "../../middlewares/validation.js";
+import { getCurrentBillingSubscription } from "../../lib/subscription.js";
 import {
   updateProfileSchema,
   updatePreferencesSchema,
@@ -242,6 +243,7 @@ router.get(
     }
 
     const roles = user.userRoles?.map((r) => r.role) ?? [];
+    const subscription = await getCurrentBillingSubscription(user.id);
     const xpPoints = user.xpPoints ?? 0;
     const nextLevelXp = (user.level + 1) * 250;
     const progressPercent = nextLevelXp
@@ -256,10 +258,18 @@ router.get(
       username: user.username,
       name: user.name,
       email: user.email,
+      onboardingCompleted: user.onboardingCompleted,
       dob: user.dob,
       emailVerified: user.emailVerified,
       phoneVerified: user.phoneVerified,
       phone: user.phone,
+      subscriptionTier: user.subscriptionTier,
+      subscriptionStatus: subscription?.status || null,
+      subscriptionPlan: subscription?.plan || null,
+      subscriptionCurrentPeriodEnd: subscription?.currentPeriodEnd || null,
+      subscriptionCancelAt: subscription?.cancelAt || null,
+      dodoCustomerId: subscription?.providerCustomerId || null,
+      subscriptionId: subscription?.providerSubscriptionId || null,
       coverImage: user.coverImage,
       avatar: user.avatar,
       bio: user.bio,
@@ -448,6 +458,7 @@ router.patch(
     });
     const {
       name,
+      username,
       bio,
       location,
       dob,
@@ -457,12 +468,14 @@ router.patch(
       interests,
       activityLevel,
       level,
+      onboardingCompleted,
     } = req.body;
 
     const user = await prisma.user.update({
       where: { id: session.user.id },
       data: {
         ...(name !== undefined && { name }),
+        ...(username !== undefined && { username }),
         ...(bio !== undefined && { bio }),
         ...(location !== undefined && { location }),
         ...(dob !== undefined && { dob: new Date(dob) }),
@@ -472,11 +485,14 @@ router.patch(
         ...(interests !== undefined && { interests }),
         ...(activityLevel !== undefined && { activityLevel }),
         ...(level !== undefined && { level }),
+        ...(onboardingCompleted !== undefined && { onboardingCompleted }),
       },
       select: {
         id: true,
         email: true,
+        username: true,
         name: true,
+        onboardingCompleted: true,
         avatar: true,
         coverImage: true,
         phone: true,

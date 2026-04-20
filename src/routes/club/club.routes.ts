@@ -23,6 +23,7 @@ import {
 } from "../../validators/schemas.js";
 import { sendClubJoinEmail } from "../../lib/mailer.js";
 import { notifyUsers, createNotification } from "../../lib/notifications.js";
+import { countUserOwnedClubs, isUserPro } from "../../lib/subscription.js";
 import { z } from "zod";
 
 const router = Router();
@@ -150,7 +151,8 @@ router.get(
   "/",
   validateQuery(clubQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit, isPublic, verified, search } = req.query as any;
+    const { page, limit, isPublic,
+        requiresLicense, verified, search } = req.query as any;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -624,12 +626,27 @@ router.post(
   validateBody(createClubSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
+    const hasPro = await isUserPro(session.user.id);
+
+    if (!hasPro) {
+      const ownedClubCount = await countUserOwnedClubs(session.user.id);
+      if (ownedClubCount >= 1) {
+        return ApiResponse.error(
+          res,
+          "Zoomies Pro is required to create more clubs",
+          403,
+          ErrorCode.INSUFFICIENT_PERMISSIONS,
+        );
+      }
+    }
+
     const {
       name,
       description,
       location,
       clubType,
       isPublic,
+        requiresLicense,
       image,
       coverImage,
     } = req.body;
@@ -643,6 +660,7 @@ router.post(
         image,
         coverImage,
         isPublic: isPublic ?? true,
+          requiresLicense: requiresLicense ?? false,
         ownerId: session.user.id,
       },
       include: {
@@ -735,6 +753,7 @@ router.patch(
       location,
       clubType,
       isPublic,
+        requiresLicense,
       image,
       coverImage,
     } = req.body;
@@ -749,6 +768,7 @@ router.patch(
         ...(image !== undefined && { image }),
         ...(coverImage !== undefined && { coverImage }),
         ...(isPublic !== undefined && { isPublic }),
+          ...(requiresLicense !== undefined && { requiresLicense }),
       },
       include: {
         owner: {

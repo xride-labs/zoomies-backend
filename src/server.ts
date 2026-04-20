@@ -26,6 +26,8 @@ import {
   friendGroupRoutes,
   friendshipRoutes,
   notificationRoutes,
+  paymentsRoutes,
+  eventRoutes,
 } from "./routes/index.js";
 import {
   initializeScheduledJobs,
@@ -68,6 +70,9 @@ app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
 // Better Auth handler — MUST be mounted BEFORE express.json()
 // See: https://www.better-auth.com/docs/integrations/express
 app.all("/api/auth/*", toNodeHandler(auth));
+
+// Dodo webhook signature verification requires the raw request body.
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 
 // Body parsing middleware (AFTER Better Auth)
 app.use(express.json());
@@ -166,6 +171,8 @@ app.use("/api/location", locationRoutes);
 app.use("/api/friend-groups", friendGroupRoutes);
 app.use("/api/friends", friendshipRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/payments", paymentsRoutes);
+app.use("/api/events", eventRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

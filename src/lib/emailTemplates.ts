@@ -26,6 +26,18 @@ type LayoutParams = {
   legal?: string;
 };
 
+const BRAND = {
+  bg: "#030303",
+  panel: "#0E0E0E",
+  panelAlt: "#151515",
+  border: "#1D1D1D",
+  text: "#F5F5F5",
+  muted: "#9D9D9D",
+  accentRed: "#FF2D2D",
+  accentTeal: "#00FFD1",
+  accentAmber: "#FFC857",
+};
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -57,21 +69,24 @@ function renderSections(sections: TemplateSection[] = []): string {
   }
 
   return sections
-    .map(
-      (section) => `
+    .map((section, index) => {
+      const accent = index % 2 === 0 ? BRAND.accentRed : BRAND.accentTeal;
+
+      return `
       <tr>
-        <td style="padding:0 0 12px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;">
+        <td style="padding:0 0 14px 0;">
+          <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid ${BRAND.border};border-radius:18px;background:${BRAND.panelAlt};overflow:hidden;">
             <tr>
-              <td style="padding:12px 14px;">
-                <div style="font-size:14px;font-weight:700;color:#111827;">${escapeHtml(section.title)}</div>
-                <div style="font-size:13px;line-height:1.5;color:#4b5563;margin-top:4px;">${escapeHtml(section.description)}</div>
+              <td style="width:4px;background:${accent};font-size:0;line-height:0;">&nbsp;</td>
+              <td style="padding:14px 16px 15px 16px;">
+                <div style="font-size:11px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:${accent};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(section.title)}</div>
+                <div style="font-size:14px;line-height:1.65;color:${BRAND.text};margin-top:7px;font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(section.description)}</div>
               </td>
             </tr>
           </table>
         </td>
-      </tr>`,
-    )
+      </tr>`;
+    })
     .join("");
 }
 
@@ -82,9 +97,9 @@ function renderCodeBlock(label?: string, value?: string): string {
 
   return `
     <tr>
-      <td style="padding:0 0 16px 0;">
-        <div style="font-size:13px;color:#6b7280;margin-bottom:8px;">${escapeHtml(label)}</div>
-        <div style="display:inline-block;background:#111827;color:#ffffff;padding:10px 16px;border-radius:10px;font-size:24px;font-weight:700;letter-spacing:4px;">${escapeHtml(value)}</div>
+      <td style="padding:4px 0 18px 0;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:${BRAND.accentTeal};margin-bottom:10px;font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(label)}</div>
+        <div style="display:inline-block;background:${BRAND.bg};border:1px solid ${BRAND.border};box-shadow:inset 0 0 0 1px rgba(255,45,45,0.14);color:${BRAND.text};padding:14px 18px;border-radius:16px;font-size:26px;font-weight:800;letter-spacing:6px;font-family:'Syne','Arial Black',Arial,sans-serif;">${escapeHtml(value)}</div>
       </td>
     </tr>`;
 }
@@ -96,8 +111,8 @@ function renderCta(label?: string, url?: string): string {
 
   return `
     <tr>
-      <td style="padding:0 0 18px 0;">
-        <a href="${escapeHtml(url)}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 18px;border-radius:10px;">${escapeHtml(label)}</a>
+      <td style="padding:4px 0 22px 0;">
+        <a href="${escapeHtml(url)}" style="display:inline-block;background:${BRAND.accentRed};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;padding:14px 20px;border-radius:999px;border:1px solid rgba(255,255,255,0.08);font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(label)} -></a>
       </td>
     </tr>`;
 }
@@ -107,10 +122,10 @@ function buildHtml(params: LayoutParams): string {
   const codeBlock = renderCodeBlock(params.codeLabel, params.codeValue);
   const cta = renderCta(params.ctaLabel, params.ctaUrl);
   const outro = params.outro
-    ? `<tr><td style="padding:0 0 14px 0;font-size:14px;line-height:1.6;color:#1f2937;">${escapeHtml(params.outro)}</td></tr>`
+    ? `<tr><td style="padding:0 0 16px 0;font-size:14px;line-height:1.72;color:${BRAND.text};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.outro)}</td></tr>`
     : "";
   const legal = params.legal
-    ? `<tr><td style="padding:14px 0 0 0;font-size:12px;line-height:1.5;color:#6b7280;">${escapeHtml(params.legal)}</td></tr>`
+    ? `<tr><td style="padding:18px 0 0 0;font-size:12px;line-height:1.7;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.legal)}</td></tr>`
     : "";
 
   return `
@@ -121,41 +136,77 @@ function buildHtml(params: LayoutParams): string {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(params.heading)}</title>
   </head>
-  <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+  <body style="margin:0;padding:0;background:${BRAND.bg};font-family:'DM Sans',Arial,Helvetica,sans-serif;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(params.preheader)}</div>
-    <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 10px;">
+    <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};padding:28px 12px;">
       <tr>
         <td align="center">
-          <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="max-width:620px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+          <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="max-width:640px;background:${BRAND.panel};border-radius:28px;overflow:hidden;border:1px solid ${BRAND.border};box-shadow:0 30px 80px rgba(0,0,0,0.45);">
             <tr>
-              <td style="padding:24px 24px 20px 24px;background:#111827;">
-                <div style="color:#f9fafb;font-size:22px;font-weight:800;">Zoomies</div>
-                <div style="color:#d1d5db;font-size:13px;margin-top:4px;">Ride. Connect. Explore.</div>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:24px;">
-                <div style="display:inline-block;background:#111827;color:#f59e0b;font-size:11px;font-weight:700;padding:6px 10px;border-radius:999px;letter-spacing:0.8px;margin-bottom:12px;">${escapeHtml(params.badge)}</div>
-                <h1 style="margin:0 0 8px 0;font-size:24px;line-height:1.3;color:#111827;">${escapeHtml(params.heading)}</h1>
-                <p style="margin:0 0 16px 0;font-size:14px;line-height:1.5;color:#4b5563;">${escapeHtml(params.subtitle)}</p>
+              <td>
                 <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="padding:0 0 14px 0;font-size:14px;line-height:1.6;color:#111827;">${escapeHtml(params.greeting)}</td>
+                    <td style="height:4px;background:${BRAND.accentRed};font-size:0;line-height:0;">&nbsp;</td>
+                    <td style="height:4px;background:${BRAND.accentTeal};font-size:0;line-height:0;">&nbsp;</td>
                   </tr>
-                  <tr>
-                    <td style="padding:0 0 14px 0;font-size:14px;line-height:1.6;color:#1f2937;">${escapeHtml(params.intro)}</td>
-                  </tr>
-                  ${sections}
-                  ${codeBlock}
-                  ${cta}
-                  ${outro}
-                  ${legal}
                 </table>
               </td>
             </tr>
             <tr>
-              <td style="padding:16px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;font-size:12px;color:#6b7280;line-height:1.5;">
-                Need help? Reply to this email and our team will assist you.
+              <td style="padding:22px 24px 8px 24px;">
+                <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:11px;font-weight:700;letter-spacing:0.28em;text-transform:uppercase;color:${BRAND.accentTeal};font-family:'DM Sans',Arial,sans-serif;padding-bottom:6px;">XRIDE LABS</td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:30px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.text};font-family:'Syne','Arial Black',Arial,sans-serif;">Zoomies</td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:13px;line-height:1.7;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;padding-top:4px;">Riders first. Built by Xride Labs.</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 24px 24px 24px;">
+                <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};border:1px solid ${BRAND.border};border-radius:22px;overflow:hidden;">
+                  <tr>
+                    <td style="padding:22px 22px 8px 22px;background:linear-gradient(180deg, rgba(255,45,45,0.12) 0%, rgba(255,45,45,0.02) 58%, rgba(0,0,0,0) 100%);">
+                      <div style="display:inline-block;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:${BRAND.accentAmber};font-size:11px;font-weight:800;padding:7px 11px;border-radius:999px;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:14px;font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.badge)}</div>
+                      <h1 style="margin:0 0 8px 0;font-size:30px;line-height:1.12;color:${BRAND.text};font-family:'Syne','Arial Black',Arial,sans-serif;letter-spacing:-0.02em;">${escapeHtml(params.heading)}</h1>
+                      <p style="margin:0 0 18px 0;font-size:15px;line-height:1.7;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.subtitle)}</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 22px 22px 22px;">
+                      <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
+                        <tr>
+                          <td style="padding:0 0 14px 0;font-size:14px;line-height:1.72;color:${BRAND.text};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.greeting)}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 0 16px 0;font-size:14px;line-height:1.72;color:${BRAND.text};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.intro)}</td>
+                        </tr>
+                        ${sections}
+                        ${codeBlock}
+                        ${cta}
+                        ${outro}
+                        ${legal}
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 24px 24px 24px;">
+                <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="border-top:1px solid ${BRAND.border};">
+                  <tr>
+                    <td style="padding-top:18px;font-size:12px;line-height:1.8;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;">
+                      Need help? Reply to this email or contact <a href="mailto:hello@xride-labs.in" style="color:${BRAND.text};text-decoration:none;">hello@xride-labs.in</a>.<br />
+                      <span style="color:${BRAND.accentRed};">Never Stop Riding</span> &nbsp; <span style="color:${BRAND.muted};">/</span> &nbsp; <span style="color:${BRAND.accentTeal};">Xride Labs</span>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
           </table>

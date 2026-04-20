@@ -19,15 +19,27 @@ export type EmailPayload = {
 };
 
 const brevoApiUrl = "https://api.brevo.com/v3/smtp/email";
-const brevoApiKey = process.env.BREVO_API_KEY?.trim();
-const senderEmail = process.env.BREVO_SENDER_EMAIL?.trim();
-const senderName = process.env.BREVO_SENDER_NAME?.trim() || "Zoomies";
-const fallbackReplyTo = process.env.BREVO_REPLY_TO?.trim();
-const appUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+function getRuntimeEmailConfig() {
+  const brevoApiKey = process.env.BREVO_API_KEY?.trim();
+  const senderEmail = process.env.BREVO_SENDER_EMAIL?.trim();
+  const senderName = process.env.BREVO_SENDER_NAME?.trim() || "Zoomies";
+  const fallbackReplyTo = process.env.BREVO_REPLY_TO?.trim();
+  const appUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+  return {
+    brevoApiKey,
+    senderEmail,
+    senderName,
+    fallbackReplyTo,
+    appUrl,
+  };
+}
 
 let warnedMissingBrevoConfig = false;
 
 function isBrevoConfigured(): boolean {
+  const { brevoApiKey, senderEmail } = getRuntimeEmailConfig();
   return Boolean(brevoApiKey && senderEmail);
 }
 
@@ -41,6 +53,9 @@ function normalizeName(name?: string | null): string | undefined {
 }
 
 export function getEmailConfigStatus() {
+  const { brevoApiKey, senderEmail, senderName, fallbackReplyTo } =
+    getRuntimeEmailConfig();
+
   return {
     hasApiKey: Boolean(brevoApiKey),
     hasSenderEmail: Boolean(senderEmail),
@@ -68,6 +83,9 @@ function logBrevoDeliveryHint(parsedBody: any) {
 }
 
 export async function sendEmail(payload: EmailPayload): Promise<boolean> {
+  const { brevoApiKey, senderEmail, senderName, fallbackReplyTo } =
+    getRuntimeEmailConfig();
+
   if (!isBrevoConfigured() || !senderEmail || !brevoApiKey) {
     if (!warnedMissingBrevoConfig) {
       console.warn(
@@ -78,6 +96,11 @@ export async function sendEmail(payload: EmailPayload): Promise<boolean> {
     return false;
   }
 
+  console.log("[Email] Sending email", {
+    subject: payload.subject,
+    to: payload.to,
+    senderEmail,
+  });
   try {
     const response = await fetch(brevoApiUrl, {
       method: "POST",
@@ -149,6 +172,8 @@ export async function sendVerificationEmail(params: {
   token?: string;
   verifyUrl?: string;
 }): Promise<boolean> {
+  const { appUrl } = getRuntimeEmailConfig();
+
   const encodedEmail = encodeURIComponent(params.to);
   const verifyUrl =
     params.verifyUrl ||
@@ -197,6 +222,8 @@ export async function sendClubJoinEmail(params: {
   clubName: string;
   memberName: string;
 }): Promise<boolean> {
+  const { appUrl } = getRuntimeEmailConfig();
+
   const template = buildClubJoinTemplate({
     clubName: params.clubName,
     memberName: params.memberName,
@@ -275,6 +302,8 @@ export async function sendWelcomeEmail(params: {
   to: string;
   name?: string | null;
 }): Promise<boolean> {
+  const { appUrl } = getRuntimeEmailConfig();
+
   const template = buildWelcomeTemplate({
     name: params.name,
     appUrl,

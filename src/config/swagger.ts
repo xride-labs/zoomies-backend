@@ -2,10 +2,8 @@ import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import { Express } from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const CONFIG_DIR = path.resolve(process.cwd(), "src/config");
 
 const swaggerDefinition = {
   openapi: "3.0.0",
@@ -568,10 +566,10 @@ const toGlobPath = (value: string): string => value.replace(/\\/g, "/");
 const options: swaggerJsdoc.Options = {
   swaggerDefinition,
   apis: [
-    toGlobPath(path.resolve(__dirname, "../routes/**/*.ts")),
-    toGlobPath(path.resolve(__dirname, "../routes/**/*.js")),
-    toGlobPath(path.resolve(__dirname, "../server.ts")),
-    toGlobPath(path.resolve(__dirname, "../server.js")),
+    toGlobPath(path.resolve(CONFIG_DIR, "../routes/**/*.ts")),
+    toGlobPath(path.resolve(CONFIG_DIR, "../routes/**/*.js")),
+    toGlobPath(path.resolve(CONFIG_DIR, "../server.ts")),
+    toGlobPath(path.resolve(CONFIG_DIR, "../server.js")),
   ],
 };
 

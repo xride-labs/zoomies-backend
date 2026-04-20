@@ -18,6 +18,7 @@ import {
   userClubsQuerySchema,
   createBikeSchema,
   updateBikeSchema,
+  matchContactsSchema,
 } from "../../validators/schemas.js";
 
 const router = Router();
@@ -111,6 +112,28 @@ function buildUserProfileResponse(user: any) {
     },
     preferences: user.preferences,
   };
+}
+
+function normalizeEmail(value?: string | null): string | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized || null;
+}
+
+function getPhoneVariants(value?: string | null): string[] {
+  if (!value) return [];
+  const cleaned = value.trim();
+  if (!cleaned) return [];
+
+  const digitsOnly = cleaned.replace(/\D/g, "");
+  const variants = new Set<string>([cleaned]);
+
+  if (digitsOnly) {
+    variants.add(digitsOnly);
+    variants.add(`+${digitsOnly}`);
+  }
+
+  return Array.from(variants);
 }
 
 // All user routes require authentication
@@ -226,6 +249,134 @@ router.get(
       limit,
       total,
       totalPages: Math.ceil(total / limit),
+    });
+  }),
+);
+
+router.post(
+  "/contacts/match",
+  validateBody(matchContactsSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { contacts } = req.body as {
+      contacts: Array<{ name?: string; phone?: string; email?: string }>;
+    };
+
+    const emailToContactName = new Map<string, string | undefined>();
+    const phoneVariantToContactName = new Map<string, string | undefined>();
+    const emailConditions: Array<Record<string, unknown>> = [];
+    const phoneVariants = new Set<string>();
+
+    for (const contact of contacts) {
+      const normalizedEmail = normalizeEmail(contact.email);
+      if (normalizedEmail) {
+        emailToContactName.set(normalizedEmail, contact.name);
+      }
+
+      const variants = getPhoneVariants(contact.phone);
+      variants.forEach((variant) => {
+        phoneVariants.add(variant);
+        if (!phoneVariantToContactName.has(variant)) {
+          phoneVariantToContactName.set(variant, contact.name);
+        }
+      });
+    }
+
+    for (const email of emailToContactName.keys()) {
+      emailConditions.push({
+        email: {
+          equals: email,
+          mode: "insensitive",
+        },
+      });
+    }
+
+    const phoneCondition = phoneVariants.size
+      ? {
+          phone: {
+            in: Array.from(phoneVariants),
+          },
+        }
+      : null;
+
+    const whereOr = [
+      ...emailConditions,
+      ...(phoneCondition ? [phoneCondition] : []),
+    ];
+
+    if (whereOr.length === 0) {
+      return ApiResponse.success(res, {
+        matches: [],
+        summary: {
+          scannedContacts: contacts.length,
+          matchedUsers: 0,
+        },
+      });
+    }
+
+    const users = await prisma.user.findMany({
+      where: {
+        id: { not: session.user.id },
+        OR: whereOr as any,
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        avatar: true,
+        email: true,
+        phone: true,
+        preferences: {
+          select: {
+            openToInvite: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const matches = users
+      .filter((user) => user.preferences?.openToInvite !== false)
+      .map((user) => {
+        const matchedBy: Array<"email" | "phone"> = [];
+        const contactNames: string[] = [];
+
+        const normalizedEmail = normalizeEmail(user.email);
+        if (normalizedEmail && emailToContactName.has(normalizedEmail)) {
+          matchedBy.push("email");
+          const name = emailToContactName.get(normalizedEmail);
+          if (name) contactNames.push(name);
+        }
+
+        const userPhoneVariants = getPhoneVariants(user.phone);
+        const phoneMatch = userPhoneVariants.find((variant) =>
+          phoneVariantToContactName.has(variant),
+        );
+        if (phoneMatch) {
+          matchedBy.push("phone");
+          const name = phoneVariantToContactName.get(phoneMatch);
+          if (name) contactNames.push(name);
+        }
+
+        return {
+          user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            avatar: user.avatar,
+          },
+          contactName: contactNames[0] || null,
+          matchedBy,
+        };
+      })
+      .filter((match) => match.matchedBy.length > 0);
+
+    ApiResponse.success(res, {
+      matches,
+      summary: {
+        scannedContacts: contacts.length,
+        matchedUsers: matches.length,
+      },
     });
   }),
 );

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import prisma from "../../lib/prisma.js";
 import { requireAuth } from "../../config/auth.js";
 import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
@@ -16,13 +17,37 @@ import {
   myListingsQuerySchema,
   idParamSchema,
   createReviewSchema,
+  createListingOfferSchema,
+  updateListingOfferSchema,
   paginationSchema,
 } from "../../validators/schemas.js";
+import {
+  countUserActiveListings,
+  FREE_MARKETPLACE_LISTING_LIMIT,
+  isUserPro,
+} from "../../lib/subscription.js";
 
 const router = Router();
 
 // All marketplace routes require authentication
 router.use(requireAuth);
+
+const offerIdParamSchema = z.object({
+  id: z.string().cuid("Invalid listing ID format"),
+  offerId: z.string().cuid("Invalid offer ID format"),
+});
+
+async function isAdminOrCoAdmin(userId: string): Promise<boolean> {
+  const role = await prisma.userRoleAssignment.findFirst({
+    where: {
+      userId,
+      role: { in: ["ADMIN", "CO_ADMIN"] },
+    },
+    select: { id: true },
+  });
+
+  return !!role;
+}
 
 /**
  * @swagger
@@ -308,13 +333,25 @@ router.get(
   "/:id",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
     const { id } = req.params;
 
     const listing = await prisma.marketplaceListing.findUnique({
       where: { id },
       include: {
         seller: {
-          select: { id: true, name: true, avatar: true, reputationScore: true },
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            avatar: true,
+            reputationScore: true,
+            _count: {
+              select: {
+                marketplaceListings: true,
+              },
+            },
+          },
         },
         reviews: {
           include: {
@@ -324,6 +361,29 @@ router.get(
           },
           orderBy: { createdAt: "desc" },
           take: 10,
+        },
+        offers: {
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                avatar: true,
+              },
+            },
+          },
+          orderBy: [{ offeredPrice: "desc" }, { updatedAt: "desc" }],
+          take: 20,
+        },
+        interests: {
+          select: {
+            id: true,
+            userId: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 50,
         },
       },
     });
@@ -336,7 +396,35 @@ router.get(
       );
     }
 
-    ApiResponse.success(res, { listing });
+    const isSeller = listing.sellerId === session.user.id;
+    const myOffer =
+      listing.offers.find((offer) => offer.buyerId === session.user.id) || null;
+    const activeOffers = listing.offers.filter(
+      (offer) => !["REJECTED", "WITHDRAWN", "EXPIRED"].includes(offer.status),
+    );
+    const highestOffer = activeOffers.reduce<number | null>((best, offer) => {
+      if (typeof offer.offeredPrice !== "number") {
+        return best;
+      }
+      if (best === null || offer.offeredPrice > best) {
+        return offer.offeredPrice;
+      }
+      return best;
+    }, null);
+
+    ApiResponse.success(res, {
+      listing: {
+        ...listing,
+        offers: isSeller ? listing.offers : myOffer ? [myOffer] : [],
+        offerSummary: {
+          totalOffers: listing.offers.length,
+          activeOffers: activeOffers.length,
+          highestOffer,
+          myOffer,
+          interestCount: listing.interests.length,
+        },
+      },
+    });
   }),
 );
 
@@ -410,16 +498,35 @@ router.post(
   validateBody(createListingSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
+    const hasPro = await isUserPro(session.user.id);
+
+    if (!hasPro) {
+      const activeListingCount = await countUserActiveListings(session.user.id);
+      if (activeListingCount >= FREE_MARKETPLACE_LISTING_LIMIT) {
+        return ApiResponse.error(
+          res,
+          `Free users can only keep ${FREE_MARKETPLACE_LISTING_LIMIT} active marketplace listings. Upgrade to Zoomies Pro for unlimited listings.`,
+          403,
+          ErrorCode.INSUFFICIENT_PERMISSIONS,
+        );
+      }
+    }
+
     const {
       title,
       description,
       price,
       currency,
       images,
+      videos,
       category,
       subcategory,
       specifications,
       condition,
+      locationLabel,
+      allowBids,
+      latitude,
+      longitude,
     } = req.body;
 
     const listing = await prisma.marketplaceListing.create({
@@ -429,10 +536,15 @@ router.post(
         price,
         currency: currency || "INR",
         images: images || [],
+        videos: videos || [],
         category,
         subcategory,
         specifications,
         condition,
+        locationLabel,
+        allowBids: allowBids ?? true,
+        latitude,
+        longitude,
         sellerId: session.user.id,
       },
       include: {
@@ -521,10 +633,15 @@ router.patch(
       price,
       currency,
       images,
+      videos,
       category,
       subcategory,
       specifications,
       condition,
+      locationLabel,
+      allowBids,
+      latitude,
+      longitude,
       status,
     } = req.body;
 
@@ -536,10 +653,15 @@ router.patch(
         ...(price !== undefined && { price }),
         ...(currency !== undefined && { currency }),
         ...(images !== undefined && { images }),
+        ...(videos !== undefined && { videos }),
         ...(category !== undefined && { category }),
         ...(subcategory !== undefined && { subcategory }),
         ...(specifications !== undefined && { specifications }),
         ...(condition !== undefined && { condition }),
+        ...(locationLabel !== undefined && { locationLabel }),
+        ...(allowBids !== undefined && { allowBids }),
+        ...(latitude !== undefined && { latitude }),
+        ...(longitude !== undefined && { longitude }),
         ...(status !== undefined && { status }),
       },
       include: {
@@ -704,6 +826,381 @@ router.post(
     });
 
     ApiResponse.created(res, { review }, "Review added successfully");
+  }),
+);
+
+router.post(
+  "/:id/interests",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+      select: { id: true, sellerId: true },
+    });
+
+    if (!listing) {
+      return ApiResponse.notFound(
+        res,
+        "Listing not found",
+        ErrorCode.LISTING_NOT_FOUND,
+      );
+    }
+
+    if (listing.sellerId === session.user.id) {
+      return ApiResponse.error(
+        res,
+        "You cannot mark interest on your own listing",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    const interest = await prisma.listingInterest.upsert({
+      where: {
+        listingId_userId: {
+          listingId: id,
+          userId: session.user.id,
+        },
+      },
+      create: {
+        listingId: id,
+        userId: session.user.id,
+      },
+      update: {},
+    });
+
+    ApiResponse.success(res, { interest }, "Interest added successfully");
+  }),
+);
+
+router.post(
+  "/:id/offers",
+  validateParams(idParamSchema),
+  validateBody(createListingOfferSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const { offeredPrice, message } = req.body;
+
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        sellerId: true,
+        price: true,
+        allowBids: true,
+        status: true,
+      },
+    });
+
+    if (!listing) {
+      return ApiResponse.notFound(
+        res,
+        "Listing not found",
+        ErrorCode.LISTING_NOT_FOUND,
+      );
+    }
+
+    if (listing.sellerId === session.user.id) {
+      return ApiResponse.error(
+        res,
+        "You cannot place a bid on your own listing",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    if (listing.status !== "ACTIVE") {
+      return ApiResponse.error(
+        res,
+        "Bids are only allowed on active listings",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    if (!listing.allowBids) {
+      return ApiResponse.error(
+        res,
+        "This seller has disabled bidding for the listing",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    const existingOffer = await prisma.listingOffer.findUnique({
+      where: {
+        listingId_buyerId: {
+          listingId: id,
+          buyerId: session.user.id,
+        },
+      },
+      select: {
+        id: true,
+        negotiationHistory: true,
+      },
+    });
+
+    let history: Array<Record<string, unknown>> = [];
+    if (existingOffer?.negotiationHistory) {
+      try {
+        history = JSON.parse(existingOffer.negotiationHistory);
+      } catch {
+        history = [];
+      }
+    }
+
+    history.push({
+      actor: "buyer",
+      status: existingOffer ? "NEGOTIATING" : "OFFER_MADE",
+      offeredPrice,
+      message,
+      at: new Date().toISOString(),
+    });
+
+    const offer = await prisma.listingOffer.upsert({
+      where: {
+        listingId_buyerId: {
+          listingId: id,
+          buyerId: session.user.id,
+        },
+      },
+      create: {
+        listingId: id,
+        buyerId: session.user.id,
+        status: "OFFER_MADE",
+        originalPrice: listing.price,
+        offeredPrice,
+        message,
+        lastMessageAt: new Date(),
+        negotiationHistory: JSON.stringify(history),
+      },
+      update: {
+        status: "NEGOTIATING",
+        offeredPrice,
+        message,
+        lastMessageAt: new Date(),
+        negotiationHistory: JSON.stringify(history),
+      },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    ApiResponse.success(res, { offer }, "Bid placed successfully");
+  }),
+);
+
+router.get(
+  "/:id/offers/my",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const offer = await prisma.listingOffer.findUnique({
+      where: {
+        listingId_buyerId: {
+          listingId: id,
+          buyerId: session.user.id,
+        },
+      },
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            price: true,
+            sellerId: true,
+          },
+        },
+      },
+    });
+
+    ApiResponse.success(res, { offer: offer || null });
+  }),
+);
+
+router.get(
+  "/:id/offers",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        sellerId: true,
+      },
+    });
+
+    if (!listing) {
+      return ApiResponse.notFound(
+        res,
+        "Listing not found",
+        ErrorCode.LISTING_NOT_FOUND,
+      );
+    }
+
+    const isSeller = listing.sellerId === session.user.id;
+    const isAdmin = await isAdminOrCoAdmin(session.user.id);
+
+    if (!isSeller && !isAdmin) {
+      return ApiResponse.forbidden(
+        res,
+        "Only the seller can view all bids for this listing",
+      );
+    }
+
+    const offers = await prisma.listingOffer.findMany({
+      where: { listingId: id },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            avatar: true,
+          },
+        },
+      },
+      orderBy: [{ offeredPrice: "desc" }, { updatedAt: "desc" }],
+    });
+
+    ApiResponse.success(res, {
+      listing,
+      offers,
+      summary: {
+        totalOffers: offers.length,
+        highestOffer: offers.length > 0 ? offers[0].offeredPrice : null,
+      },
+    });
+  }),
+);
+
+router.patch(
+  "/:id/offers/:offerId",
+  validateParams(offerIdParamSchema),
+  validateBody(updateListingOfferSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id, offerId } = req.params;
+    const { status, offeredPrice, message } = req.body;
+
+    const offer = await prisma.listingOffer.findUnique({
+      where: { id: offerId },
+      include: {
+        listing: {
+          select: {
+            id: true,
+            sellerId: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!offer || offer.listingId !== id) {
+      return ApiResponse.notFound(res, "Offer not found", ErrorCode.NOT_FOUND);
+    }
+
+    const isSeller = offer.listing.sellerId === session.user.id;
+    const isBuyer = offer.buyerId === session.user.id;
+    const isAdmin = await isAdminOrCoAdmin(session.user.id);
+
+    if (!isSeller && !isBuyer && !isAdmin) {
+      return ApiResponse.forbidden(
+        res,
+        "You do not have permission to update this offer",
+      );
+    }
+
+    const buyerOnlyStatuses = new Set(["WITHDRAWN"]);
+    const sellerStatuses = new Set([
+      "NEGOTIATING",
+      "ACCEPTED",
+      "DEAL_DONE",
+      "REJECTED",
+      "EXPIRED",
+    ]);
+
+    if (buyerOnlyStatuses.has(status) && !isBuyer) {
+      return ApiResponse.forbidden(res, "Only the buyer can withdraw an offer");
+    }
+
+    if (sellerStatuses.has(status) && !isSeller && !isAdmin) {
+      return ApiResponse.forbidden(
+        res,
+        "Only the seller can update offer status to this value",
+      );
+    }
+
+    let history: Array<Record<string, unknown>> = [];
+    if (offer.negotiationHistory) {
+      try {
+        history = JSON.parse(offer.negotiationHistory);
+      } catch {
+        history = [];
+      }
+    }
+
+    history.push({
+      actor: isSeller || isAdmin ? "seller" : "buyer",
+      status,
+      offeredPrice,
+      message,
+      at: new Date().toISOString(),
+    });
+
+    const updatedOffer = await prisma.listingOffer.update({
+      where: { id: offerId },
+      data: {
+        status,
+        ...(offeredPrice !== undefined && { offeredPrice }),
+        ...(message !== undefined && { message }),
+        lastMessageAt: new Date(),
+        negotiationHistory: JSON.stringify(history),
+      },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    if (status === "DEAL_DONE" || status === "ACCEPTED") {
+      await prisma.marketplaceListing.update({
+        where: { id },
+        data: {
+          status: status === "DEAL_DONE" ? "SOLD" : offer.listing.status,
+        },
+      });
+    }
+
+    ApiResponse.success(
+      res,
+      { offer: updatedOffer },
+      "Offer updated successfully",
+    );
   }),
 );
 

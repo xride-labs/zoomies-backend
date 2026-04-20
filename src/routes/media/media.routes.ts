@@ -13,12 +13,13 @@ import {
   uploadClubCover,
   uploadClubGallery,
   uploadRideMedia,
-  uploadListingImage,
+  uploadListingMedia,
   uploadPostMedia,
   deleteMedia,
   generateUploadSignature,
   MediaFolder,
   MediaType,
+  MediaValidationError,
 } from "../../lib/cloudinary.js";
 import prisma from "../../lib/prisma.js";
 
@@ -26,6 +27,26 @@ const router = Router();
 
 // All media routes require authentication
 router.use(requireAuth);
+
+function respondUploadError(
+  res: Response,
+  error: unknown,
+  fallbackMessage: string,
+) {
+  if (error instanceof MediaValidationError) {
+    return ApiResponse.error(
+      res,
+      error.message,
+      error.statusCode,
+      error.code,
+      error.details,
+    );
+  }
+
+  return ApiResponse.error(res, fallbackMessage, 500, ErrorCode.UPLOAD_FAILED, {
+    message: (error as Error).message,
+  });
+}
 
 /**
  * @swagger
@@ -140,7 +161,11 @@ router.post(
               ErrorCode.MISSING_REQUIRED_FIELD,
             );
           }
-          result = await uploadListingImage(file, resourceId);
+          result = await uploadListingMedia(
+            file,
+            resourceId,
+            type === "video" ? MediaType.VIDEO : MediaType.IMAGE,
+          );
           break;
         case "posts":
           if (!resourceId) {
@@ -173,15 +198,7 @@ router.post(
       );
     } catch (error) {
       console.error("Media upload error:", error);
-      return ApiResponse.error(
-        res,
-        "Failed to upload media",
-        500,
-        ErrorCode.UPLOAD_FAILED,
-        {
-          message: (error as Error).message,
-        },
-      );
+      return respondUploadError(res, error, "Failed to upload media");
     }
   }),
 );
@@ -267,12 +284,7 @@ router.post(
       );
     } catch (error) {
       console.error("Profile upload error:", error);
-      return ApiResponse.error(
-        res,
-        "Failed to upload profile image",
-        500,
-        ErrorCode.UPLOAD_FAILED,
-      );
+      return respondUploadError(res, error, "Failed to upload profile image");
     }
   }),
 );
@@ -356,11 +368,10 @@ router.post(
       );
     } catch (error) {
       console.error("Profile cover upload error:", error);
-      return ApiResponse.error(
+      return respondUploadError(
         res,
+        error,
         "Failed to upload profile cover image",
-        500,
-        ErrorCode.UPLOAD_FAILED,
       );
     }
   }),
@@ -439,12 +450,7 @@ router.post(
       );
     } catch (error) {
       console.error("Gallery upload error:", error);
-      return ApiResponse.error(
-        res,
-        "Failed to upload gallery image",
-        500,
-        ErrorCode.UPLOAD_FAILED,
-      );
+      return respondUploadError(res, error, "Failed to upload gallery image");
     }
   }),
 );
@@ -573,12 +579,7 @@ router.post(
       );
     } catch (error) {
       console.error("Club upload error:", error);
-      return ApiResponse.error(
-        res,
-        `Failed to upload club ${type}`,
-        500,
-        ErrorCode.UPLOAD_FAILED,
-      );
+      return respondUploadError(res, error, `Failed to upload club ${type}`);
     }
   }),
 );
@@ -699,11 +700,10 @@ router.post(
       );
     } catch (error) {
       console.error("Club gallery upload error:", error);
-      return ApiResponse.error(
+      return respondUploadError(
         res,
+        error,
         "Failed to upload club gallery image",
-        500,
-        ErrorCode.UPLOAD_FAILED,
       );
     }
   }),
@@ -817,12 +817,7 @@ router.post(
       );
     } catch (error) {
       console.error("Bike upload error:", error);
-      return ApiResponse.error(
-        res,
-        "Failed to upload bike image",
-        500,
-        ErrorCode.UPLOAD_FAILED,
-      );
+      return respondUploadError(res, error, "Failed to upload bike image");
     }
   }),
 );
@@ -910,7 +905,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { listingId } = req.params;
-    const { file } = req.body;
+    const { file, type = "image" } = req.body as {
+      file?: string;
+      type?: "image" | "video";
+    };
 
     if (!file) {
       return ApiResponse.error(
@@ -924,7 +922,7 @@ router.post(
     // Verify ownership
     const listing = await prisma.marketplaceListing.findUnique({
       where: { id: listingId },
-      select: { sellerId: true, images: true },
+      select: { sellerId: true, images: true, videos: true },
     });
 
     if (!listing) {
@@ -938,13 +936,16 @@ router.post(
     if (listing.sellerId !== session.user.id) {
       return ApiResponse.forbidden(
         res,
-        "You don't have permission to upload images for this listing",
+        "You don't have permission to upload media for this listing",
       );
     }
 
-    // Check max images limit (10 images per listing)
+    const uploadType = type === "video" ? MediaType.VIDEO : MediaType.IMAGE;
+
+    // Check max media limits
     const currentImages = listing.images || [];
-    if (currentImages.length >= 10) {
+    const currentVideos = listing.videos || [];
+    if (uploadType === MediaType.IMAGE && currentImages.length >= 10) {
       return ApiResponse.error(
         res,
         "Maximum 10 images allowed per listing",
@@ -953,16 +954,27 @@ router.post(
       );
     }
 
-    try {
-      const result = await uploadListingImage(file, listingId);
+    if (uploadType === MediaType.VIDEO && currentVideos.length >= 3) {
+      return ApiResponse.error(
+        res,
+        "Maximum 3 videos allowed per listing",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
 
-      // Add image URL to listing's images array
+    try {
+      const result = await uploadListingMedia(file, listingId, uploadType);
+
+      // Add uploaded URL to listing media arrays
       const updatedListing = await prisma.marketplaceListing.update({
         where: { id: listingId },
         data: {
-          images: [...currentImages, result.secureUrl],
+          ...(uploadType === MediaType.IMAGE
+            ? { images: [...currentImages, result.secureUrl] }
+            : { videos: [...currentVideos, result.secureUrl] }),
         },
-        select: { id: true, images: true },
+        select: { id: true, images: true, videos: true },
       });
 
       ApiResponse.success(
@@ -970,18 +982,14 @@ router.post(
         {
           media: result,
           imageUrl: result.secureUrl,
+          mediaType: uploadType === MediaType.VIDEO ? "video" : "image",
           listing: updatedListing,
         },
-        "Listing image uploaded successfully",
+        `Listing ${uploadType === MediaType.VIDEO ? "video" : "image"} uploaded successfully`,
       );
     } catch (error) {
       console.error("Listing upload error:", error);
-      return ApiResponse.error(
-        res,
-        "Failed to upload listing image",
-        500,
-        ErrorCode.UPLOAD_FAILED,
-      );
+      return respondUploadError(res, error, "Failed to upload listing image");
     }
   }),
 );

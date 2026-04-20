@@ -63,9 +63,10 @@ model User {
   phoneVerified Boolean   @default(false) @map("phone_verified")
 
   // Profile fields
-  bio       String?
-  location  String?
-  interests String[] @default([]) // List of user interests (e.g. touring, sports)
+  bio                 String?
+  location            String?
+  interests           String[] @default([]) // List of user interests (e.g. touring, sports)
+  onboardingCompleted Boolean  @default(false) @map("onboarding_completed")
 
   // Experience system
   xpPoints        Int?   @default(0) @map("xp_points") // Total experience points
@@ -85,11 +86,16 @@ model User {
   // Multi-role support (replaces single role field)
   userRoles UserRoleAssignment[]
 
+  // Subscription & Billing
+  subscriptionTier String? @default("FREE") @map("subscription_tier") // Derived snapshot for fast gating
+
   // Relations
   accounts            Account[]
   sessions            Session[]
   createdRides        Ride[]               @relation("RideCreator")
   rideParticipations  RideParticipant[]
+  createdEvents       Event[]              @relation("EventCreator")
+  eventParticipations EventParticipant[]   @relation("EventParticipations")
   createdClubs        Club[]               @relation("ClubOwner")
   clubMemberships     ClubMember[]
   clubJoinRequests    ClubJoinRequest[]
@@ -126,8 +132,30 @@ model User {
 
   // Notification relations
   notifications Notification[]
+  billingSubscriptions BillingSubscription[]
 
   @@map("users")
+}
+
+model BillingSubscription {
+  id                     String    @id @default(cuid())
+  userId                 String    @map("user_id")
+  provider               String    @default("DODO")
+  providerCustomerId     String?   @map("provider_customer_id")
+  providerSubscriptionId String    @unique @map("provider_subscription_id")
+  tier                   String    @default("PRO")
+  plan                   String?
+  status                 String
+  currentPeriodEnd       DateTime? @map("current_period_end")
+  cancelAt               DateTime? @map("cancel_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([providerCustomerId])
+  @@map("billing_subscriptions")
 }
 
 // Application-specific models for Phase 1 MVP
@@ -230,6 +258,7 @@ model Ride {
 
   // Lifecycle management
   keepPermanently Boolean @default(false) @map("keep_permanently") // Prevent auto-deletion
+  isFeatured      Boolean @default(false) @map("is_featured")
 
   // Route data (for GPS tracking)
   routeData String?  @map("route_data") // JSON string of waypoints
@@ -297,21 +326,23 @@ model RideTrackingData {
 }
 
 model Club {
-  id            String    @id @default(cuid())
-  name          String
-  description   String?
-  location      String?
-  establishedAt DateTime? @map("established_at")
-  verified      Boolean   @default(false)
-  image         String?
-  coverImage    String?   @map("cover_image")
-  clubType      String?   @map("club_type") // e.g., Riding Club, Social Club
-  isPublic      Boolean   @default(true) @map("is_public")
-  memberCount   Int       @default(0) @map("member_count")
-  trophies      String[] // Array of trophy names or IDs
-  trophyCount   Int       @default(0) @map("trophy_count")
-  gallery       String[] // Array of image URLs
-  reputation    Float? // Average rating of the club
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  location        String?
+  establishedAt   DateTime? @map("established_at")
+  verified        Boolean   @default(false)
+  image           String?
+  coverImage      String?   @map("cover_image")
+  clubType        String?   @map("club_type") // e.g., Riding Club, Social Club
+  isPublic        Boolean   @default(true) @map("is_public")
+  requiresLicense Boolean   @default(false) @map("requires_license")
+  memberCount     Int       @default(0) @map("member_count")
+  trophies        String[] // Array of trophy names or IDs
+  trophyCount     Int       @default(0) @map("trophy_count")
+  gallery         String[] // Array of image URLs
+  reputation      Float? // Average rating of the club
+  isFeatured      Boolean   @default(false) @map("is_featured")
 
   // Geo coordinates for location-based discovery
   latitude  Float? @map("latitude")
@@ -327,6 +358,7 @@ model Club {
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  events    Event[]  @relation("ClubEvents")
 
   // Indexes for geo-queries and feed performance
   @@index([latitude, longitude], map: "clubs_geo_idx")
@@ -348,10 +380,13 @@ model MarketplaceListing {
   price          Float
   currency       String        @default("INR")
   images         String[] // Array of image URLs
+  videos         String[]      @default([]) // Array of video URLs
   category       String? // e.g., Motorcycle, Gear, Accessories
   subcategory    String? // e.g., Helmet, Jacket
   specifications String? // e.g., JSON string of specifications
   condition      String?
+  locationLabel  String?       @map("location_label") // Human-friendly location text
+  allowBids      Boolean       @default(true) @map("allow_bids")
   status         ListingStatus @default(ACTIVE)
 
   // Geo coordinates for location-based discovery
@@ -663,6 +698,7 @@ model UserPreferences {
   profileVisibility String  @default("public") @map("profile_visibility") // "public", "friends", "private"
   showLocation      Boolean @default(true) @map("show_location")
   showBikes         Boolean @default(true) @map("show_bikes")
+  lowDataMode       Boolean @default(false) @map("low_data_mode")
   showStats         Boolean @default(true) @map("show_stats")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -797,7 +833,7 @@ model UserLiveLocation {
   // Sharing settings
   sharingEnabled Boolean @default(true) @map("sharing_enabled")
   shareWithAll   Boolean @default(false) @map("share_with_all") // Share with all friends
-  ghostMode      Boolean @default(false) @map("ghost_mode") // Hide from everyone
+  ghostMode      Boolean @default(true) @map("ghost_mode") // Hide from everyone
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -974,4 +1010,61 @@ model Notification {
   @@index([isRead], map: "idx_notification_read")
   @@index([createdAt], map: "idx_notification_created")
   @@map("notifications")
+}
+
+// Global & Club Events
+enum EventStatus {
+  PLANNED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  title       String
+  description String?     @db.Text
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  scheduledAt DateTime    @map("scheduled_at")
+  endedAt     DateTime?   @map("ended_at")
+  status      EventStatus @default(PLANNED)
+
+  // Featured / Promotion
+  isFeatured  Boolean @default(false) @map("is_featured")
+  bannerImage String? @map("banner_image")
+  ticketUrl   String? @map("ticket_url")
+
+  // Ownership
+  creatorId String  @map("creator_id")
+  clubId    String? @map("club_id")
+  creator   User    @relation("EventCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  club      Club?   @relation("ClubEvents", fields: [clubId], references: [id], onDelete: Cascade)
+
+  // Attendees
+  participants EventParticipant[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([latitude, longitude], map: "events_geo_idx")
+  @@index([status, scheduledAt], map: "events_status_scheduled_idx")
+  @@map("events")
+}
+
+model EventParticipant {
+  id      String                @id @default(cuid())
+  eventId String                @map("event_id")
+  userId  String                @map("user_id")
+  status  RideParticipantStatus @default(REQUESTED) // Reusing RideParticipantStatus (ACCEPTED, CANCELLED, etc)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation("EventParticipations", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventId, userId])
+  @@map("event_participants")
 }

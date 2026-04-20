@@ -5,9 +5,14 @@
  */
 
 import request from "supertest";
-import { app } from "../../server";
-import prisma from "../../lib/prisma.js";
-import jwt from "jsonwebtoken";
+import {
+  ListingStatus,
+  ClubMemberRole,
+  RideParticipantStatus,
+} from "@prisma/client";
+import { app } from "../server.js";
+import prisma from "../lib/prisma.js";
+import jwt, { type Secret, type SignOptions } from "jsonwebtoken";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SESSION / TOKEN UTILITIES
@@ -19,8 +24,8 @@ import jwt from "jsonwebtoken";
 export function createMockToken(userId: string, expiresIn = "7d") {
   return jwt.sign(
     { userId, iat: Math.floor(Date.now() / 1000) },
-    process.env.JWT_SECRET || "test-secret",
-    { expiresIn },
+    (process.env.JWT_SECRET || "test-secret") as Secret,
+    { expiresIn } as SignOptions,
   );
 }
 
@@ -87,7 +92,19 @@ export async function createTestRide(
 /**
  * Create a club for testing
  */
-export async function createTestClub(ownerId: string, clubData?: Partial<any>) {
+export async function createTestClub(
+  ownerIdOrClubData?: string | Partial<any>,
+  clubData?: Partial<any>,
+) {
+  const ownerId =
+    typeof ownerIdOrClubData === "string"
+      ? ownerIdOrClubData
+      : ownerIdOrClubData?.ownerId || ownerIdOrClubData?.creatorId;
+  const extraClubData =
+    typeof ownerIdOrClubData === "string" ? clubData : ownerIdOrClubData || {};
+
+  const effectiveOwnerId = ownerId || (await createTestUser()).user.id;
+
   const defaultClub = {
     name: `Test Club ${Date.now()}`,
     description: "A test club",
@@ -95,13 +112,25 @@ export async function createTestClub(ownerId: string, clubData?: Partial<any>) {
     isPublic: true,
     latitude: 40.7128,
     longitude: -74.006,
-    ownerId,
+    ownerId: effectiveOwnerId,
   };
+
+  const normalizedClubData = { ...extraClubData };
+
+  if ("visibility" in normalizedClubData) {
+    normalizedClubData.isPublic = normalizedClubData.visibility === "public";
+    delete normalizedClubData.visibility;
+  }
+
+  if ("creatorId" in normalizedClubData && !normalizedClubData.ownerId) {
+    normalizedClubData.ownerId = normalizedClubData.creatorId;
+    delete normalizedClubData.creatorId;
+  }
 
   return prisma.club.create({
     data: {
       ...defaultClub,
-      ...clubData,
+      ...normalizedClubData,
     },
   });
 }
@@ -119,7 +148,7 @@ export async function createTestListing(
     price: 999.99,
     category: "Motorcycle",
     condition: "Good",
-    status: "ACTIVE",
+    status: ListingStatus.ACTIVE,
     latitude: 40.7128,
     longitude: -74.006,
     sellerId,
@@ -139,7 +168,7 @@ export async function createTestListing(
 export async function addUserToClub(
   userId: string,
   clubId: string,
-  role = "MEMBER",
+  role: ClubMemberRole = ClubMemberRole.MEMBER,
 ) {
   return prisma.clubMember.create({
     data: {
@@ -156,7 +185,7 @@ export async function addUserToClub(
 export async function addRideParticipant(
   userId: string,
   rideId: string,
-  status = "ACCEPTED",
+  status: RideParticipantStatus = RideParticipantStatus.ACCEPTED,
 ) {
   return prisma.rideParticipant.create({
     data: {

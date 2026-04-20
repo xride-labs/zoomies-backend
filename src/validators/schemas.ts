@@ -87,6 +87,7 @@ export const verifyEmailSchema = z.object({
 
 export const updateProfileSchema = z.object({
   name: z.string().min(2).max(100).optional(),
+  username: z.string().min(2).max(50).optional(),
   bio: z.string().max(500).optional(),
   location: z.string().max(200).optional(),
   dob: z.string().datetime().optional(),
@@ -98,6 +99,7 @@ export const updateProfileSchema = z.object({
   interests: z.array(z.string()).optional(),
   activityLevel: z.enum(["Casual", "Regular", "Enthusiast", "Pro"]).optional(),
   level: z.number().int().min(0).max(100).optional(),
+  onboardingCompleted: z.boolean().optional(),
 });
 
 export const createBikeSchema = z.object({
@@ -144,6 +146,20 @@ export const userQuerySchema = paginationSchema.extend({
     .enum(["ADMIN", "CO_ADMIN", "CLUB_OWNER", "RIDER", "SELLER"])
     .optional(),
   search: z.string().optional(),
+});
+
+const contactMatchItemSchema = z
+  .object({
+    name: z.string().max(120).optional(),
+    phone: z.string().max(30).optional(),
+    email: z.string().email("Invalid email format").optional(),
+  })
+  .refine((value) => !!value.phone || !!value.email, {
+    message: "Each contact must include at least a phone or email",
+  });
+
+export const matchContactsSchema = z.object({
+  contacts: z.array(contactMatchItemSchema).min(1).max(500),
 });
 
 // ========================================
@@ -196,6 +212,7 @@ export const createClubSchema = z.object({
   location: z.string().max(500).optional(),
   clubType: z.string().max(100).optional(),
   isPublic: z.boolean().default(true),
+  requiresLicense: z.boolean().default(false),
   image: z.string().url("Invalid image URL").optional(),
   coverImage: z.string().url("Invalid cover image URL").optional(),
   latitude: z.number().min(-90).max(90).optional(),
@@ -227,12 +244,15 @@ export const createListingSchema = z.object({
     .length(3, "Currency must be 3 characters")
     .default("INR"),
   images: z.array(z.string().url("Invalid image URL")).max(10).optional(),
+  videos: z.array(z.string().url("Invalid video URL")).max(3).optional(),
   category: z
     .enum(["Motorcycle", "Gear", "Accessories", "Parts", "Other"])
     .optional(),
   subcategory: z.string().max(100).optional(),
   specifications: z.string().max(2000).optional(), // JSON string
   condition: z.enum(["New", "Like New", "Good", "Fair", "Poor"]).optional(),
+  locationLabel: z.string().max(200).optional(),
+  allowBids: z.boolean().optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
 });
@@ -256,6 +276,24 @@ export const createReviewSchema = z.object({
     .min(1, "Rating must be at least 1")
     .max(5, "Rating must be at most 5"),
   comment: z.string().max(1000).optional(),
+});
+
+export const createListingOfferSchema = z.object({
+  offeredPrice: z.number().positive("Offer amount must be positive"),
+  message: z.string().max(1000).optional(),
+});
+
+export const updateListingOfferSchema = z.object({
+  status: z.enum([
+    "NEGOTIATING",
+    "ACCEPTED",
+    "DEAL_DONE",
+    "REJECTED",
+    "WITHDRAWN",
+    "EXPIRED",
+  ]),
+  offeredPrice: z.number().positive("Offer amount must be positive").optional(),
+  message: z.string().max(1000).optional(),
 });
 
 // ========================================
@@ -478,5 +516,8 @@ export type UpdateListingInput = z.infer<typeof updateListingSchema>;
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+export type CreateListingOfferInput = z.infer<typeof createListingOfferSchema>;
+export type UpdateListingOfferInput = z.infer<typeof updateListingOfferSchema>;
+export type MatchContactsInput = z.infer<typeof matchContactsSchema>;
 export type DiscoveryFeedQueryInput = z.infer<typeof discoveryFeedQuerySchema>;
 export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;

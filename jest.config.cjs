@@ -19,6 +19,12 @@ module.exports = {
   },
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
+    "^\\./config/swagger\\.js$": "<rootDir>/src/test/mocks/swagger.ts",
+    "^better-auth$": "<rootDir>/src/test/mocks/better-auth.ts",
+    "^better-auth/node$": "<rootDir>/src/test/mocks/better-auth-node.ts",
+    "^better-auth/adapters/prisma$":
+      "<rootDir>/src/test/mocks/better-auth-adapter-prisma.ts",
+    "^better-auth/plugins$": "<rootDir>/src/test/mocks/better-auth-plugins.ts",
   },
   collectCoverageFrom: ["src/**/*.ts", "!src/**/*.d.ts"],
   coveragePathIgnorePatterns: ["/node_modules/", "/dist/"],

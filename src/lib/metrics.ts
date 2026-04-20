@@ -149,7 +149,7 @@ export function metricsMiddleware(
 /* SYSTEM SAMPLING */
 /* ---------------------------------- */
 
-setInterval(() => {
+const systemSampler = setInterval(() => {
   const mem = process.memoryUsage();
 
   memoryUsage.set({ type: "rss" }, mem.rss);
@@ -166,6 +166,8 @@ setInterval(() => {
     eventLoopLag.set(lag);
   });
 }, 5000);
+
+systemSampler.unref();
 
 /* ---------------------------------- */
 /* HANDLER */

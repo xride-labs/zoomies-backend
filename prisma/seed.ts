@@ -1,5 +1,20 @@
-import { PrismaClient } from "@prisma/client";
+import {
+  PrismaClient,
+  ListingStatus,
+  ListingOfferStatus,
+  NotificationType,
+  EventStatus,
+} from "@prisma/client";
 import { hashPassword } from "better-auth/crypto";
+import mongoose, { connectMongoDB } from "../src/lib/mongodb.js";
+import {
+  Conversation,
+  ConversationType,
+  Message,
+  MessageType,
+  ParticipantRole,
+  UnreadCount,
+} from "../src/models/chat.model.js";
 
 const prisma = new PrismaClient();
 
@@ -13,6 +28,7 @@ async function ensureGoogleAdminSeedUser(): Promise<void> {
     update: {
       name: "Krithik M",
       emailVerified: true,
+      subscriptionTier: "PRO",
     },
     create: {
       email: GOOGLE_ADMIN_EMAIL,
@@ -20,6 +36,7 @@ async function ensureGoogleAdminSeedUser(): Promise<void> {
       emailVerified: true,
       bio: "Platform admin user",
       location: "Bangalore, India",
+      subscriptionTier: "PRO",
     },
   });
 
@@ -58,6 +75,8 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
       reputationScore: 5.0,
       helmetVerified: true,
       lastSafetyCheck: new Date("2026-01-12"),
+      // Admin must always stay lifetime-free.
+      subscriptionTier: "PRO",
     },
     create: {
       email: PRIMARY_ADMIN_EMAIL,
@@ -79,6 +98,7 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
       reputationScore: 5.0,
       helmetVerified: true,
       lastSafetyCheck: new Date("2026-01-12"),
+      subscriptionTier: "PRO",
     },
   });
 
@@ -129,6 +149,13 @@ async function main() {
   // Clear existing data
   console.log("🗑️  Clearing existing data...");
   await prisma.review.deleteMany();
+  await prisma.eventParticipant.deleteMany();
+  await prisma.event.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.listingOffer.deleteMany();
+  await prisma.listingInterest.deleteMany();
+  await prisma.rideRating.deleteMany();
+  await prisma.rideTrackingData.deleteMany();
   await prisma.report.deleteMany();
   await prisma.follow.deleteMany();
   await prisma.comment.deleteMany();
@@ -139,17 +166,21 @@ async function main() {
   await prisma.emergencyContact.deleteMany();
   await prisma.userPreferences.deleteMany();
   await prisma.userRideStats.deleteMany();
+  await prisma.locationSharePermission.deleteMany();
+  await prisma.userLiveLocation.deleteMany();
   await prisma.friendship.deleteMany();
   await prisma.bike.deleteMany();
   await prisma.rideParticipant.deleteMany();
   await prisma.clubMember.deleteMany();
   await prisma.clubJoinRequest.deleteMany();
+  await prisma.friendGroupJoinRequest.deleteMany();
   await prisma.chatMessage.deleteMany();
   await prisma.marketplaceListing.deleteMany();
   await prisma.friendGroupMember.deleteMany();
   await prisma.friendGroup.deleteMany();
   await prisma.club.deleteMany();
   await prisma.ride.deleteMany();
+  await prisma.verification.deleteMany();
   await prisma.session.deleteMany();
   await prisma.account.deleteMany();
   await prisma.media.deleteMany();
@@ -203,6 +234,8 @@ async function main() {
       reputationScore: 5.0,
       helmetVerified: true,
       lastSafetyCheck: new Date("2026-01-12"),
+      // Admin is explicitly lifetime-free in all environments.
+      subscriptionTier: "PRO",
     },
     ["ADMIN", "CLUB_OWNER"],
     hashedPassword,
@@ -393,7 +426,12 @@ async function main() {
   for (const u of devUsers) {
     const { roles, ...userData } = u;
     const user = await createUserWithRoles(
-      { ...userData, emailVerified: true, phoneVerified: !!u.phone },
+      {
+        ...userData,
+        emailVerified: true,
+        phoneVerified: !!u.phone,
+        subscriptionTier: roles.includes("CLUB_OWNER") ? "PRO" : "FREE",
+      },
       roles,
       hashedPassword,
     );
@@ -953,6 +991,7 @@ async function main() {
           Date.now() + Math.random() * 30 * 24 * 60 * 60 * 1000,
         ),
         status: statuses[Math.floor(Math.random() * statuses.length)],
+        isFeatured: Math.random() > 0.85,
         creatorId: allUsers[Math.floor(Math.random() * allUsers.length)].id,
         clubId: clubs[Math.floor(Math.random() * clubs.length)].id,
       },
@@ -990,6 +1029,7 @@ async function main() {
           Date.now() + Math.random() * 30 * 24 * 60 * 60 * 1000,
         ),
         status: statuses[Math.floor(Math.random() * statuses.length)],
+        isFeatured: Math.random() > 0.9,
         creatorId: allUsers[Math.floor(Math.random() * allUsers.length)].id,
         clubId: clubs[Math.floor(Math.random() * clubs.length)].id,
       },
@@ -1020,6 +1060,60 @@ async function main() {
     data: Array.from(participantMap.values()),
   });
   console.log(`✅ Created ${participantMap.size} ride participants`);
+
+  // Ride tracking summaries for completed/in-progress rides
+  const trackableRides = rides
+    .filter((r) => r.status === "COMPLETED" || r.status === "IN_PROGRESS")
+    .slice(0, 36);
+
+  await prisma.rideTrackingData.createMany({
+    data: trackableRides.map((r, i) => ({
+      rideId: r.id,
+      actualStartTime: new Date(Date.now() - (i + 2) * 60 * 60 * 1000),
+      actualEndTime:
+        r.status === "COMPLETED"
+          ? new Date(Date.now() - i * 15 * 60 * 1000)
+          : null,
+      totalDurationMin: 45 + (i % 5) * 20,
+      totalDistanceKm: 22 + (i % 7) * 11,
+      maxSpeedKmh: 68 + (i % 6) * 8,
+      avgSpeedKmh: 36 + (i % 5) * 5,
+      elevationGainM: 120 + (i % 4) * 55,
+      breakCount: i % 3,
+      totalBreakMin: (i % 3) * 7,
+      weatherNotes: ["clear", "humid", "cloudy", "light drizzle"][i % 4],
+      conditions: ["clear", "wet", "mixed", "gravel"][i % 4],
+    })),
+  });
+  console.log(`✅ Created ${trackableRides.length} ride tracking summaries`);
+
+  // Post-ride ratings
+  const rideRatingRows: any[] = [];
+  const ratingSeen = new Set<string>();
+  const acceptedParticipants = Array.from(participantMap.values()).filter(
+    (p) => p.status === "ACCEPTED",
+  );
+
+  for (const p of acceptedParticipants.slice(0, 140)) {
+    const ride = rides.find((r) => r.id === p.rideId);
+    if (!ride || ride.creatorId === p.userId) continue;
+    const key = `${p.rideId}:${ride.creatorId}:${p.userId}`;
+    if (ratingSeen.has(key)) continue;
+    ratingSeen.add(key);
+    rideRatingRows.push({
+      rideId: p.rideId,
+      ratedById: ride.creatorId,
+      ratedUserId: p.userId,
+      rating: 3 + (rideRatingRows.length % 3),
+      comment: "Solid rider, good lane discipline and communication.",
+      tags: ["Safe", "Friendly"],
+    });
+  }
+
+  if (rideRatingRows.length) {
+    await prisma.rideRating.createMany({ data: rideRatingRows });
+  }
+  console.log(`✅ Created ${rideRatingRows.length} ride ratings`);
 
   // ── Marketplace Listings ─────────────────────────────────────
   const listingNames = [
@@ -1111,7 +1205,8 @@ async function main() {
         subcategory: categories[i % categories.length].sub,
         condition: conditions[Math.floor(Math.random() * conditions.length)],
         images: [],
-        status: Math.random() > 0.15 ? "ACTIVE" : "SOLD",
+        status:
+          Math.random() > 0.15 ? ListingStatus.ACTIVE : ListingStatus.SOLD,
         latitude: coords.lat,
         longitude: coords.lng,
         sellerId: allUsers[Math.floor(Math.random() * allUsers.length)].id,
@@ -1120,6 +1215,62 @@ async function main() {
     listings.push(listing);
   }
   console.log(`✅ Created ${listings.length} marketplace listings`);
+
+  // Listing interests + offers (new marketplace negotiation models)
+  const listingInterestsData: any[] = [];
+  const listingOffersData: any[] = [];
+  const interestSeen = new Set<string>();
+
+  for (const listing of listings.slice(0, 28)) {
+    const interestedCount = Math.floor(Math.random() * 3) + 1;
+    for (let j = 0; j < interestedCount; j++) {
+      const interestedUser =
+        allUsers[Math.floor(Math.random() * allUsers.length)];
+      if (interestedUser.id === listing.sellerId) continue;
+
+      const key = `${listing.id}:${interestedUser.id}`;
+      if (interestSeen.has(key)) continue;
+      interestSeen.add(key);
+
+      listingInterestsData.push({
+        listingId: listing.id,
+        userId: interestedUser.id,
+      });
+
+      listingOffersData.push({
+        listingId: listing.id,
+        buyerId: interestedUser.id,
+        status: [
+          ListingOfferStatus.INTERESTED,
+          ListingOfferStatus.OFFER_MADE,
+          ListingOfferStatus.NEGOTIATING,
+        ][Math.floor(Math.random() * 3)],
+        originalPrice: listing.price,
+        offeredPrice: Math.max(500, Math.round(listing.price * 0.92)),
+        message: "Interested in this item. Open to quick meetup this week.",
+        lastMessageAt: new Date(),
+        expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      });
+    }
+  }
+
+  if (listingInterestsData.length) {
+    await prisma.listingInterest.createMany({
+      data: listingInterestsData,
+      skipDuplicates: true,
+    });
+  }
+
+  if (listingOffersData.length) {
+    await prisma.listingOffer.createMany({
+      data: listingOffersData,
+      skipDuplicates: true,
+    });
+  }
+
+  console.log(
+    `✅ Created ${listingInterestsData.length} listing interests and ${listingOffersData.length} listing offers`,
+  );
 
   // ── Posts ─────────────────────────────────────────────────────
   const posts: any[] = [];
@@ -1280,6 +1431,85 @@ async function main() {
   await prisma.report.createMany({ data: reportData });
   console.log(`✅ Created ${reportData.length} reports`);
 
+  // ── Events + Attendees ─────────────────────────────────────────
+  const eventRows: any[] = [];
+  const eventCount = Math.min(18, clubs.length);
+  for (let i = 0; i < eventCount; i++) {
+    const club = clubs[i];
+    const event = await prisma.event.create({
+      data: {
+        title: `${club.name} Community Ride Meetup`,
+        description:
+          "Hosted community event with briefing, short ride, and hangout.",
+        location: club.location || "Bangalore, India",
+        latitude: club.latitude,
+        longitude: club.longitude,
+        scheduledAt: new Date(Date.now() + (i + 2) * 24 * 60 * 60 * 1000),
+        status: EventStatus.PLANNED,
+        isFeatured: i < 4,
+        creatorId: club.ownerId,
+        clubId: club.id,
+      },
+    });
+    eventRows.push(event);
+  }
+
+  const eventParticipantRows: any[] = [];
+  const eventParticipantSeen = new Set<string>();
+  for (const event of eventRows) {
+    const participantCount = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < participantCount; i++) {
+      const userId = allUsers[Math.floor(Math.random() * allUsers.length)].id;
+      const key = `${event.id}:${userId}`;
+      if (eventParticipantSeen.has(key)) continue;
+      eventParticipantSeen.add(key);
+      eventParticipantRows.push({
+        eventId: event.id,
+        userId,
+        status: "ACCEPTED",
+      });
+    }
+  }
+
+  if (eventParticipantRows.length) {
+    await prisma.eventParticipant.createMany({
+      data: eventParticipantRows,
+      skipDuplicates: true,
+    });
+  }
+  console.log(
+    `✅ Created ${eventRows.length} events with ${eventParticipantRows.length} attendees`,
+  );
+
+  // ── Notifications ─────────────────────────────────────────────
+  const notificationsData = allUsers.flatMap((u, i) => [
+    {
+      userId: u.id,
+      type: NotificationType.RIDE_INVITE,
+      title: "New ride invite",
+      message: "You were invited to a group ride this weekend.",
+      relatedType: "ride",
+      relatedId: rides[i % rides.length]?.id,
+      isRead: i % 3 === 0,
+      sentViaPush: true,
+      sentViaEmail: false,
+    },
+    {
+      userId: u.id,
+      type: NotificationType.LISTING_OFFER,
+      title: "New offer on your listing",
+      message: "A buyer placed an offer on one of your items.",
+      relatedType: "listing",
+      relatedId: listings[i % listings.length]?.id,
+      isRead: false,
+      sentViaPush: true,
+      sentViaEmail: i % 2 === 0,
+    },
+  ]);
+
+  await prisma.notification.createMany({ data: notificationsData });
+  console.log(`✅ Created ${notificationsData.length} notifications`);
+
   // ── Friend Groups (Squads) ───────────────────────────────────
   const friendGroups = [
     {
@@ -1332,6 +1562,8 @@ async function main() {
     },
   ];
 
+  const createdFriendGroups: any[] = [];
+
   for (const fg of friendGroups) {
     const group = await prisma.friendGroup.create({
       data: {
@@ -1340,11 +1572,222 @@ async function main() {
         creatorId: fg.creatorId,
       },
     });
+    createdFriendGroups.push(group);
     await prisma.friendGroupMember.createMany({
       data: fg.members.map((userId) => ({ groupId: group.id, userId })),
     });
   }
   console.log(`✅ Created ${friendGroups.length} friend groups`);
+
+  // ── Chat (MongoDB conversations + messages) ───────────────────
+  const mongo = await connectMongoDB();
+  if (!mongo) {
+    console.warn(
+      "⚠️  MongoDB not available, skipping chat conversation/message seed",
+    );
+  } else {
+    await Conversation.deleteMany({});
+    await Message.deleteMany({});
+    await UnreadCount.deleteMany({});
+
+    const seedConversation = async (params: {
+      type: ConversationType;
+      participantIds: string[];
+      createdBy: string;
+      relatedEntityId?: string;
+      metadata?: {
+        name?: string;
+        avatar?: string;
+        description?: string;
+      };
+      messages: Array<{ senderId: string; text: string }>;
+    }) => {
+      const participantIds = Array.from(new Set(params.participantIds));
+      const conversation = await Conversation.create({
+        type: params.type,
+        participants: participantIds.map((userId) => ({
+          userId,
+          role:
+            userId === params.createdBy
+              ? ParticipantRole.OWNER
+              : ParticipantRole.MEMBER,
+          joinedAt: new Date(),
+          isMuted: false,
+        })),
+        relatedEntityId: params.relatedEntityId || null,
+        metadata: params.metadata || {},
+        createdBy: params.createdBy,
+        isActive: true,
+      });
+
+      let latestMessage: any = null;
+
+      for (const msg of params.messages) {
+        latestMessage = await Message.create({
+          conversationId: conversation._id,
+          senderId: msg.senderId,
+          text: msg.text,
+          messageType: MessageType.TEXT,
+          attachments: [],
+          readBy: [{ userId: msg.senderId, readAt: new Date() }],
+          deliveredTo: participantIds.map((userId) => ({
+            userId,
+            deliveredAt: new Date(),
+          })),
+        });
+      }
+
+      if (latestMessage) {
+        await Conversation.updateOne(
+          { _id: conversation._id },
+          {
+            $set: {
+              lastMessage: {
+                text: latestMessage.text || "Message",
+                senderId: latestMessage.senderId,
+                senderName:
+                  allUsers.find((u) => u.id === latestMessage.senderId)?.name ||
+                  "Rider",
+                sentAt: latestMessage.createdAt,
+                messageType: MessageType.TEXT,
+              },
+              updatedAt: latestMessage.createdAt,
+            },
+          },
+        );
+
+        const unreadRows = participantIds
+          .filter((userId) => userId !== latestMessage.senderId)
+          .map((userId) => ({
+            userId,
+            conversationId: conversation._id,
+            count: 1,
+            lastReadAt: null,
+          }));
+
+        if (unreadRows.length) {
+          await UnreadCount.insertMany(unreadRows);
+        }
+      }
+    };
+
+    const directParticipants = [adminUser.id, user1.id];
+    const firstListing =
+      listings.find((l) => l.sellerId !== user2.id) || listings[0];
+    const marketplaceBuyer =
+      allUsers.find((u) => u.id !== firstListing.sellerId) || user2;
+
+    const clubParticipants = Array.from(clubMemberMap.values())
+      .filter((m) => m.clubId === clubs[0].id)
+      .slice(0, 5)
+      .map((m) => m.userId);
+
+    const rideParticipants = Array.from(participantMap.values())
+      .filter((p) => p.rideId === rides[0].id)
+      .slice(0, 5)
+      .map((p) => p.userId);
+
+    await seedConversation({
+      type: ConversationType.DIRECT,
+      participantIds: directParticipants,
+      createdBy: adminUser.id,
+      metadata: {
+        description: "General rider-to-rider chat",
+      },
+      messages: [
+        {
+          senderId: adminUser.id,
+          text: "Hey John, up for a sunrise spin this weekend?",
+        },
+        {
+          senderId: user1.id,
+          text: "Absolutely. Let us do Nandi Hills and grab breakfast after!",
+        },
+      ],
+    });
+
+    await seedConversation({
+      type: ConversationType.MARKETPLACE,
+      participantIds: [firstListing.sellerId, marketplaceBuyer.id],
+      createdBy: marketplaceBuyer.id,
+      relatedEntityId: firstListing.id,
+      metadata: {
+        name: `About: ${firstListing.title}`,
+        description: "Buy/sell discussion for marketplace listing",
+      },
+      messages: [
+        {
+          senderId: marketplaceBuyer.id,
+          text: "Hi! Is this still available?",
+        },
+        {
+          senderId: firstListing.sellerId,
+          text: "Yes, it is available. I can share more photos if needed.",
+        },
+        {
+          senderId: marketplaceBuyer.id,
+          text: "Great, can we do a quick meetup tomorrow evening?",
+        },
+      ],
+    });
+
+    await seedConversation({
+      type: ConversationType.CLUB,
+      participantIds:
+        clubParticipants.length >= 2
+          ? clubParticipants
+          : [clubs[0].ownerId, user3.id, user4.id],
+      createdBy: clubs[0].ownerId,
+      relatedEntityId: createdFriendGroups[0]?.id || clubs[0].id,
+      metadata: {
+        name: `${createdFriendGroups[0]?.name || clubs[0].name} Squad Chat`,
+        description: "Group/squad coordination chat",
+      },
+      messages: [
+        {
+          senderId: clubs[0].ownerId,
+          text: "Squad check-in: rolling out at 6:00 AM sharp.",
+        },
+        {
+          senderId:
+            clubParticipants.find((id) => id !== clubs[0].ownerId) || user3.id,
+          text: "Copy that. Fuel and tyre pressure done.",
+        },
+      ],
+    });
+
+    const rideCreator = rides[0].creatorId;
+    const seededRideParticipants = Array.from(
+      new Set([rideCreator, ...rideParticipants]),
+    );
+
+    await seedConversation({
+      type: ConversationType.RIDE,
+      participantIds:
+        seededRideParticipants.length >= 2
+          ? seededRideParticipants
+          : [rideCreator, user5.id, user6.id],
+      createdBy: rideCreator,
+      relatedEntityId: rides[0].id,
+      metadata: {
+        name: `${rides[0].title} Ride Chat`,
+        description: "Live route and meetup updates",
+      },
+      messages: [
+        {
+          senderId: rideCreator,
+          text: "Meetup point moved to Shell near the flyover.",
+        },
+        {
+          senderId:
+            seededRideParticipants.find((id) => id !== rideCreator) || user6.id,
+          text: "On my way, ETA 12 minutes.",
+        },
+      ],
+    });
+
+    console.log("✅ Seeded Mongo chat conversations and messages");
+  }
 
   console.log("\n🎉 Development seed completed!");
   console.log("\n📊 Summary:");
@@ -1371,4 +1814,7 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
   });

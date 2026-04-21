@@ -27,16 +27,37 @@ type LayoutParams = {
 };
 
 const BRAND = {
-  bg: "#030303",
-  panel: "#0E0E0E",
-  panelAlt: "#151515",
-  border: "#1D1D1D",
-  text: "#F5F5F5",
-  muted: "#9D9D9D",
-  accentRed: "#FF2D2D",
-  accentTeal: "#00FFD1",
-  accentAmber: "#FFC857",
+  pageBg: "#F4F4F5",
+  cardBg: "#FFFFFF",
+  softBg: "#FAFAFA",
+  border: "#E4E4E7",
+  borderStrong: "#D4D4D8",
+  text: "#09090B",
+  textSoft: "#27272A",
+  muted: "#71717A",
+  mutedStrong: "#52525B",
+  accent: "#DC2626",
+  accentSoft: "#FEF2F2",
+  ctaBg: "#09090B",
+  ctaText: "#FFFFFF",
 };
+
+const FONT_STACK =
+  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const MONO_STACK =
+  "'SF Mono', ui-monospace, Menlo, Consolas, 'Roboto Mono', monospace";
+
+function getAssetBaseUrl(): string {
+  const raw =
+    process.env.PUBLIC_ASSET_URL?.trim() ||
+    process.env.BETTER_AUTH_BASE_URL?.trim() ||
+    process.env.BACKEND_URL?.trim() ||
+    "http://localhost:5000";
+  return raw.replace(/\/+$/, "");
+}
+
+const ICON_URL = `${getAssetBaseUrl()}/static/email-assets/zoomies-icon.png`;
+const CURRENT_YEAR = new Date().getFullYear();
 
 function escapeHtml(value: string): string {
   return value
@@ -68,26 +89,28 @@ function renderSections(sections: TemplateSection[] = []): string {
     return "";
   }
 
-  return sections
+  const rows = sections
     .map((section, index) => {
-      const accent = index % 2 === 0 ? BRAND.accentRed : BRAND.accentTeal;
-
+      const topBorder =
+        index === 0 ? "" : `border-top:1px solid ${BRAND.border};`;
       return `
       <tr>
-        <td style="padding:0 0 14px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid ${BRAND.border};border-radius:18px;background:${BRAND.panelAlt};overflow:hidden;">
-            <tr>
-              <td style="width:4px;background:${accent};font-size:0;line-height:0;">&nbsp;</td>
-              <td style="padding:14px 16px 15px 16px;">
-                <div style="font-size:11px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:${accent};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(section.title)}</div>
-                <div style="font-size:14px;line-height:1.65;color:${BRAND.text};margin-top:7px;font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(section.description)}</div>
-              </td>
-            </tr>
-          </table>
+        <td style="padding:14px 18px;${topBorder}">
+          <div style="font-family:${FONT_STACK};font-size:12px;font-weight:600;color:${BRAND.muted};letter-spacing:0.04em;text-transform:uppercase;margin-bottom:4px;">${escapeHtml(section.title)}</div>
+          <div style="font-family:${FONT_STACK};font-size:15px;line-height:1.6;color:${BRAND.textSoft};">${escapeHtml(section.description)}</div>
         </td>
       </tr>`;
     })
     .join("");
+
+  return `
+    <tr>
+      <td style="padding:8px 0 24px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid ${BRAND.border};border-radius:10px;background:${BRAND.softBg};overflow:hidden;">
+          ${rows}
+        </table>
+      </td>
+    </tr>`;
 }
 
 function renderCodeBlock(label?: string, value?: string): string {
@@ -97,9 +120,15 @@ function renderCodeBlock(label?: string, value?: string): string {
 
   return `
     <tr>
-      <td style="padding:4px 0 18px 0;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:${BRAND.accentTeal};margin-bottom:10px;font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(label)}</div>
-        <div style="display:inline-block;background:${BRAND.bg};border:1px solid ${BRAND.border};box-shadow:inset 0 0 0 1px rgba(255,45,45,0.14);color:${BRAND.text};padding:14px 18px;border-radius:16px;font-size:26px;font-weight:800;letter-spacing:6px;font-family:'Syne','Arial Black',Arial,sans-serif;">${escapeHtml(value)}</div>
+      <td style="padding:8px 0 28px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:${BRAND.softBg};border:1px solid ${BRAND.border};border-radius:10px;">
+          <tr>
+            <td align="center" style="padding:22px 20px 24px 20px;">
+              <div style="font-family:${FONT_STACK};font-size:12px;font-weight:600;color:${BRAND.muted};letter-spacing:0.06em;text-transform:uppercase;margin-bottom:12px;">${escapeHtml(label)}</div>
+              <div style="font-family:${MONO_STACK};font-size:30px;font-weight:600;letter-spacing:8px;color:${BRAND.text};line-height:1;">${escapeHtml(value)}</div>
+            </td>
+          </tr>
+        </table>
       </td>
     </tr>`;
 }
@@ -109,10 +138,26 @@ function renderCta(label?: string, url?: string): string {
     return "";
   }
 
+  const safeUrl = escapeHtml(url);
+
   return `
     <tr>
-      <td style="padding:4px 0 22px 0;">
-        <a href="${escapeHtml(url)}" style="display:inline-block;background:${BRAND.accentRed};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;padding:14px 20px;border-radius:999px;border:1px solid rgba(255,255,255,0.08);font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(label)} -></a>
+      <td style="padding:8px 0 20px 0;">
+        <table cellpadding="0" cellspacing="0" role="presentation">
+          <tr>
+            <td style="border-radius:8px;background:${BRAND.ctaBg};">
+              <a href="${safeUrl}" target="_blank" rel="noopener" style="display:inline-block;padding:13px 24px;font-family:${FONT_STACK};font-size:15px;font-weight:600;color:${BRAND.ctaText};text-decoration:none;border-radius:8px;">${escapeHtml(label)}</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0 0 24px 0;">
+        <div style="font-family:${FONT_STACK};font-size:13px;line-height:1.6;color:${BRAND.muted};">
+          Or copy and paste this link into your browser:<br />
+          <a href="${safeUrl}" target="_blank" rel="noopener" style="color:${BRAND.mutedStrong};text-decoration:underline;word-break:break-all;">${safeUrl}</a>
+        </div>
       </td>
     </tr>`;
 }
@@ -122,97 +167,103 @@ function buildHtml(params: LayoutParams): string {
   const codeBlock = renderCodeBlock(params.codeLabel, params.codeValue);
   const cta = renderCta(params.ctaLabel, params.ctaUrl);
   const outro = params.outro
-    ? `<tr><td style="padding:0 0 16px 0;font-size:14px;line-height:1.72;color:${BRAND.text};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.outro)}</td></tr>`
+    ? `<tr><td style="padding:0 0 20px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.outro)}</td></tr>`
     : "";
   const legal = params.legal
-    ? `<tr><td style="padding:18px 0 0 0;font-size:12px;line-height:1.7;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.legal)}</td></tr>`
+    ? `<tr><td style="padding:20px 0 0 0;border-top:1px solid ${BRAND.border};font-family:${FONT_STACK};font-size:13px;line-height:1.65;color:${BRAND.muted};">${escapeHtml(params.legal)}</td></tr>`
+    : "";
+  const badge = params.badge
+    ? `
+          <tr>
+            <td style="padding:0 0 14px 0;">
+              <span style="display:inline-block;font-family:${FONT_STACK};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.accent};background:${BRAND.accentSoft};padding:5px 10px;border-radius:6px;">${escapeHtml(params.badge)}</span>
+            </td>
+          </tr>`
     : "";
 
-  return `
-<!doctype html>
+  return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
     <title>${escapeHtml(params.heading)}</title>
   </head>
-  <body style="margin:0;padding:0;background:${BRAND.bg};font-family:'DM Sans',Arial,Helvetica,sans-serif;">
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(params.preheader)}</div>
-    <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};padding:28px 12px;">
+  <body style="margin:0;padding:0;background-color:${BRAND.pageBg};font-family:${FONT_STACK};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:${BRAND.pageBg};">${escapeHtml(params.preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.pageBg};padding:32px 16px;">
       <tr>
         <td align="center">
-          <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="max-width:640px;background:${BRAND.panel};border-radius:28px;overflow:hidden;border:1px solid ${BRAND.border};box-shadow:0 30px 80px rgba(0,0,0,0.45);">
+
+          <!-- Header -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
             <tr>
-              <td>
-                <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
+              <td style="padding:0 4px 20px 4px;">
+                <table cellpadding="0" cellspacing="0" role="presentation">
                   <tr>
-                    <td style="height:4px;background:${BRAND.accentRed};font-size:0;line-height:0;">&nbsp;</td>
-                    <td style="height:4px;background:${BRAND.accentTeal};font-size:0;line-height:0;">&nbsp;</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:22px 24px 8px 24px;">
-                <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="font-size:11px;font-weight:700;letter-spacing:0.28em;text-transform:uppercase;color:${BRAND.accentTeal};font-family:'DM Sans',Arial,sans-serif;padding-bottom:6px;">XRIDE LABS</td>
-                  </tr>
-                  <tr>
-                    <td style="font-size:30px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.text};font-family:'Syne','Arial Black',Arial,sans-serif;">Zoomies</td>
-                  </tr>
-                  <tr>
-                    <td style="font-size:13px;line-height:1.7;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;padding-top:4px;">Riders first. Built by Xride Labs.</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:8px 24px 24px 24px;">
-                <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};border:1px solid ${BRAND.border};border-radius:22px;overflow:hidden;">
-                  <tr>
-                    <td style="padding:22px 22px 8px 22px;background:linear-gradient(180deg, rgba(255,45,45,0.12) 0%, rgba(255,45,45,0.02) 58%, rgba(0,0,0,0) 100%);">
-                      <div style="display:inline-block;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:${BRAND.accentAmber};font-size:11px;font-weight:800;padding:7px 11px;border-radius:999px;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:14px;font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.badge)}</div>
-                      <h1 style="margin:0 0 8px 0;font-size:30px;line-height:1.12;color:${BRAND.text};font-family:'Syne','Arial Black',Arial,sans-serif;letter-spacing:-0.02em;">${escapeHtml(params.heading)}</h1>
-                      <p style="margin:0 0 18px 0;font-size:15px;line-height:1.7;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.subtitle)}</p>
+                    <td valign="middle" style="padding-right:10px;">
+                      <img src="${ICON_URL}" alt="Zoomies" width="28" height="28" style="display:block;width:28px;height:28px;border:0;outline:none;border-radius:6px;" />
                     </td>
-                  </tr>
-                  <tr>
-                    <td style="padding:0 22px 22px 22px;">
-                      <table width="100%" role="presentation" cellpadding="0" cellspacing="0">
-                        <tr>
-                          <td style="padding:0 0 14px 0;font-size:14px;line-height:1.72;color:${BRAND.text};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.greeting)}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding:0 0 16px 0;font-size:14px;line-height:1.72;color:${BRAND.text};font-family:'DM Sans',Arial,sans-serif;">${escapeHtml(params.intro)}</td>
-                        </tr>
-                        ${sections}
-                        ${codeBlock}
-                        ${cta}
-                        ${outro}
-                        ${legal}
-                      </table>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:0 24px 24px 24px;">
-                <table width="100%" role="presentation" cellpadding="0" cellspacing="0" style="border-top:1px solid ${BRAND.border};">
-                  <tr>
-                    <td style="padding-top:18px;font-size:12px;line-height:1.8;color:${BRAND.muted};font-family:'DM Sans',Arial,sans-serif;">
-                      Need help? Reply to this email or contact <a href="mailto:hello@xride-labs.in" style="color:${BRAND.text};text-decoration:none;">hello@xride-labs.in</a>.<br />
-                      <span style="color:${BRAND.accentRed};">Never Stop Riding</span> &nbsp; <span style="color:${BRAND.muted};">/</span> &nbsp; <span style="color:${BRAND.accentTeal};">Xride Labs</span>
-                    </td>
+                    <td valign="middle" style="font-family:${FONT_STACK};font-size:15px;font-weight:600;color:${BRAND.text};letter-spacing:-0.01em;">Zoomies</td>
                   </tr>
                 </table>
               </td>
             </tr>
           </table>
+
+          <!-- Card -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:${BRAND.cardBg};border:1px solid ${BRAND.border};border-radius:12px;">
+            <tr>
+              <td style="padding:36px 36px 32px 36px;">
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                  ${badge}
+                  <tr>
+                    <td style="padding:0 0 10px 0;">
+                      <h1 style="margin:0;font-family:${FONT_STACK};font-size:24px;line-height:1.25;font-weight:700;color:${BRAND.text};letter-spacing:-0.02em;">${escapeHtml(params.heading)}</h1>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 0 24px 0;">
+                      <p style="margin:0;font-family:${FONT_STACK};font-size:15px;line-height:1.6;color:${BRAND.muted};">${escapeHtml(params.subtitle)}</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.greeting)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 0 20px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.intro)}</td>
+                  </tr>
+                  ${codeBlock}
+                  ${cta}
+                  ${sections}
+                  ${outro}
+                  ${legal}
+                </table>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Footer -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+            <tr>
+              <td style="padding:24px 4px 0 4px;font-family:${FONT_STACK};font-size:12px;line-height:1.6;color:${BRAND.muted};">
+                <div style="margin-bottom:6px;color:${BRAND.mutedStrong};">Zoomies &middot; by Xride Labs</div>
+                <div style="margin-bottom:10px;">
+                  Need help? Email
+                  <a href="mailto:hello@xride-labs.in" style="color:${BRAND.mutedStrong};text-decoration:underline;">hello@xride-labs.in</a>
+                </div>
+                <div style="color:#A1A1AA;">&copy; ${CURRENT_YEAR} Xride Labs. All rights reserved.</div>
+              </td>
+            </tr>
+          </table>
+
         </td>
       </tr>
     </table>
+
   </body>
 </html>`.trim();
 }
@@ -231,7 +282,7 @@ function buildText(params: {
 }): string {
   const sectionLines = (params.sections || [])
     .map((section) => `${section.title}: ${section.description}`)
-    .join("\n\n");
+    .join("\n");
   const code =
     params.codeLabel && params.codeValue
       ? `${params.codeLabel}: ${params.codeValue}`
@@ -242,17 +293,21 @@ function buildText(params: {
       : "";
 
   return [
-    params.greeting,
     params.heading,
+    "",
+    params.greeting,
     params.intro,
-    sectionLines,
     code,
     cta,
+    sectionLines,
     params.outro || "",
     params.legal || "",
+    "",
+    "— Zoomies by Xride Labs",
   ]
-    .filter(Boolean)
-    .join("\n\n");
+    .filter((line) => line !== undefined && line !== null)
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 export function buildWelcomeTemplate(params: {
@@ -260,42 +315,50 @@ export function buildWelcomeTemplate(params: {
   appUrl: string;
 }): EmailTemplate {
   const firstName = getFirstName(params.name);
-  const greeting = firstName ? `Welcome ${firstName},` : "Welcome rider,";
+  const greeting = firstName ? `Hi ${firstName},` : "Hi there,";
   const sections: TemplateSection[] = [
     {
-      title: "Discover nearby rides",
-      description: "Find routes and events near your location in seconds.",
+      title: "Discover rides near you",
+      description:
+        "Browse group rides and solo routes happening in your area, and join the ones that match your pace.",
     },
     {
-      title: "Join clubs and friend groups",
-      description: "Ride with your community and manage meetups from one app.",
+      title: "Join clubs and crews",
+      description:
+        "Connect with riding communities, plan meetups, and keep your group coordinated in one place.",
     },
     {
       title: "Complete your profile",
-      description: "Add your bike and preferences for better ride matches.",
+      description:
+        "Add your bike, experience level, and preferences so we can match you with the right rides and riders.",
     },
   ];
 
   const html = buildHtml({
-    preheader: "Your Zoomies account is ready",
-    badge: "ONBOARDING",
+    preheader: "Your Zoomies account is ready. Here's how to get started.",
+    badge: "Welcome",
     heading: "Welcome to Zoomies",
-    subtitle: "Your rider profile is now active",
+    subtitle:
+      "Your rider account is active. Here are a few things to do to get the most out of it.",
     greeting,
     intro:
-      "You are all set. Here are the first things to do to get the most from Zoomies:",
+      "Zoomies is the home for motorcycle riders — to discover rides, join clubs, and connect with the community. Below are a few ways to get started.",
     sections,
     ctaLabel: "Open Zoomies",
     ctaUrl: params.appUrl,
+    outro:
+      "If you have any questions, just reply to this email — we read every message.",
   });
 
   const text = buildText({
     greeting,
     heading: "Welcome to Zoomies",
-    intro: "Your rider profile is now active.",
+    intro:
+      "Your rider account is now active. Here are a few things to do to get the most out of it.",
     sections,
     ctaLabel: "Open Zoomies",
     ctaUrl: params.appUrl,
+    outro: "If you have any questions, just reply to this email.",
   });
 
   return {
@@ -311,33 +374,36 @@ export function buildVerificationTemplate(params: {
   verifyUrl: string;
 }): EmailTemplate {
   const firstName = getFirstName(params.name);
-  const greeting = firstName ? `Hey ${firstName},` : "Hey rider,";
+  const greeting = firstName ? `Hi ${firstName},` : "Hi there,";
 
   const html = buildHtml({
-    preheader: "Verify your Zoomies account",
-    badge: "ACCOUNT SECURITY",
-    heading: "Verify your email",
-    subtitle: "One quick step before you continue",
+    preheader: "Confirm your email address to activate your Zoomies account.",
+    badge: "Verify email",
+    heading: "Confirm your email address",
+    subtitle:
+      "Please verify your email to activate your account and secure it against unauthorized access.",
     greeting,
     intro:
-      "Please confirm your email address to keep your account secure and unlock full access.",
-    ctaLabel: "Verify Email",
+      "Click the button below to confirm the email address associated with your Zoomies account. This link is valid for a limited time.",
+    ctaLabel: "Verify email address",
     ctaUrl: params.verifyUrl,
-    legal: "If you did not create this account, you can ignore this email.",
+    legal:
+      "If you did not create a Zoomies account, you can safely ignore this email — no further action is required.",
   });
 
   const text = buildText({
     greeting,
-    heading: "Verify your email",
+    heading: "Confirm your email address",
     intro:
-      "Please confirm your email address to keep your account secure and unlock full access.",
-    ctaLabel: "Verify Email",
+      "Click the link below to confirm the email address associated with your Zoomies account. This link is valid for a limited time.",
+    ctaLabel: "Verify email address",
     ctaUrl: params.verifyUrl,
-    legal: "If you did not create this account, you can ignore this email.",
+    legal:
+      "If you did not create a Zoomies account, you can safely ignore this email.",
   });
 
   return {
-    subject: "Verify your Zoomies account",
+    subject: "Confirm your email address",
     html,
     text,
     tags: ["verify-email"],
@@ -350,32 +416,35 @@ export function buildOtpTemplate(params: {
   expiresInMinutes?: number;
 }): EmailTemplate {
   const firstName = getFirstName(params.name);
-  const greeting = firstName ? `Hey ${firstName},` : "Hey rider,";
+  const greeting = firstName ? `Hi ${firstName},` : "Hi there,";
   const ttl = params.expiresInMinutes || 10;
 
   const html = buildHtml({
-    preheader: "Your Zoomies OTP code",
-    badge: "SECURE LOGIN",
-    heading: "Your one-time code",
-    subtitle: "Use this code to continue",
+    preheader: `Your Zoomies verification code is ${params.otp}.`,
+    badge: "One-time code",
+    heading: "Your verification code",
+    subtitle:
+      "Enter this code in the app to complete sign-in. Do not share it with anyone.",
     greeting,
-    intro: "Enter this code in the app to complete your sign-in.",
+    intro:
+      "Use the code below to finish signing in to your Zoomies account.",
     codeLabel: "Verification code",
     codeValue: params.otp,
-    legal: `This code expires in ${ttl} minutes. Never share it with anyone.`,
+    legal: `This code expires in ${ttl} minutes. Zoomies will never ask you for this code by phone, email, or chat. If you did not request it, you can safely ignore this message.`,
   });
 
   const text = buildText({
     greeting,
-    heading: "Your one-time code",
-    intro: "Enter this code in the app to complete your sign-in.",
+    heading: "Your verification code",
+    intro:
+      "Use the code below to finish signing in to your Zoomies account.",
     codeLabel: "Verification code",
     codeValue: params.otp,
-    legal: `This code expires in ${ttl} minutes. Never share it with anyone.`,
+    legal: `This code expires in ${ttl} minutes. Never share this code with anyone.`,
   });
 
   return {
-    subject: "Your Zoomies OTP code",
+    subject: `Zoomies verification code: ${params.otp}`,
     html,
     text,
     tags: ["otp"],
@@ -387,31 +456,32 @@ export function buildResetPasswordTemplate(params: {
   resetUrl: string;
 }): EmailTemplate {
   const firstName = getFirstName(params.name);
-  const greeting = firstName ? `Hey ${firstName},` : "Hey rider,";
+  const greeting = firstName ? `Hi ${firstName},` : "Hi there,";
 
   const html = buildHtml({
-    preheader: "Reset your Zoomies password",
-    badge: "ACCOUNT SECURITY",
+    preheader: "Reset your Zoomies account password.",
+    badge: "Password reset",
     heading: "Reset your password",
-    subtitle: "You requested a password reset",
+    subtitle:
+      "We received a request to reset the password for your Zoomies account.",
     greeting,
     intro:
-      "If this request came from you, use the button below to set a new password.",
-    ctaLabel: "Reset Password",
+      "If you made this request, click the button below to choose a new password. For your security, this link will expire soon.",
+    ctaLabel: "Reset password",
     ctaUrl: params.resetUrl,
     legal:
-      "If you did not request this, you can ignore this email. Your account remains secure.",
+      "If you did not request a password reset, you can safely ignore this email — your account remains secure and no changes will be made.",
   });
 
   const text = buildText({
     greeting,
     heading: "Reset your password",
     intro:
-      "If this request came from you, use the link below to set a new password.",
-    ctaLabel: "Reset Password",
+      "If you requested a password reset, click the link below to choose a new password. For your security, this link will expire soon.",
+    ctaLabel: "Reset password",
     ctaUrl: params.resetUrl,
     legal:
-      "If you did not request this, you can ignore this email. Your account remains secure.",
+      "If you did not request a password reset, you can safely ignore this email.",
   });
 
   return {
@@ -428,42 +498,36 @@ export function buildRideJoinRequestTemplate(params: {
   message?: string;
 }): EmailTemplate {
   const sections: TemplateSection[] = [
-    {
-      title: "Ride",
-      description: params.rideTitle,
-    },
-    {
-      title: "Requested by",
-      description: params.requesterName,
-    },
+    { title: "Ride", description: params.rideTitle },
+    { title: "Requested by", description: params.requesterName },
   ];
 
   if (params.message) {
-    sections.push({
-      title: "Message",
-      description: params.message,
-    });
+    sections.push({ title: "Message", description: params.message });
   }
 
   const html = buildHtml({
-    preheader: `New join request for ${params.rideTitle}`,
-    badge: "RIDE UPDATE",
-    heading: "New ride join request",
-    subtitle: "A rider wants to join your ride",
-    greeting: "Hey there,",
-    intro: "You received a new request. Open the app to approve or reject it.",
+    preheader: `${params.requesterName} requested to join ${params.rideTitle}.`,
+    badge: "Ride request",
+    heading: "New request to join your ride",
+    subtitle:
+      "A rider has requested to join one of your rides. Review the details below and respond in the app.",
+    greeting: "Hi there,",
+    intro:
+      "Open Zoomies to view the full request and approve or decline it. The requester will be notified of your decision.",
     sections,
   });
 
   const text = buildText({
-    greeting: "Hey there,",
-    heading: "New ride join request",
-    intro: "You received a new request. Open the app to approve or reject it.",
+    greeting: "Hi there,",
+    heading: "New request to join your ride",
+    intro:
+      "A rider has requested to join one of your rides. Open Zoomies to approve or decline the request.",
     sections,
   });
 
   return {
-    subject: `New join request for ${params.rideTitle}`,
+    subject: `New join request: ${params.rideTitle}`,
     html,
     text,
     tags: ["ride-join-request"],
@@ -476,41 +540,35 @@ export function buildClubJoinTemplate(params: {
   clubsUrl: string;
 }): EmailTemplate {
   const sections: TemplateSection[] = [
-    {
-      title: "Club",
-      description: params.clubName,
-    },
-    {
-      title: "New member",
-      description: params.memberName,
-    },
+    { title: "Club", description: params.clubName },
+    { title: "New member", description: params.memberName },
   ];
 
   const html = buildHtml({
-    preheader: `New member joined ${params.clubName}`,
-    badge: "CLUB UPDATE",
-    heading: "New club member",
-    subtitle: "Your community is growing",
-    greeting: "Hey captain,",
+    preheader: `${params.memberName} just joined ${params.clubName}.`,
+    badge: "Club update",
+    heading: "A new member joined your club",
+    subtitle: "Your club is growing. Open your club page to welcome them.",
+    greeting: "Hi there,",
     intro:
-      "A new rider joined your club. Open your club dashboard to welcome them.",
+      "A rider just joined your club on Zoomies. You can manage your members and community from your club dashboard.",
     sections,
-    ctaLabel: "Open Club",
+    ctaLabel: "Open club",
     ctaUrl: params.clubsUrl,
   });
 
   const text = buildText({
-    greeting: "Hey captain,",
-    heading: "New club member",
+    greeting: "Hi there,",
+    heading: "A new member joined your club",
     intro:
-      "A new rider joined your club. Open your club dashboard to welcome them.",
+      "A rider just joined your club on Zoomies. You can manage your members and community from your club dashboard.",
     sections,
-    ctaLabel: "Open Club",
+    ctaLabel: "Open club",
     ctaUrl: params.clubsUrl,
   });
 
   return {
-    subject: `New member joined ${params.clubName}`,
+    subject: `New member in ${params.clubName}`,
     html,
     text,
     tags: ["club-member"],
@@ -523,17 +581,21 @@ export function buildAlertTemplate(params: {
 }): EmailTemplate {
   const html = buildHtml({
     preheader: params.subject,
-    badge: "SYSTEM ALERT",
+    badge: "Notice",
     heading: params.subject,
-    subtitle: "Important update",
-    greeting: "Heads up,",
+    subtitle: "Important account update",
+    greeting: "Hi there,",
     intro: params.message,
+    legal:
+      "This is an automated system notice from Zoomies. If you believe you received it in error, please reply and let us know.",
   });
 
   const text = buildText({
-    greeting: "Heads up,",
+    greeting: "Hi there,",
     heading: params.subject,
     intro: params.message,
+    legal:
+      "This is an automated system notice from Zoomies. If you believe you received it in error, please reply and let us know.",
   });
 
   return {

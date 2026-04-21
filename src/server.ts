@@ -2,6 +2,8 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createServer } from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // Load environment variables
 dotenv.config();
@@ -77,6 +79,20 @@ app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 // Body parsing middleware (AFTER Better Auth)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Static public assets (email logos, etc.) — resolved relative to the repo
+// root regardless of whether we're running from src (tsx) or dist (node).
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.resolve(__dirname, "../public");
+app.use(
+  "/static",
+  express.static(publicDir, {
+    maxAge: "7d",
+    etag: true,
+    fallthrough: true,
+  }),
+);
 
 // Setup Swagger/OpenAPI documentation
 setupSwagger(app);

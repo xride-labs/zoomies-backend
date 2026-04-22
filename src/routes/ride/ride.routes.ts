@@ -324,7 +324,19 @@ router.post(
       duration,
       scheduledAt,
       keepPermanently,
+      startLat,
+      startLng,
+      endLat,
+      endLng,
+      latitude,
+      longitude,
     } = req.body;
+
+    // The mobile client sends startLat/startLng (route origin). Mirror those
+    // into latitude/longitude so the existing geo index + nearby-feed query
+    // continues to work without a parallel code path.
+    const resolvedLat = startLat ?? latitude;
+    const resolvedLng = startLng ?? longitude;
 
     const ride = await prisma.ride.create({
       data: {
@@ -340,6 +352,12 @@ router.post(
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         keepPermanently: keepPermanently || false,
         creatorId: session.user.id,
+        latitude: resolvedLat,
+        longitude: resolvedLng,
+        startLat: resolvedLat,
+        startLng: resolvedLng,
+        endLat,
+        endLng,
       },
       include: {
         creator: {
@@ -427,7 +445,17 @@ router.patch(
       duration,
       scheduledAt,
       keepPermanently,
+      startLat,
+      startLng,
+      endLat,
+      endLng,
+      latitude,
+      longitude,
     } = req.body;
+
+    // Mirror startLat/startLng → latitude/longitude so the geo index stays in sync.
+    const resolvedLat = startLat ?? latitude;
+    const resolvedLng = startLng ?? longitude;
 
     const ride = await prisma.ride.update({
       where: { id },
@@ -445,6 +473,10 @@ router.patch(
           scheduledAt: new Date(scheduledAt),
         }),
         ...(keepPermanently !== undefined && { keepPermanently }),
+        ...(resolvedLat !== undefined && { latitude: resolvedLat, startLat: resolvedLat }),
+        ...(resolvedLng !== undefined && { longitude: resolvedLng, startLng: resolvedLng }),
+        ...(endLat !== undefined && { endLat }),
+        ...(endLng !== undefined && { endLng }),
       },
       include: {
         creator: {

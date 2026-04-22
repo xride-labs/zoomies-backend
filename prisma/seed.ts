@@ -22,6 +22,141 @@ const IS_PROD = process.env.NODE_ENV === "production";
 const PRIMARY_ADMIN_EMAIL = "admin@zoomies.com";
 const GOOGLE_ADMIN_EMAIL = "krithikm923@gmail.com";
 
+// ──────────────────────────────────────────────────────────────────
+// Public CDN media — Unsplash / Pexels. Free to hotlink for demos.
+// Having real image URLs in seed data is important because empty
+// `images: []` arrays render as grey boxes across the app.
+// ──────────────────────────────────────────────────────────────────
+const AVATAR_URLS = [
+  "https://randomuser.me/api/portraits/men/32.jpg",
+  "https://randomuser.me/api/portraits/women/44.jpg",
+  "https://randomuser.me/api/portraits/men/75.jpg",
+  "https://randomuser.me/api/portraits/women/68.jpg",
+  "https://randomuser.me/api/portraits/men/51.jpg",
+  "https://randomuser.me/api/portraits/women/12.jpg",
+  "https://randomuser.me/api/portraits/men/85.jpg",
+  "https://randomuser.me/api/portraits/women/29.jpg",
+  "https://randomuser.me/api/portraits/men/19.jpg",
+  "https://randomuser.me/api/portraits/women/57.jpg",
+];
+
+const COVER_URLS = [
+  "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=1200",
+  "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=1200",
+  "https://images.unsplash.com/photo-1449426468159-d96dbf08f19f?w=1200",
+  "https://images.unsplash.com/photo-1515238152791-8216bfdf89a7?w=1200",
+  "https://images.unsplash.com/photo-1580310614729-ccd69652491d?w=1200",
+];
+
+const LISTING_IMAGES: Record<string, string[]> = {
+  Helmet: [
+    "https://images.unsplash.com/photo-1609630875171-b1321377ee65?w=800",
+    "https://images.unsplash.com/photo-1591637333184-19aa84b3e01f?w=800",
+  ],
+  Jacket: [
+    "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800",
+    "https://images.unsplash.com/photo-1520975916090-3105956dac38?w=800",
+  ],
+  Gloves: [
+    "https://images.unsplash.com/photo-1587731556938-38755b4803a6?w=800",
+  ],
+  Boots: [
+    "https://images.unsplash.com/photo-1520639888713-7851133b1ed0?w=800",
+  ],
+  Armor: [
+    "https://images.unsplash.com/photo-1558980394-0a0c5f5a1a80?w=800",
+  ],
+  Motorcycle: [
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800",
+    "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800",
+    "https://images.unsplash.com/photo-1511994298241-608e28f14fde?w=800",
+  ],
+  Camera: [
+    "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=800",
+  ],
+  Drone: [
+    "https://images.unsplash.com/photo-1507582020474-9a35b7d455d9?w=800",
+  ],
+  GPS: ["https://images.unsplash.com/photo-1581093588401-fbb62a02f120?w=800"],
+  Mount: ["https://images.unsplash.com/photo-1558980664-3a031cf67ea8?w=800"],
+  Lights: ["https://images.unsplash.com/photo-1581093057305-25b8e4e6e3a3?w=800"],
+  Tyres: [
+    "https://images.unsplash.com/photo-1452780212940-6f5c0d14d848?w=800",
+  ],
+  Exhaust: [
+    "https://images.unsplash.com/photo-1580310614729-ccd69652491d?w=800",
+  ],
+  Filters: ["https://images.unsplash.com/photo-1518306727298-4c17e1bf6947?w=800"],
+  Guards: ["https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800"],
+  Oil: ["https://images.unsplash.com/photo-1518458028785-8fbcd101ebb9?w=800"],
+  Battery: ["https://images.unsplash.com/photo-1609697564478-b4a0b98b21c6?w=800"],
+  Protective: ["https://images.unsplash.com/photo-1520975916090-3105956dac38?w=800"],
+  Winter: ["https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=800"],
+  Luggage: ["https://images.unsplash.com/photo-1553531384-cc64ac80f931?w=800"],
+  Tools: ["https://images.unsplash.com/photo-1530124566582-a618bc2615dc?w=800"],
+  Pump: ["https://images.unsplash.com/photo-1581091012184-7e0cdfbb6797?w=800"],
+  Lock: ["https://images.unsplash.com/photo-1558002038-1055907df827?w=800"],
+  Safety: ["https://images.unsplash.com/photo-1608889476518-738c9b1dcb40?w=800"],
+  Charger: ["https://images.unsplash.com/photo-1609592812743-4c6e0eeb6b5f?w=800"],
+  Mirror: ["https://images.unsplash.com/photo-1525160354320-d8e92641c563?w=800"],
+  Adventure: ["https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800"],
+  Backpack: ["https://images.unsplash.com/photo-1553531384-cc64ac80f931?w=800"],
+  "Tail Tidy": ["https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800"],
+};
+
+const POST_IMAGES = [
+  "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=1200",
+  "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=1200",
+  "https://images.unsplash.com/photo-1515238152791-8216bfdf89a7?w=1200",
+  "https://images.unsplash.com/photo-1449426468159-d96dbf08f19f?w=1200",
+  "https://images.unsplash.com/photo-1511994298241-608e28f14fde?w=1200",
+  "https://images.unsplash.com/photo-1580310614729-ccd69652491d?w=1200",
+];
+
+// City centers (lat/lng). Seed data is geographically distributed so the feed
+// isn't empty regardless of where the dev's GPS resolves to. Bangalore still
+// gets the heaviest weight because dev testing happens from there.
+const CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
+  Bangalore: { lat: 12.9716, lng: 77.5946 },
+  Koramangala: { lat: 12.9352, lng: 77.6245 },
+  Delhi: { lat: 28.6139, lng: 77.209 },
+  Mumbai: { lat: 19.076, lng: 72.8777 },
+  Pune: { lat: 18.5204, lng: 73.8567 },
+  Chennai: { lat: 13.0827, lng: 80.2707 },
+  Hyderabad: { lat: 17.385, lng: 78.4867 },
+  Kochi: { lat: 9.9312, lng: 76.2673 },
+  Jaipur: { lat: 26.9124, lng: 75.7873 },
+};
+
+function pickImage<T>(arr: T[], i: number): T {
+  return arr[i % arr.length];
+}
+
+function listingImagesFor(subcat: string, seed: number): string[] {
+  const pool = LISTING_IMAGES[subcat] ?? LISTING_IMAGES.Motorcycle;
+  // 1–2 images per listing, deterministic by seed so reruns stay stable.
+  return seed % 3 === 0 && pool.length > 1
+    ? [pool[0], pool[1 % pool.length]]
+    : [pool[seed % pool.length]];
+}
+
+/**
+ * Jitter coords around a city center so multiple seed rows in the same city
+ * don't stack on one pin. ~2-5km radius, deterministic from `seed`.
+ */
+function coordsNear(
+  city: keyof typeof CITY_CENTERS,
+  seed: number,
+): { lat: number; lng: number } {
+  const c = CITY_CENTERS[city];
+  const angle = (seed * 137.5 * Math.PI) / 180; // golden-angle spread
+  const dist = 0.01 + ((seed * 7) % 17) * 0.003; // 1–6km
+  return {
+    lat: c.lat + Math.sin(angle) * dist,
+    lng: c.lng + Math.cos(angle) * dist,
+  };
+}
+
 async function ensureGoogleAdminSeedUser(): Promise<void> {
   const googleAdmin = await prisma.user.upsert({
     where: { email: GOOGLE_ADMIN_EMAIL },
@@ -303,6 +438,8 @@ async function main() {
       location: "Pune, India",
       dob: new Date("1994-12-02"),
       bloodType: "O-",
+      avatar: AVATAR_URLS[2],
+      coverImage: COVER_URLS[0],
       xpPoints: 3500,
       level: 10,
       levelTitle: "Trail Boss",
@@ -340,6 +477,8 @@ async function main() {
       location: "Hyderabad, India",
       dob: new Date("1997-07-18"),
       bloodType: "A-",
+      avatar: AVATAR_URLS[4],
+      coverImage: COVER_URLS[1],
       xpPoints: 1800,
       level: 7,
       levelTitle: "Highway King",
@@ -358,6 +497,8 @@ async function main() {
       location: "Bangalore, India",
       dob: new Date("1999-03-05"),
       bloodType: "B-",
+      avatar: AVATAR_URLS[5],
+      coverImage: COVER_URLS[2],
       xpPoints: 2100,
       level: 6,
       levelTitle: "Café Racer",
@@ -376,6 +517,8 @@ async function main() {
       location: "Kochi, India",
       dob: new Date("1995-11-29"),
       bloodType: "O+",
+      avatar: AVATAR_URLS[6],
+      coverImage: COVER_URLS[3],
       xpPoints: 3100,
       level: 9,
       levelTitle: "Trail Blazer",
@@ -394,6 +537,8 @@ async function main() {
       location: "Mumbai, India",
       dob: new Date("2001-01-15"),
       bloodType: "AB-",
+      avatar: AVATAR_URLS[7],
+      coverImage: COVER_URLS[4],
       xpPoints: 950,
       level: 4,
       levelTitle: "Night Owl",
@@ -411,6 +556,8 @@ async function main() {
       location: "Jaipur, India",
       dob: new Date("1993-08-22"),
       bloodType: "B+",
+      avatar: AVATAR_URLS[8],
+      coverImage: COVER_URLS[0],
       xpPoints: 4200,
       level: 11,
       levelTitle: "Vintage King",
@@ -824,15 +971,25 @@ async function main() {
     clubs.push(club);
   }
 
-  // Create duplicate clubs concentrated around Koramangala for better discovery
+  // Second pass: distribute extra club chapters across other Indian metros so
+  // users outside Bangalore also see nearby results when their GPS resolves.
+  const otherCityCycle: (keyof typeof CITY_CENTERS)[] = [
+    "Delhi",
+    "Mumbai",
+    "Pune",
+    "Chennai",
+    "Hyderabad",
+    "Kochi",
+    "Jaipur",
+  ];
   for (let i = 0; i < clubNames.length; i++) {
-    // Generate mostly Koramangala-area coords (indices 0-35 are all close to Koramangala)
-    const coords = generateBangaloreCoords(i + 50); // Offset indices to get more Koramangala coords
+    const city = otherCityCycle[i % otherCityCycle.length];
+    const coords = coordsNear(city, i);
     const club = await prisma.club.create({
       data: {
-        name: `${clubNames[i]} - Local Chapter`,
-        description: `Local ${clubNames[i]} chapter in Koramangala area. Join for rides, meetups, and community events!`,
-        location: "Koramangala, Bangalore",
+        name: `${clubNames[i]} - ${city} Chapter`,
+        description: `${city} chapter of ${clubNames[i]}. Join for rides, meetups, and community events!`,
+        location: `${city}, India`,
         latitude: coords.lat,
         longitude: coords.lng,
         establishedAt: new Date(
@@ -974,6 +1131,7 @@ async function main() {
       "CANCELLED",
     ] as const;
 
+    const endCoords = generateBangaloreCoords(i + 17);
     const ride = await prisma.ride.create({
       data: {
         title: rideNames[i],
@@ -982,6 +1140,10 @@ async function main() {
         endLocation: rideLocations[(i + 1) % rideLocations.length],
         latitude: coords.lat,
         longitude: coords.lng,
+        startLat: coords.lat,
+        startLng: coords.lng,
+        endLat: endCoords.lat,
+        endLng: endCoords.lng,
         experienceLevel: expLevels[Math.floor(Math.random() * 3)],
         xpRequired: Math.floor(Math.random() * 1000) + 100,
         pace: paces[Math.floor(Math.random() * 3)],
@@ -999,9 +1161,20 @@ async function main() {
     rides.push(ride);
   }
 
-  // Create duplicate rides concentrated around Koramangala
+  // Second pass: distribute rides across other metros so non-Bangalore users
+  // see nearby rides when their GPS resolves outside Bangalore.
+  const rideCityCycle: (keyof typeof CITY_CENTERS)[] = [
+    "Delhi",
+    "Mumbai",
+    "Pune",
+    "Chennai",
+    "Hyderabad",
+    "Kochi",
+    "Jaipur",
+  ];
   for (let i = 0; i < rideNames.length; i++) {
-    const coords = generateBangaloreCoords(i + 50); // Offset for Koramangala concentration
+    const city = rideCityCycle[i % rideCityCycle.length];
+    const coords = coordsNear(city, i);
     const expLevels = ["Beginner", "Intermediate", "Expert"];
     const paces = ["Leisurely", "Moderate", "Fast"];
     const statuses = [
@@ -1012,14 +1185,19 @@ async function main() {
       "COMPLETED",
     ] as const;
 
+    const endCoords = coordsNear(city, i + 17);
     const ride = await prisma.ride.create({
       data: {
-        title: `${rideNames[i]} - Koramangala Chapter`,
-        description: `${rideNames[i]} from Koramangala! Experience the best riding routes in your area with fellow enthusiasts.`,
-        startLocation: rideLocations[i],
-        endLocation: rideLocations[(i + 1) % rideLocations.length],
+        title: `${rideNames[i]} - ${city}`,
+        description: `${rideNames[i]} based in ${city}. Experience the best riding routes with fellow enthusiasts in ${city}.`,
+        startLocation: `${city} Meetup Point`,
+        endLocation: `${city} Outskirts`,
         latitude: coords.lat,
         longitude: coords.lng,
+        startLat: coords.lat,
+        startLng: coords.lng,
+        endLat: endCoords.lat,
+        endLng: endCoords.lng,
         experienceLevel: expLevels[Math.floor(Math.random() * 3)],
         xpRequired: Math.floor(Math.random() * 800) + 50,
         pace: paces[Math.floor(Math.random() * 3)],
@@ -1195,6 +1373,7 @@ async function main() {
   const conditions = ["New", "Like New", "Good", "Fair"];
   for (let i = 0; i < listingNames.length; i++) {
     const coords = generateBangaloreCoords(i);
+    const subcategory = categories[i % categories.length].sub;
     const listing = await prisma.marketplaceListing.create({
       data: {
         title: listingNames[i],
@@ -1202,9 +1381,9 @@ async function main() {
         price: prices[Math.floor(Math.random() * prices.length)],
         currency: "INR",
         category: categories[i % categories.length].cat,
-        subcategory: categories[i % categories.length].sub,
+        subcategory,
         condition: conditions[Math.floor(Math.random() * conditions.length)],
-        images: [],
+        images: listingImagesFor(subcategory, i),
         status:
           Math.random() > 0.15 ? ListingStatus.ACTIVE : ListingStatus.SOLD,
         latitude: coords.lat,
@@ -1289,11 +1468,18 @@ async function main() {
     "Just hit 10000 km milestone!",
   ];
   for (let i = 0; i < 25; i++) {
+    // 1–2 images per post, skip some posts for text-only variety
+    const images =
+      i % 4 === 3
+        ? []
+        : i % 3 === 0
+          ? [pickImage(POST_IMAGES, i), pickImage(POST_IMAGES, i + 1)]
+          : [pickImage(POST_IMAGES, i)];
     const post = await prisma.post.create({
       data: {
         type: i < 10 ? "ride" : i < 20 ? "content" : "listing",
         content: postContents[i % postContents.length],
-        images: [],
+        images,
         authorId: allUsers[i % allUsers.length].id,
         rideId: i < 10 ? rides[i % rides.length].id : undefined,
         listingId: i >= 20 ? listings[i % listings.length].id : undefined,

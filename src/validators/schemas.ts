@@ -180,6 +180,10 @@ export const createRideSchema = z.object({
   keepPermanently: z.boolean().default(false), // Flag to prevent auto-deletion
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  startLat: z.number().min(-90).max(90).optional(),
+  startLng: z.number().min(-180).max(180).optional(),
+  endLat: z.number().min(-90).max(90).optional(),
+  endLng: z.number().min(-180).max(180).optional(),
 });
 
 export const updateRideSchema = createRideSchema.partial();

@@ -252,9 +252,15 @@ model Ride {
   endedAt         DateTime?  @map("ended_at") // When ride actually ended
   status          RideStatus @default(PLANNED)
 
-  // Geo coordinates for location-based discovery
+  // Geo coordinates for location-based discovery (mirrors startLat/startLng on write).
   latitude  Float? @map("latitude")
   longitude Float? @map("longitude")
+
+  // Start + end coords for route rendering in the mobile MapPreview.
+  startLat Float? @map("start_lat")
+  startLng Float? @map("start_lng")
+  endLat   Float? @map("end_lat")
+  endLng   Float? @map("end_lng")
 
   // Lifecycle management
   keepPermanently Boolean @default(false) @map("keep_permanently") // Prevent auto-deletion

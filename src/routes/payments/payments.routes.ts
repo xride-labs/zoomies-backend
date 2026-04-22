@@ -81,19 +81,35 @@ router.post(
     const session = (req as any).session;
     const billingCycle =
       req.body?.billingCycle === "annual" ? "annual" : "monthly";
-    const productId =
-      billingCycle === "annual"
-        ? process.env.DODO_PRO_ANNUAL_PRODUCT_ID?.trim()
-        : process.env.DODO_PRO_MONTHLY_PRODUCT_ID?.trim();
+    const monthlyId = process.env.DODO_PRO_MONTHLY_PRODUCT_ID?.trim();
+    const annualId = process.env.DODO_PRO_ANNUAL_PRODUCT_ID?.trim();
+    const productId = billingCycle === "annual" ? annualId : monthlyId;
 
     if (!productId) {
       return ApiResponse.error(
         res,
-        `Dodo product ID is not configured for the ${billingCycle} plan`,
+        `Dodo product ID is not configured for the ${billingCycle} plan. Set DODO_PRO_${billingCycle === "annual" ? "ANNUAL" : "MONTHLY"}_PRODUCT_ID in the backend .env.`,
         500,
         ErrorCode.EXTERNAL_SERVICE_ERROR,
       );
     }
+
+    // Guard against a misconfigured .env where the annual and monthly IDs
+    // are the same — this silently downgrades annual subscribers to monthly
+    // pricing without surfacing an error. Warn loudly so it's obvious.
+    if (monthlyId && annualId && monthlyId === annualId) {
+      console.warn(
+        "[payments] DODO_PRO_MONTHLY_PRODUCT_ID === DODO_PRO_ANNUAL_PRODUCT_ID — annual and monthly will bill identically",
+      );
+    }
+
+    // Allow the mobile client to override the return URL so the deep-link
+    // scheme matches whatever the client is using. The backend still needs
+    // DODO_PAYMENTS_RETURN_URL as a fallback for the web/manage flows.
+    const clientReturnUrl =
+      typeof req.body?.returnUrl === "string" ? req.body.returnUrl : undefined;
+    const clientCancelUrl =
+      typeof req.body?.cancelUrl === "string" ? req.body.cancelUrl : undefined;
 
     const checkout = await createDodoCheckoutSession({
       productId,
@@ -101,6 +117,8 @@ router.post(
         email: session.user.email,
         name: session.user.name,
       },
+      returnUrl: clientReturnUrl,
+      cancelUrl: clientCancelUrl,
       metadata: {
         userId: session.user.id,
         tier: "PRO",
@@ -109,10 +127,20 @@ router.post(
       },
     });
 
+    const checkoutUrl = checkout.checkout_url || checkout.url;
+    if (!checkoutUrl) {
+      return ApiResponse.error(
+        res,
+        "Dodo did not return a checkout URL. Verify DODO_PAYMENTS_API_KEY and the product IDs.",
+        502,
+        ErrorCode.EXTERNAL_SERVICE_ERROR,
+      );
+    }
+
     ApiResponse.success(
       res,
       {
-        checkoutUrl: checkout.checkout_url || checkout.url,
+        checkoutUrl,
         sessionId: checkout.session_id || null,
         billingCycle,
       },

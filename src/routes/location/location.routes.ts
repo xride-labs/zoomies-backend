@@ -8,11 +8,18 @@ import {
 import { z } from "zod";
 import { LocationService } from "../../services/location.service.js";
 import { ApiResponse } from "../../lib/utils/apiResponse.js";
+import { requirePro } from "../../lib/subscription.js";
 
 const router = Router();
 
 // All location routes require authentication
 router.use(requireAuth);
+
+// Live location broadcasting is a Pro feature (see plan §8.2). Reading
+// friends' locations stays free so non-Pro users still see the social map;
+// only writing your own live location and managing share permissions is
+// gated, since that's the actual product value (and battery cost).
+const requireLiveLocationPro = requirePro("Live location sharing");
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
@@ -100,6 +107,7 @@ const rideIdParamSchema = z.object({
  */
 router.post(
   "/",
+  requireLiveLocationPro,
   validateBody(updateLocationSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).session?.user?.id;
@@ -160,6 +168,7 @@ router.get(
  */
 router.patch(
   "/settings",
+  requireLiveLocationPro,
   validateBody(updateSettingsSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).session?.user?.id;
@@ -287,6 +296,7 @@ router.get(
  */
 router.post(
   "/permissions",
+  requireLiveLocationPro,
   validateBody(setPermissionSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).session?.user?.id;
@@ -326,6 +336,7 @@ router.post(
  */
 router.post(
   "/ghost-mode",
+  requireLiveLocationPro,
   validateBody(ghostModeSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).session?.user?.id;

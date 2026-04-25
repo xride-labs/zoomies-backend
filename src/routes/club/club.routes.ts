@@ -635,7 +635,7 @@ router.post(
           res,
           "Zoomies Pro is required to create more clubs",
           403,
-          ErrorCode.INSUFFICIENT_PERMISSIONS,
+          ErrorCode.SUBSCRIPTION_REQUIRED,
         );
       }
     }

@@ -14,6 +14,7 @@ import {
 } from "../../validators/schemas.js";
 import { z } from "zod";
 import { validateQuery } from "../../middlewares/validation.js";
+import { awardXp } from "../../lib/xp.js";
 
 const router = Router();
 
@@ -281,6 +282,8 @@ router.post(
         },
       },
     });
+
+    await awardXp(session.user.id, "POST_CREATED", `post ${post.id}`);
 
     ApiResponse.created(res, post);
   }),

@@ -26,7 +26,7 @@ This API uses **Better Auth** for authentication with multiple providers:
 
 ### Base URL
 - Development: \`http://localhost:5000\`
-- Production: \`https://api.zoomies.app\`
+- Production: \`https://api.zoomies.xride-labs.in\`
 
 ### Authentication Flows
 
@@ -58,7 +58,7 @@ This API uses **Better Auth** for authentication with multiple providers:
       description: "Development server",
     },
     {
-      url: "https://api.zoomies.app",
+      url: "https://api.zoomies.xride-labs.in",
       description: "Production server",
     },
   ],

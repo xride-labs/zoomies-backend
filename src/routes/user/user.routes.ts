@@ -140,6 +140,65 @@ function getPhoneVariants(value?: string | null): string[] {
 router.use(requireAuth);
 
 /**
+ * Leaderboard — top XP users globally or filtered by city.
+ *
+ * Query: ?scope=global|city, &city=Bangalore, &limit=50 (max 100)
+ *
+ * Mounted before "/" and ":id" so the literal "/leaderboard" path doesn't
+ * get swallowed by the user-id param route.
+ */
+router.get(
+  "/leaderboard",
+  asyncHandler(async (req: Request, res: Response) => {
+    const limit = Math.min(
+      Math.max(parseInt(String(req.query.limit ?? "50"), 10) || 50, 1),
+      100,
+    );
+    const scope =
+      String(req.query.scope ?? "global").toLowerCase() === "city"
+        ? "city"
+        : "global";
+    const city =
+      typeof req.query.city === "string" && req.query.city.trim()
+        ? req.query.city.trim()
+        : null;
+
+    // City scope is best-effort: User.location is free-text, so we
+    // case-insensitively contains-match. With scope=city but no city
+    // supplied, fall back to global.
+    const where =
+      scope === "city" && city
+        ? { location: { contains: city, mode: "insensitive" as const } }
+        : {};
+
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: [{ xpPoints: "desc" }, { level: "desc" }, { createdAt: "asc" }],
+      take: limit,
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        avatar: true,
+        location: true,
+        xpPoints: true,
+        level: true,
+        levelTitle: true,
+        subscriptionTier: true,
+      },
+    });
+
+    const ranked = users.map((u, idx) => ({
+      rank: idx + 1,
+      ...u,
+      xpPoints: u.xpPoints ?? 0,
+    }));
+
+    ApiResponse.success(res, { scope, city, leaderboard: ranked });
+  }),
+);
+
+/**
  * @swagger
  * /api/users:
  *   get:

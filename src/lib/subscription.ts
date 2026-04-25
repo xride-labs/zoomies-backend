@@ -1,6 +1,9 @@
+import { Request, Response, NextFunction } from "express";
 import prisma from "./prisma.js";
+import { ApiResponse, ErrorCode } from "./utils/apiResponse.js";
 
 export const FREE_MARKETPLACE_LISTING_LIMIT = 3;
+export const FREE_CLUB_OWNERSHIP_LIMIT = 5;
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ["active", "trialing", "renewed"];
 
@@ -236,4 +239,35 @@ export async function countUserActiveListings(userId: string): Promise<number> {
       status: "ACTIVE",
     },
   });
+}
+
+/**
+ * Express middleware: 403 the request unless the authenticated user has an
+ * active Pro subscription. Mount AFTER `requireAuth`.
+ *
+ * The 403 body uses `ErrorCode.SUBSCRIPTION_REQUIRED` (with safe fallback)
+ * so the mobile client can detect it and route the user to the paywall.
+ */
+export function requirePro(featureName?: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const session = (req as any).session;
+
+    if (!session?.user?.id) {
+      return ApiResponse.unauthorized(res, "Authentication required");
+    }
+
+    const hasPro = await isUserPro(session.user.id);
+
+    if (!hasPro) {
+      return ApiResponse.forbidden(
+        res,
+        featureName
+          ? `${featureName} requires Zoomies Pro. Upgrade to unlock this feature.`
+          : "This feature requires Zoomies Pro.",
+        ErrorCode.SUBSCRIPTION_REQUIRED,
+      );
+    }
+
+    next();
+  };
 }

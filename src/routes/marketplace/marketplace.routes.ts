@@ -172,7 +172,12 @@ router.get(
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        // Featured (Pro-boosted) listings sort first; ties broken by recency.
+        // The marketplace_featured_idx covers this query.
+        orderBy: [
+          { featured: "desc" },
+          { createdAt: "desc" },
+        ],
         include: {
           seller: {
             select: { id: true, name: true, avatar: true },
@@ -507,7 +512,7 @@ router.post(
           res,
           `Free users can only keep ${FREE_MARKETPLACE_LISTING_LIMIT} active marketplace listings. Upgrade to Zoomies Pro for unlimited listings.`,
           403,
-          ErrorCode.INSUFFICIENT_PERMISSIONS,
+          ErrorCode.SUBSCRIPTION_REQUIRED,
         );
       }
     }
@@ -718,6 +723,67 @@ router.delete(
     });
 
     ApiResponse.success(res, null, "Listing deleted successfully");
+  }),
+);
+
+/**
+ * Pro-only: feature (boost) a listing so it sorts first in the marketplace.
+ * The boost lasts `durationDays` days (default 7); after that the index
+ * naturally drops it back. We don't auto-charge per-boost — we treat it as
+ * a Pro perk rather than an a-la-carte purchase.
+ */
+const featureListingSchema = z.object({
+  durationDays: z.number().int().min(1).max(30).default(7),
+});
+
+router.post(
+  "/:id/feature",
+  validateParams(idParamSchema),
+  validateBody(featureListingSchema),
+  requireOwnershipOrAdmin("listing"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const { durationDays } = req.body;
+
+    const hasPro = await isUserPro(session.user.id);
+    if (!hasPro) {
+      return ApiResponse.error(
+        res,
+        "Featuring listings is a Zoomies Pro perk. Upgrade to boost your listings.",
+        403,
+        ErrorCode.SUBSCRIPTION_REQUIRED,
+      );
+    }
+
+    const featuredUntil = new Date(
+      Date.now() + durationDays * 24 * 60 * 60 * 1000,
+    );
+
+    const listing = await prisma.marketplaceListing.update({
+      where: { id },
+      data: { featured: true, featuredUntil },
+      select: { id: true, featured: true, featuredUntil: true },
+    });
+
+    ApiResponse.success(res, { listing }, "Listing featured successfully");
+  }),
+);
+
+router.post(
+  "/:id/unfeature",
+  validateParams(idParamSchema),
+  requireOwnershipOrAdmin("listing"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const listing = await prisma.marketplaceListing.update({
+      where: { id },
+      data: { featured: false, featuredUntil: null },
+      select: { id: true, featured: true, featuredUntil: true },
+    });
+
+    ApiResponse.success(res, { listing }, "Listing unfeatured");
   }),
 );
 

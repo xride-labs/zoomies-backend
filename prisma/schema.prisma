@@ -395,6 +395,12 @@ model MarketplaceListing {
   allowBids      Boolean       @default(true) @map("allow_bids")
   status         ListingStatus @default(ACTIVE)
 
+  // Pro-only featured flag — boosted listings sort first in /marketplace.
+  // featuredUntil lets us auto-expire boosts so a sold listing doesn't stay
+  // pinned forever.
+  featured       Boolean   @default(false)
+  featuredUntil  DateTime? @map("featured_until")
+
   // Geo coordinates for location-based discovery
   latitude  Float? @map("latitude")
   longitude Float? @map("longitude")
@@ -414,6 +420,7 @@ model MarketplaceListing {
 
   @@index([latitude, longitude], map: "listings_geo_idx")
   @@index([status, createdAt], map: "listings_status_created_idx")
+  @@index([featured, featuredUntil], map: "marketplace_featured_idx")
   @@map("marketplace_listings")
 }
 

@@ -24,6 +24,9 @@ import {
 } from "../../validators/schemas.js";
 import { sendRideJoinRequestEmail } from "../../lib/mailer.js";
 import { ElevationService } from "../../services/elevation.service.js";
+import { requirePro } from "../../lib/subscription.js";
+import { rideToGpx } from "../../lib/gpx.js";
+import { awardBadgeByTitle, awardXp } from "../../lib/xp.js";
 
 const router = Router();
 
@@ -375,6 +378,9 @@ router.post(
       },
     });
 
+    // Reward the creator with XP (best-effort — never fails the create flow).
+    await awardXp(session.user.id, "RIDE_CREATED", `ride ${ride.id}`);
+
     ApiResponse.created(res, { ride }, "Ride created successfully");
   }),
 );
@@ -631,6 +637,11 @@ router.post(
         },
       },
     });
+
+    // XP for joining is granted on REQUEST (not on accept) so users get
+    // immediate feedback even on private rides where the creator hasn't
+    // approved yet. Reversing on decline is intentional churn we'll skip.
+    await awardXp(session.user.id, "RIDE_JOINED", `ride ${id}`);
 
     // if (ride.creator?.email && ride.creator.id !== session.user.id) {
     //   const requesterName = participant.user?.name || "A rider";
@@ -924,6 +935,29 @@ router.post(
       },
     });
 
+    // Treat the first time we receive an `actualEndTime` for this ride as
+    // ride completion → award XP + check the "First Ride" badge for any
+    // accepted participant who hasn't been credited yet. We use the user's
+    // total completed-ride count as the "first ride" trigger so re-uploads
+    // don't double-award.
+    const justFinished =
+      req.body.actualEndTime &&
+      (await prisma.rideTrackingData.findUnique({
+        where: { rideId: id },
+        select: { actualEndTime: true },
+      }))?.actualEndTime?.getTime() === new Date(req.body.actualEndTime).getTime();
+
+    if (justFinished) {
+      await awardXp(session.user.id, "RIDE_COMPLETED", `ride ${id}`);
+
+      const completedCount = await prisma.rideParticipant.count({
+        where: { userId: session.user.id, status: "ACCEPTED" },
+      });
+      if (completedCount === 1) {
+        await awardBadgeByTitle(session.user.id, "First Ride");
+      }
+    }
+
     ApiResponse.success(res, {
       trackingData,
       elevationComputed: req.body.elevationGainM == null,
@@ -1095,6 +1129,71 @@ router.post(
       invitations,
       notificationsSent: notifications.length,
     });
+  }),
+);
+
+/**
+ * GPX export — Pro-only. Reads the recorded route from RideTrackingData
+ * (stored as GeoJSON LineString) and converts it to GPX 1.1 XML so the
+ * user can import the ride into Strava, Komoot, RideWithGPS, etc.
+ *
+ * Returns text/xml so the mobile client can save it directly via the
+ * Sharing API. The participant check ensures private rides aren't
+ * scrape-able by anyone with a ride ID.
+ */
+router.get(
+  "/:id/export.gpx",
+  validateParams(idParamSchema),
+  requirePro("GPX export"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      include: {
+        trackingData: true,
+        participants: { where: { userId: session.user.id } },
+      },
+    });
+
+    if (!ride) {
+      return ApiResponse.notFound(res, "Ride not found");
+    }
+
+    const isCreator = ride.creatorId === session.user.id;
+    const isParticipant = ride.participants.length > 0;
+    if (!isCreator && !isParticipant) {
+      return ApiResponse.forbidden(
+        res,
+        "Only ride participants can export the GPX file",
+      );
+    }
+
+    if (!ride.trackingData?.routeGeoJson) {
+      return ApiResponse.error(
+        res,
+        "This ride has no recorded route. GPX export is only available after the ride has tracking data.",
+        409,
+        ErrorCode.CONFLICT,
+      );
+    }
+
+    const gpx = rideToGpx({
+      rideId: ride.id,
+      title: ride.title,
+      description: ride.description,
+      startTime: ride.trackingData.actualStartTime ?? ride.scheduledAt,
+      routeGeoJson: ride.trackingData.routeGeoJson,
+    });
+
+    const filename = `zoomies-ride-${ride.id}.gpx`;
+    res.setHeader("Content-Type", "application/gpx+xml; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.status(200).send(gpx);
   }),
 );
 

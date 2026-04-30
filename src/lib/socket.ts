@@ -59,6 +59,74 @@ const onlineUsers = new Map<string, Set<string>>(); // userId → Set<socketId>
 // Track users subscribed to location updates
 const locationSubscribers = new Map<string, Set<string>>(); // rideId → Set<socketId>
 
+// ── Rider location cache for late joiners ─────────────────────────────────
+// Stores the last-known location for every rider currently in a live ride.
+// Used to seed new joiners immediately without waiting for the next broadcast.
+// In single-instance dev this in-memory map is the source of truth.
+// When REDIS_URL is set, the Redis hash `ride:{id}:riders` is kept in sync
+// and takes precedence so all server instances share the same state.
+interface CachedRiderLocation {
+  userId: string;
+  name: string;
+  avatar?: string | null;
+  latitude: number;
+  longitude: number;
+  heading?: number | null;
+  speed?: number | null;
+  isMoving: boolean;
+  updatedAt: string;
+}
+const rideRiderCache = new Map<string, Map<string, CachedRiderLocation>>();
+// Redis client reused from the adapter setup (null when REDIS_URL is absent)
+let redisCacheClient: Redis | null = null;
+
+async function cacheRiderLocation(
+  rideId: string,
+  userId: string,
+  payload: CachedRiderLocation,
+) {
+  if (redisCacheClient) {
+    try {
+      await redisCacheClient.hset(
+        `ride:${rideId}:riders`,
+        userId,
+        JSON.stringify(payload),
+      );
+      await redisCacheClient.expire(`ride:${rideId}:riders`, 3600);
+    } catch {
+      // Redis write failure — in-memory cache is still updated below
+    }
+  }
+  if (!rideRiderCache.has(rideId)) rideRiderCache.set(rideId, new Map());
+  rideRiderCache.get(rideId)!.set(userId, payload);
+}
+
+async function getCachedRiders(rideId: string): Promise<CachedRiderLocation[]> {
+  if (redisCacheClient) {
+    try {
+      const data = await redisCacheClient.hgetall(`ride:${rideId}:riders`);
+      if (data && Object.keys(data).length > 0) {
+        return Object.values(data).map((v) => JSON.parse(v) as CachedRiderLocation);
+      }
+    } catch {
+      // Redis read failure — fall through to in-memory
+    }
+  }
+  const cache = rideRiderCache.get(rideId);
+  if (!cache) return [];
+  return Array.from(cache.values());
+}
+
+function removeCachedRider(rideId: string, userId: string) {
+  if (redisCacheClient) {
+    redisCacheClient.hdel(`ride:${rideId}:riders`, userId).catch(() => {});
+  }
+  rideRiderCache.get(rideId)?.delete(userId);
+}
+
+// Track which rides each socket is in so we can clean up on disconnect
+const socketRides = new Map<string, Set<string>>(); // socketId → Set<rideId>
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createSocketServer(httpServer: HttpServer): Server {
@@ -92,6 +160,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       );
 
       io.adapter(createAdapter(pubClient, subClient));
+      redisCacheClient = pubClient;
       console.log("[SOCKET] Redis adapter attached for scaling");
     } catch (err) {
       console.warn("[SOCKET] Redis adapter failed, using in-memory:", err);
@@ -538,8 +607,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
           timestamp: new Date().toISOString(),
         });
 
-        // If on a ride, broadcast with both legacy and current event names
+        // If on a ride, cache position for late joiners and broadcast to room
         if (payload.isOnRide && payload.rideId) {
+          const now = new Date().toISOString();
           const riderPayload = {
             userId,
             name: userName,
@@ -552,8 +622,20 @@ export function createSocketServer(httpServer: HttpServer): Server {
             speed: payload.speed,
             altitude: payload.altitude,
             isMoving: payload.isMoving,
-            timestamp: new Date().toISOString(),
+            timestamp: now,
           };
+
+          // Persist last-known position so joining riders get it immediately
+          cacheRiderLocation(payload.rideId, userId, {
+            userId,
+            name: userName,
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            heading: payload.heading ?? null,
+            speed: payload.speed ?? null,
+            isMoving: payload.isMoving ?? false,
+            updatedAt: now,
+          }).catch(() => {});
 
           socket
             .to(`ride:${payload.rideId}`)
@@ -618,6 +700,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       try {
         socket.join(`ride:${payload.rideId}`);
 
+        // Track which rides this socket is in for disconnect cleanup
+        if (!socketRides.has(socket.id)) socketRides.set(socket.id, new Set());
+        socketRides.get(socket.id)!.add(payload.rideId);
+
         const joinedPayload = {
           userId,
           name: userName,
@@ -630,10 +716,15 @@ export function createSocketServer(httpServer: HttpServer): Server {
           .to(`ride:${payload.rideId}`)
           .emit("rider_joined_tracking", joinedPayload);
 
+        // Return all cached rider positions so the joining client can
+        // immediately render everyone on the map without waiting for the
+        // next 3-second broadcast cycle.
+        const riders = await getCachedRiders(payload.rideId);
+
         console.log(
-          `[SOCKET] ${userId} joined ride tracking for ${payload.rideId}`,
+          `[SOCKET] ${userId} joined ride tracking for ${payload.rideId} (${riders.length} riders cached)`,
         );
-        ack?.({ success: true });
+        ack?.({ success: true, riders });
       } catch (err) {
         console.error("[SOCKET] join_ride_tracking error:", err);
         ack?.({ success: false, error: "Internal error" });
@@ -650,6 +741,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
       ack?: (...args: any[]) => void,
     ) => {
       socket.leave(`ride:${payload.rideId}`);
+      removeCachedRider(payload.rideId, userId);
+      socketRides.get(socket.id)?.delete(payload.rideId);
 
       const leftPayload = {
         userId,
@@ -765,6 +858,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
       onlineUsers.get(userId)?.delete(socket.id);
       if (onlineUsers.get(userId)?.size === 0) {
         onlineUsers.delete(userId);
+      }
+
+      // Remove this rider from all ride caches they were part of
+      const rides = socketRides.get(socket.id);
+      if (rides) {
+        for (const rideId of rides) {
+          removeCachedRider(rideId, userId);
+          socket.to(`ride:${rideId}`).emit("rider_left_tracking", {
+            userId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        socketRides.delete(socket.id);
       }
     });
   });

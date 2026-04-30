@@ -1,12 +1,10 @@
+import "dotenv/config"; // must be first — ESM hoists all imports before body code runs
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import rateLimit from "express-rate-limit";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// Load environment variables
-dotenv.config();
 
 import { auth } from "./config/auth.js";
 import { CORS_OPTIONS } from "./config/trustedOrigins.js";
@@ -51,6 +49,30 @@ app.set("trust proxy", true);
 
 // Apply CORS configuration
 app.use(cors(CORS_OPTIONS));
+
+// Rate limiting — protect against brute-force and DoS
+const isProduction = process.env.NODE_ENV === "production";
+
+// Strict limit on auth endpoints (sign-in, sign-up, OTP)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isProduction ? 20 : 1000, // 20 attempts / 15min in prod
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: "RATE_LIMITED", message: "Too many auth attempts. Try again in 15 minutes." } },
+});
+
+// Global limit on the rest of the API
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: isProduction ? 120 : 10000, // 120 req/min in prod
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: "RATE_LIMITED", message: "Too many requests. Slow down." } },
+});
+
+app.use("/api/auth", authLimiter);
+app.use("/api", apiLimiter);
 
 // Metrics middleware
 app.use(metricsMiddleware);
@@ -198,13 +220,29 @@ app.use((req: Request, res: Response) => {
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error("Unhandled error:", err);
-  ApiResponse.internalError(res, "An unexpected error occurred", err);
+  // Don't leak the raw Error object to clients in production
+  ApiResponse.internalError(
+    res,
+    "An unexpected error occurred",
+    process.env.NODE_ENV === "production" ? undefined : err,
+  );
 });
 
 // Start server
 export async function startServer() {
   try {
     console.log("[SERVER] Starting Zoomies Backend Server...");
+
+    // Validate required production env vars
+    if (process.env.NODE_ENV === "production") {
+      const required = ["DATABASE_URL", "BETTER_AUTH_BASE_URL", "BETTER_AUTH_SECRET"];
+      const missing = required.filter((key) => !process.env[key]);
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing required production env vars: ${missing.join(", ")}`,
+        );
+      }
+    }
 
     // Connect to PostgreSQL (required for auth and core APIs)
     await connectPostgres();

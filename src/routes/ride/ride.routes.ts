@@ -333,6 +333,7 @@ router.post(
       endLng,
       latitude,
       longitude,
+      waypoints,
     } = req.body;
 
     // The mobile client sends startLat/startLng (route origin). Mirror those
@@ -361,6 +362,7 @@ router.post(
         startLng: resolvedLng,
         endLat,
         endLng,
+        waypoints: waypoints ?? undefined,
       },
       include: {
         creator: {
@@ -457,6 +459,7 @@ router.patch(
       endLng,
       latitude,
       longitude,
+      waypoints,
     } = req.body;
 
     // Mirror startLat/startLng → latitude/longitude so the geo index stays in sync.
@@ -483,6 +486,7 @@ router.patch(
         ...(resolvedLng !== undefined && { longitude: resolvedLng, startLng: resolvedLng }),
         ...(endLat !== undefined && { endLat }),
         ...(endLng !== undefined && { endLng }),
+        ...(waypoints !== undefined && { waypoints }),
       },
       include: {
         creator: {
@@ -1128,6 +1132,253 @@ router.post(
     ApiResponse.success(res, {
       invitations,
       notificationsSent: notifications.length,
+    });
+  }),
+);
+
+// ─── Ride Lifecycle: Pause / Resume ─────────────────────────────────────────
+
+router.post(
+  "/:id/pause",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      select: { id: true, status: true, creatorId: true, pausedAt: true },
+    });
+
+    if (!ride) return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
+    if (ride.status !== "IN_PROGRESS") {
+      return ApiResponse.error(res, "Ride is not in progress", 400, ErrorCode.INVALID_INPUT);
+    }
+
+    await prisma.ride.update({
+      where: { id },
+      data: { status: "PAUSED", pausedAt: new Date() },
+    });
+
+    ApiResponse.success(res, null, "Ride paused");
+  }),
+);
+
+router.post(
+  "/:id/resume",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+
+    if (!ride) return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
+    if (ride.status !== "PAUSED") {
+      return ApiResponse.error(res, "Ride is not paused", 400, ErrorCode.INVALID_INPUT);
+    }
+
+    await prisma.ride.update({
+      where: { id },
+      data: { status: "IN_PROGRESS", pausedAt: null },
+    });
+
+    ApiResponse.success(res, null, "Ride resumed");
+  }),
+);
+
+// ─── Ride Lifecycle: Breaks ──────────────────────────────────────────────────
+
+const breakTypeValues = ["REST", "FUEL", "FOOD", "PHOTO", "REPAIR", "EMERGENCY", "OTHER"] as const;
+
+router.post(
+  "/:id/breaks",
+  validateParams(idParamSchema),
+  validateBody(
+    z.object({
+      type: z.enum(breakTypeValues).optional().default("REST"),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+      notes: z.string().max(500).optional(),
+    }),
+  ),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const { type, latitude, longitude, notes } = req.body;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!ride) return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
+    if (ride.status !== "IN_PROGRESS" && ride.status !== "PAUSED") {
+      return ApiResponse.error(res, "Ride is not active", 400, ErrorCode.INVALID_INPUT);
+    }
+
+    const rideBreak = await prisma.rideBreak.create({
+      data: {
+        rideId: id,
+        userId: session.user.id,
+        type,
+        latitude,
+        longitude,
+        notes,
+      },
+    });
+
+    ApiResponse.created(res, { break: rideBreak }, "Break started");
+  }),
+);
+
+router.patch(
+  "/:id/breaks/:breakId/end",
+  validateParams(idParamSchema.extend({ breakId: z.string() })),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id, breakId } = req.params;
+
+    const existingBreak = await prisma.rideBreak.findUnique({
+      where: { id: breakId },
+    });
+
+    if (!existingBreak || existingBreak.rideId !== id) {
+      return ApiResponse.notFound(res, "Break not found");
+    }
+    if (existingBreak.userId !== session.user.id) {
+      return ApiResponse.forbidden(res, "Not your break");
+    }
+    if (existingBreak.endedAt) {
+      return ApiResponse.error(res, "Break already ended", 400, ErrorCode.INVALID_INPUT);
+    }
+
+    const endedAt = new Date();
+    const durationSec = Math.round(
+      (endedAt.getTime() - existingBreak.startedAt.getTime()) / 1000,
+    );
+
+    const updated = await prisma.rideBreak.update({
+      where: { id: breakId },
+      data: { endedAt, durationSec },
+    });
+
+    ApiResponse.success(res, { break: updated }, "Break ended");
+  }),
+);
+
+// ─── Ride Lifecycle: Detours ─────────────────────────────────────────────────
+
+router.post(
+  "/:id/detours",
+  validateParams(idParamSchema),
+  validateBody(
+    z.object({
+      label: z.string().max(200).optional(),
+      latitude: z.number(),
+      longitude: z.number(),
+      distanceAddedKm: z.number().min(0).optional(),
+      durationAddedMin: z.number().int().min(0).optional(),
+    }),
+  ),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const { label, latitude, longitude, distanceAddedKm, durationAddedMin } = req.body;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!ride) return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
+    if (ride.status !== "IN_PROGRESS" && ride.status !== "PAUSED") {
+      return ApiResponse.error(res, "Ride is not active", 400, ErrorCode.INVALID_INPUT);
+    }
+
+    const detour = await prisma.rideDetour.create({
+      data: {
+        rideId: id,
+        userId: session.user.id,
+        label,
+        latitude,
+        longitude,
+        distanceAddedKm,
+        durationAddedMin,
+      },
+    });
+
+    ApiResponse.success(res, { detour }, "Detour logged");
+  }),
+);
+
+// ─── Ride Stats (post-ride summary) ─────────────────────────────────────────
+
+router.get(
+  "/:id/stats",
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      include: {
+        trackingData: true,
+        breaks: {
+          where: { userId: session.user.id },
+          orderBy: { startedAt: "asc" },
+        },
+        detours: {
+          where: { userId: session.user.id },
+          orderBy: { addedAt: "asc" },
+        },
+        participants: { where: { userId: session.user.id }, select: { status: true } },
+        creator: { select: { id: true, name: true, avatar: true } },
+      },
+    });
+
+    if (!ride) return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
+
+    const isCreator = ride.creatorId === session.user.id;
+    const isParticipant = ride.participants.length > 0;
+    if (!isCreator && !isParticipant) {
+      return ApiResponse.forbidden(res, "Not a ride participant");
+    }
+
+    const completedBreaks = ride.breaks.filter((b: any) => b.endedAt != null);
+    const totalBreakSec = completedBreaks.reduce(
+      (sum: number, b: any) => sum + (b.durationSec ?? 0),
+      0,
+    );
+    const totalBreakMin = Math.round(totalBreakSec / 60);
+
+    const td = ride.trackingData;
+    const totalTimeMin = td?.totalDurationMin ?? 0;
+    const rideTimeMin = Math.max(0, totalTimeMin - totalBreakMin);
+
+    ApiResponse.success(res, {
+      ride: {
+        id: ride.id,
+        title: ride.title,
+        status: ride.status,
+        creator: ride.creator,
+      },
+      trackingData: td,
+      breaks: ride.breaks,
+      detours: ride.detours,
+      summary: {
+        totalTimeMin,
+        rideTimeMin,
+        totalBreakMin,
+        totalDistanceKm: td?.totalDistanceKm ?? 0,
+        maxSpeedKmh: td?.maxSpeedKmh ?? 0,
+        avgSpeedKmh: td?.avgSpeedKmh ?? 0,
+        elevationGainM: td?.elevationGainM ?? 0,
+        breakCount: completedBreaks.length,
+        detourCount: ride.detours.length,
+      },
     });
   }),
 );

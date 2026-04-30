@@ -7,6 +7,7 @@ export enum ConversationType {
   RIDE = "ride",
   CLUB = "club",
   MARKETPLACE = "marketplace",
+  GROUP = "group",
 }
 
 export enum MessageType {

@@ -7,6 +7,7 @@ export const conversationTypeEnum = z.enum([
   "ride",
   "club",
   "marketplace",
+  "group",
 ]);
 
 export const createConversationSchema = z
@@ -28,9 +29,11 @@ export const createConversationSchema = z
     (data) => {
       // Direct chats must have exactly 1 other participant (self is auto-added)
       if (data.type === "direct") return data.participantIds.length === 1;
+      // Group chats require at least 2 other participants
+      if (data.type === "group") return data.participantIds.length >= 2;
       return true;
     },
-    { message: "Direct conversations require exactly 1 other participant" },
+    { message: "Direct chats need exactly 1 participant; group chats need at least 2" },
   )
   .refine(
     (data) => {

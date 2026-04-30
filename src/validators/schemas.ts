@@ -184,6 +184,12 @@ export const createRideSchema = z.object({
   startLng: z.number().min(-180).max(180).optional(),
   endLat: z.number().min(-90).max(90).optional(),
   endLng: z.number().min(-180).max(180).optional(),
+  waypoints: z.array(z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    name: z.string().max(500).optional(),
+    address: z.string().max(500).optional(),
+  })).max(10).optional(),
 });
 
 export const updateRideSchema = createRideSchema.partial();

@@ -15,6 +15,10 @@ import { z } from "zod";
 
 const router = Router();
 
+// Suppress verbose auth logs in production (these contain emails and user IDs)
+const devLog: typeof console.log =
+  process.env.NODE_ENV === "production" ? () => {} : console.log;
+
 // Change password schema (local to this file)
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -113,7 +117,7 @@ router.post(
   validateBody(verifyEmailSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { email, token } = req.body;
-    console.log("[AUTH] POST /verify-email", { email });
+    devLog("[AUTH] POST /verify-email", { email });
 
     // Better Auth uses JWT tokens for email verification (signed with BETTER_AUTH_SECRET).
     // Decode and verify the JWT instead of looking up a DB record.
@@ -172,7 +176,7 @@ router.post(
       where: { email },
       data: { emailVerified: true },
     });
-    console.log("[AUTH] Verify-email - User updated", { email });
+    devLog("[AUTH] Verify-email - User updated", { email });
 
     ApiResponse.success(res, null, "Email verified successfully");
   }),
@@ -211,7 +215,7 @@ router.get(
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    console.log("[AUTH] GET /me", { userId: session.user.id });
+    devLog("[AUTH] GET /me", { userId: session.user.id });
 
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
@@ -342,7 +346,7 @@ router.get(
       },
       preferences: user.preferences,
     };
-    console.log("[AUTH] GET /me - Returning user", {
+    devLog("[AUTH] GET /me - Returning user", {
       userId: user.id,
       roles: response.roles,
     });
@@ -452,7 +456,7 @@ router.patch(
   validateBody(updateProfileSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    console.log("[AUTH] PATCH /me", {
+    devLog("[AUTH] PATCH /me", {
       userId: session.user.id,
       fields: Object.keys(req.body),
     });
@@ -503,7 +507,7 @@ router.patch(
         updatedAt: true,
       },
     });
-    console.log("[AUTH] PATCH /me - Profile updated", { userId: user.id });
+    devLog("[AUTH] PATCH /me - Profile updated", { userId: user.id });
 
     ApiResponse.success(res, { user }, "Profile updated successfully");
   }),
@@ -549,7 +553,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { currentPassword, newPassword } = req.body;
-    console.log("[AUTH] POST /change-password", { userId: session.user.id });
+    devLog("[AUTH] POST /change-password", { userId: session.user.id });
 
     try {
       // Use Better Auth's built-in changePassword API
@@ -563,7 +567,7 @@ router.post(
         },
       });
 
-      console.log("[AUTH] POST /change-password - Password updated", {
+      devLog("[AUTH] POST /change-password - Password updated", {
         userId: session.user.id,
       });
 

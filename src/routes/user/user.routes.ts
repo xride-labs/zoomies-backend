@@ -996,6 +996,10 @@ router.post(
     const bike = await prisma.bike.create({
       data: {
         ...bikeData,
+        // Year is required at the DB level. Onboarding's quick-add only
+        // collects make + model — fall back to the current year so the row
+        // is valid; the user can fix it later from the bike detail screen.
+        year: bikeData.year ?? new Date().getFullYear(),
         userId: session.user.id,
       },
     });

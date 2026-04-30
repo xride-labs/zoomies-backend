@@ -5,6 +5,10 @@ import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { asyncHandler, validateQuery } from "../../middlewares/validation.js";
 import { friendGroupQuerySchema } from "../../validators/schemas.js";
 import { createNotification, notifyUsers } from "../../lib/notifications.js";
+import {
+  normalizeExperienceLevel,
+  normalizePace,
+} from "../../lib/utils/rideEnums.js";
 
 const router = Router();
 
@@ -495,8 +499,13 @@ router.post(
       duration,
       experienceLevel,
       pace,
+      xpRequired,
       startLat,
       startLng,
+      endLat,
+      endLng,
+      waypoints,
+      routeData,
     } = req.body;
 
     if (!title || !startLocation) {
@@ -508,6 +517,16 @@ router.post(
       );
     }
 
+    const serializedRouteData =
+      typeof routeData === "string"
+        ? routeData
+        : routeData != null
+          ? JSON.stringify(routeData)
+          : null;
+
+    const resolvedLat = startLat != null ? Number(startLat) : null;
+    const resolvedLng = startLng != null ? Number(startLng) : null;
+
     // Create ride linked to friend group
     const ride = await prisma.ride.create({
       data: {
@@ -518,10 +537,19 @@ router.post(
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         distance: distance ? Number(distance) : null,
         duration: duration ? Number(duration) : null,
-        experienceLevel: experienceLevel || null,
-        pace: pace || null,
-        latitude: startLat ? Number(startLat) : null,
-        longitude: startLng ? Number(startLng) : null,
+        // Match the canonicalization done by the public ride POST so the
+        // discovery filter and admin views see consistent enum casing.
+        experienceLevel: normalizeExperienceLevel(experienceLevel) ?? null,
+        pace: normalizePace(pace) ?? null,
+        xpRequired: xpRequired != null ? Number(xpRequired) : null,
+        latitude: resolvedLat,
+        longitude: resolvedLng,
+        startLat: resolvedLat,
+        startLng: resolvedLng,
+        endLat: endLat != null ? Number(endLat) : null,
+        endLng: endLng != null ? Number(endLng) : null,
+        waypoints: waypoints ?? undefined,
+        routeData: serializedRouteData,
         creatorId: userId,
         friendGroupId: req.params.id,
       },

@@ -125,6 +125,10 @@ router.post(
       switch (folder) {
         case "profiles":
           result = await uploadProfileImage(file, session.user.id);
+          await prisma.user.update({
+            where: { id: session.user.id },
+            data: { avatar: result.secureUrl },
+          });
           break;
         case "clubs":
           if (!resourceId) {
@@ -136,6 +140,11 @@ router.post(
             );
           }
           result = await uploadClubLogo(file, resourceId);
+          // Persist the new logo on the club so list/detail screens see it.
+          await prisma.club.update({
+            where: { id: resourceId },
+            data: { image: result.secureUrl },
+          });
           break;
         case "rides":
           if (!resourceId) {
@@ -151,6 +160,21 @@ router.post(
             resourceId,
             type === "video" ? MediaType.VIDEO : MediaType.IMAGE,
           );
+          // Append uploaded URL to ride.images so the gallery + cover banner
+          // populate. Without this the upload succeeded on Cloudinary but
+          // the ride record had no record of the image.
+          if (type !== "video") {
+            const ride = await prisma.ride.findUnique({
+              where: { id: resourceId },
+              select: { images: true },
+            });
+            if (ride) {
+              await prisma.ride.update({
+                where: { id: resourceId },
+                data: { images: [...(ride.images ?? []), result.secureUrl] },
+              });
+            }
+          }
           break;
         case "listings":
           if (!resourceId) {
@@ -166,6 +190,21 @@ router.post(
             resourceId,
             type === "video" ? MediaType.VIDEO : MediaType.IMAGE,
           );
+          {
+            const listing = await prisma.marketplaceListing.findUnique({
+              where: { id: resourceId },
+              select: { images: true, videos: true },
+            });
+            if (listing) {
+              const isVideo = type === "video";
+              await prisma.marketplaceListing.update({
+                where: { id: resourceId },
+                data: isVideo
+                  ? { videos: [...(listing.videos ?? []), result.secureUrl] }
+                  : { images: [...(listing.images ?? []), result.secureUrl] },
+              });
+            }
+          }
           break;
         case "posts":
           if (!resourceId) {
@@ -193,7 +232,7 @@ router.post(
 
       ApiResponse.success(
         res,
-        { media: result },
+        { media: result, imageUrl: result.secureUrl },
         "Media uploaded successfully",
       );
     } catch (error) {

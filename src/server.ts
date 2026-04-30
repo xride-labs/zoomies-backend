@@ -98,9 +98,12 @@ app.all("/api/auth/*", toNodeHandler(auth));
 // Dodo webhook signature verification requires the raw request body.
 app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 
-// Body parsing middleware (AFTER Better Auth)
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsing middleware (AFTER Better Auth).
+// Limit raised to 15mb because the mobile client sends base64-encoded images
+// inline (avatars, ride/club banners, listing photos) and ride creation
+// includes the full route polyline geometry. Default 100kb is too small.
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // Static public assets (email logos, etc.) — resolved relative to the repo
 // root regardless of whether we're running from src (tsx) or dist (node).

@@ -27,6 +27,10 @@ import { ElevationService } from "../../services/elevation.service.js";
 import { requirePro } from "../../lib/subscription.js";
 import { rideToGpx } from "../../lib/gpx.js";
 import { awardBadgeByTitle, awardXp } from "../../lib/xp.js";
+import {
+  normalizeExperienceLevel,
+  normalizePace,
+} from "../../lib/utils/rideEnums.js";
 
 const router = Router();
 
@@ -334,6 +338,8 @@ router.post(
       latitude,
       longitude,
       waypoints,
+      routeData,
+      friendGroupId,
     } = req.body;
 
     // The mobile client sends startLat/startLng (route origin). Mirror those
@@ -342,15 +348,26 @@ router.post(
     const resolvedLat = startLat ?? latitude;
     const resolvedLng = startLng ?? longitude;
 
+    // routeData column is a String — JSON-stringify object/array payloads
+    // (the mobile client sends the decoded geometry as an array of coords).
+    const serializedRouteData =
+      typeof routeData === "string"
+        ? routeData
+        : routeData != null
+          ? JSON.stringify(routeData)
+          : undefined;
+
     const ride = await prisma.ride.create({
       data: {
         title,
         description,
         startLocation,
         endLocation,
-        experienceLevel,
+        // Canonicalize so discovery + admin filters (which key on the legacy
+        // Title-cased values) keep matching rides created from mobile.
+        experienceLevel: normalizeExperienceLevel(experienceLevel),
         xpRequired,
-        pace,
+        pace: normalizePace(pace),
         distance,
         duration,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
@@ -363,6 +380,8 @@ router.post(
         endLat,
         endLng,
         waypoints: waypoints ?? undefined,
+        routeData: serializedRouteData,
+        friendGroupId: friendGroupId ?? undefined,
       },
       include: {
         creator: {
@@ -460,11 +479,21 @@ router.patch(
       latitude,
       longitude,
       waypoints,
+      routeData,
     } = req.body;
 
     // Mirror startLat/startLng → latitude/longitude so the geo index stays in sync.
     const resolvedLat = startLat ?? latitude;
     const resolvedLng = startLng ?? longitude;
+
+    const serializedRouteData =
+      routeData === undefined
+        ? undefined
+        : typeof routeData === "string"
+          ? routeData
+          : routeData == null
+            ? null
+            : JSON.stringify(routeData);
 
     const ride = await prisma.ride.update({
       where: { id },
@@ -473,9 +502,11 @@ router.patch(
         ...(description !== undefined && { description }),
         ...(startLocation !== undefined && { startLocation }),
         ...(endLocation !== undefined && { endLocation }),
-        ...(experienceLevel !== undefined && { experienceLevel }),
+        ...(experienceLevel !== undefined && {
+          experienceLevel: normalizeExperienceLevel(experienceLevel),
+        }),
         ...(xpRequired !== undefined && { xpRequired }),
-        ...(pace !== undefined && { pace }),
+        ...(pace !== undefined && { pace: normalizePace(pace) }),
         ...(distance !== undefined && { distance }),
         ...(duration !== undefined && { duration }),
         ...(scheduledAt !== undefined && {
@@ -487,6 +518,7 @@ router.patch(
         ...(endLat !== undefined && { endLat }),
         ...(endLng !== undefined && { endLng }),
         ...(waypoints !== undefined && { waypoints }),
+        ...(serializedRouteData !== undefined && { routeData: serializedRouteData }),
       },
       include: {
         creator: {

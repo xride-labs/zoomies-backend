@@ -105,7 +105,9 @@ export const updateProfileSchema = z.object({
 export const createBikeSchema = z.object({
   make: z.string().min(1),
   model: z.string().min(1),
-  year: z.number().int().min(1900),
+  // Year is optional from the client; the route defaults to the current year
+  // so the quick-add flow during onboarding (make + model only) works.
+  year: z.number().int().min(1900).optional(),
   type: z
     .enum([
       "SPORT",
@@ -166,14 +168,25 @@ export const matchContactsSchema = z.object({
 // Ride Schemas
 // ========================================
 
+// Title is min 1 (not 3) to match the mobile create form, which only requires
+// a non-empty title before submit.
+//
+// experienceLevel/pace are kept as free strings rather than enums because the
+// mobile client uses lowercase values ("intermediate", "spirited", …) while
+// the legacy admin/web stack uses Title-cased values. The DB column is a
+// String, so we just trust the client.
+//
+// routeData accepts either a string (already JSON-stringified) or any object
+// (we serialize before persisting). This holds the encoded route polyline so
+// the ride detail screen can re-render the planned route.
 export const createRideSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters").max(200),
+  title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(2000).optional(),
   startLocation: z.string().min(1, "Start location is required").max(500),
   endLocation: z.string().max(500).optional(),
-  experienceLevel: z.enum(["Beginner", "Intermediate", "Expert"]).optional(),
+  experienceLevel: z.string().max(50).optional(),
   xpRequired: z.number().int().min(0).optional(),
-  pace: z.enum(["Leisurely", "Moderate", "Fast"]).optional(),
+  pace: z.string().max(50).optional(),
   distance: z.number().positive("Distance must be positive").optional(),
   duration: z.number().int().positive("Duration must be positive").optional(),
   scheduledAt: z.string().datetime().optional().or(z.date()),
@@ -190,6 +203,10 @@ export const createRideSchema = z.object({
     name: z.string().max(500).optional(),
     address: z.string().max(500).optional(),
   })).max(10).optional(),
+  routeData: z.union([z.string(), z.record(z.string(), z.any()), z.array(z.any())]).optional(),
+  maxParticipants: z.number().int().positive().max(1000).optional(),
+  friendGroupId: z.string().cuid().optional(),
+  image: z.string().optional(), // initial banner data URL (base64) — uploaded after create
 });
 
 export const updateRideSchema = createRideSchema.partial();

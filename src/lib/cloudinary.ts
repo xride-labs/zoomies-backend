@@ -5,7 +5,33 @@ import {
 } from "cloudinary";
 import { ErrorCode } from "./utils/apiResponse.js";
 
-// Configure Cloudinary
+// Configure Cloudinary. We surface a loud, actionable error at module load
+// when any of the three env vars are missing — without this, every upload
+// fails with a cryptic "must supply api_key" error from the SDK and the
+// problem looks like a code bug rather than a missing Render secret.
+const REQUIRED_CLOUDINARY_ENV = [
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET",
+] as const;
+
+const missingCloudinaryEnv = REQUIRED_CLOUDINARY_ENV.filter(
+  (key) => !process.env[key],
+);
+
+export const CLOUDINARY_CONFIGURED = missingCloudinaryEnv.length === 0;
+
+if (!CLOUDINARY_CONFIGURED) {
+  // Throw in production so the failed deploy is obvious in Render logs.
+  // In development we just warn so engineers without a local Cloudinary key
+  // can still run the rest of the API.
+  const message = `Missing Cloudinary env vars: ${missingCloudinaryEnv.join(", ")}. Image/video uploads will fail.`;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(message);
+  }
+  console.warn(`[CLOUDINARY] ${message}`);
+}
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,

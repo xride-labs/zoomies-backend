@@ -30,6 +30,17 @@ const changePasswordSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number"),
 });
 
+// Emergency contact schemas — used by GET/POST/PATCH/DELETE under
+// /api/account/emergency-contacts. Phone is the only hard requirement so
+// the SOS flow always has something to dial; everything else is optional.
+const emergencyContactBodySchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  phone: z.string().trim().min(5, "Phone is required").max(30),
+  relationship: z.string().trim().max(60).optional(),
+  isPrimary: z.boolean().optional(),
+});
+const emergencyContactUpdateSchema = emergencyContactBodySchema.partial();
+
 /**
  * Mobile OAuth callback — converts the web session cookie into a redirect with a bearer token.
  * Better Auth social login redirects here after success; we read the session from the cookie
@@ -584,6 +595,132 @@ router.post(
         ErrorCode.INVALID_CREDENTIALS,
       );
     }
+  }),
+);
+
+// ─── Emergency Contacts ─────────────────────────────────────────────────────
+// CRUD endpoints for the EmergencyContact model. Surfaced under /api/account
+// (the model is per-user) so the mobile safety screen can manage them
+// without going through admin routes.
+
+router.get(
+  "/emergency-contacts",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const items = await prisma.emergencyContact.findMany({
+      where: { userId: session.user.id },
+      orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+    });
+    ApiResponse.success(res, { items });
+  }),
+);
+
+router.post(
+  "/emergency-contacts",
+  requireAuth,
+  validateBody(emergencyContactBodySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { name, phone, relationship, isPrimary } = req.body;
+
+    // Only one primary contact per user — clear the flag on existing rows
+    // before flipping a new one so the UI never shows two "primary" badges.
+    if (isPrimary) {
+      await prisma.emergencyContact.updateMany({
+        where: { userId: session.user.id },
+        data: { isPrimary: false },
+      });
+    }
+
+    // If this is the user's first contact, default it to primary so the
+    // SOS screen has a meaningful "call" target on day one.
+    const existingCount = await prisma.emergencyContact.count({
+      where: { userId: session.user.id },
+    });
+    const shouldBePrimary = isPrimary ?? existingCount === 0;
+
+    const contact = await prisma.emergencyContact.create({
+      data: {
+        userId: session.user.id,
+        name,
+        phone,
+        relationship: relationship || null,
+        isPrimary: shouldBePrimary,
+      },
+    });
+    ApiResponse.created(res, { contact }, "Emergency contact added");
+  }),
+);
+
+router.patch(
+  "/emergency-contacts/:id",
+  requireAuth,
+  validateBody(emergencyContactUpdateSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const { name, phone, relationship, isPrimary } = req.body;
+
+    const existing = await prisma.emergencyContact.findFirst({
+      where: { id, userId: session.user.id },
+    });
+    if (!existing) {
+      return ApiResponse.notFound(res, "Emergency contact not found");
+    }
+
+    if (isPrimary) {
+      await prisma.emergencyContact.updateMany({
+        where: { userId: session.user.id, id: { not: id } },
+        data: { isPrimary: false },
+      });
+    }
+
+    const contact = await prisma.emergencyContact.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(phone !== undefined && { phone }),
+        ...(relationship !== undefined && { relationship: relationship || null }),
+        ...(isPrimary !== undefined && { isPrimary }),
+      },
+    });
+    ApiResponse.success(res, { contact }, "Emergency contact updated");
+  }),
+);
+
+router.delete(
+  "/emergency-contacts/:id",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const existing = await prisma.emergencyContact.findFirst({
+      where: { id, userId: session.user.id },
+    });
+    if (!existing) {
+      return ApiResponse.notFound(res, "Emergency contact not found");
+    }
+
+    await prisma.emergencyContact.delete({ where: { id } });
+
+    // If we just deleted the primary contact, promote the oldest remaining
+    // one so SOS still has a target.
+    if (existing.isPrimary) {
+      const next = await prisma.emergencyContact.findFirst({
+        where: { userId: session.user.id },
+        orderBy: { createdAt: "asc" },
+      });
+      if (next) {
+        await prisma.emergencyContact.update({
+          where: { id: next.id },
+          data: { isPrimary: true },
+        });
+      }
+    }
+
+    ApiResponse.success(res, null, "Emergency contact removed");
   }),
 );
 

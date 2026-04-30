@@ -1,3 +1,4 @@
+import "dotenv/config";
 import {
   PrismaClient,
   ListingStatus,
@@ -5,6 +6,7 @@ import {
   NotificationType,
   EventStatus,
 } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "better-auth/crypto";
 import mongoose, { connectMongoDB } from "../src/lib/mongodb.js";
 import {
@@ -16,7 +18,8 @@ import {
   UnreadCount,
 } from "../src/models/chat.model.js";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 const IS_PROD = process.env.NODE_ENV === "production";
 const PRIMARY_ADMIN_EMAIL = "admin@zoomies.com";

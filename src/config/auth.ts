@@ -160,7 +160,11 @@ export const auth = betterAuth({
             console.warn(`[AUTH] Failed to sync avatar from image:`, error);
           }
 
-          if (user.email) {
+          // Skip welcome email for OTP-registered users — they already got a
+          // combined welcome+OTP email at verification time. OTP users have
+          // phone === email (the phone number plugin stores the email there).
+          const isOtpUser = (user as any).phone === user.email;
+          if (user.email && !isOtpUser) {
             try {
               const sent = await sendWelcomeEmail({
                 to: user.email,
@@ -260,12 +264,38 @@ export const auth = betterAuth({
     bearer(),
     phoneNumber({
       sendOTP: async ({ phoneNumber: recipient, code }) => {
+        if (process.env.NODE_ENV === "development") {
+          console.log("\n==================================");
+          console.log(`[DEVELOPMENT] OTP GENERATED: ${code}`);
+          console.log(`[DEVELOPMENT] RECIPIENT: ${recipient}`);
+          console.log("==================================\n");
+          return; // Skip actually sending email/SMS in development unless changed here
+        }
+
         const isEmailOtp = recipient.includes("@");
 
         if (isEmailOtp) {
-          const sent = await sendOtpEmail({ to: recipient, otp: code });
-          if (!sent) {
-            throw new Error("Failed to send OTP email");
+          // Check if this is a brand-new user so we can send a combined welcome+OTP
+          // email instead of two separate emails (reduces total email count).
+          let isNewUser = false;
+          try {
+            const existing = await prisma.user.findFirst({
+              where: { email: recipient },
+              select: { id: true, name: true },
+            });
+            isNewUser = !existing;
+            const sent = await sendOtpEmail({
+              to: recipient,
+              otp: code,
+              name: existing?.name,
+              isNewUser,
+            });
+            if (!sent) throw new Error("Failed to send OTP email");
+          } catch (err: any) {
+            if (err.message?.startsWith("Failed to send")) throw err;
+            // DB lookup failed — still send a plain OTP
+            const sent = await sendOtpEmail({ to: recipient, otp: code });
+            if (!sent) throw new Error("Failed to send OTP email");
           }
           return;
         }

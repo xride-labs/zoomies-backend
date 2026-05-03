@@ -27,19 +27,31 @@ type LayoutParams = {
 };
 
 const BRAND = {
-  pageBg: "#F4F4F5",
-  cardBg: "#FFFFFF",
-  softBg: "#FAFAFA",
-  border: "#E4E4E7",
-  borderStrong: "#D4D4D8",
-  text: "#09090B",
-  textSoft: "#27272A",
+  // Page
+  pageBg: "#0F0F0F",
+  // Header
+  headerBg: "#141414",
+  headerBorder: "#2A2A2A",
+  // Card
+  cardBg: "#1A1A1A",
+  softBg: "#222222",
+  border: "#2C2C2C",
+  borderStrong: "#3A3A3A",
+  // Text
+  text: "#F4F4F5",
+  textSoft: "#D4D4D8",
   muted: "#71717A",
-  mutedStrong: "#52525B",
+  mutedStrong: "#A1A1AA",
+  // Accent
   accent: "#DC2626",
-  accentSoft: "#FEF2F2",
-  ctaBg: "#09090B",
+  accentSoft: "#3F0D0D",
+  teal: "#37C8C3",
+  tealSoft: "#0D2F2E",
+  // CTA
+  ctaBg: "#DC2626",
   ctaText: "#FFFFFF",
+  // Footer
+  footerBg: "#111111",
 };
 
 const FONT_STACK =
@@ -106,7 +118,8 @@ function renderSections(sections: TemplateSection[] = []): string {
   return `
     <tr>
       <td style="padding:8px 0 24px 0;">
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border:1px solid ${BRAND.border};border-radius:10px;background:${BRAND.softBg};overflow:hidden;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+          style="border:1px solid ${BRAND.border};border-radius:12px;background:${BRAND.softBg};overflow:hidden;">
           ${rows}
         </table>
       </td>
@@ -121,11 +134,12 @@ function renderCodeBlock(label?: string, value?: string): string {
   return `
     <tr>
       <td style="padding:8px 0 28px 0;">
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:${BRAND.softBg};border:1px solid ${BRAND.border};border-radius:10px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+          style="background:${BRAND.softBg};border:1px solid ${BRAND.teal}40;border-radius:12px;">
           <tr>
-            <td align="center" style="padding:22px 20px 24px 20px;">
-              <div style="font-family:${FONT_STACK};font-size:12px;font-weight:600;color:${BRAND.muted};letter-spacing:0.06em;text-transform:uppercase;margin-bottom:12px;">${escapeHtml(label)}</div>
-              <div style="font-family:${MONO_STACK};font-size:30px;font-weight:600;letter-spacing:8px;color:${BRAND.text};line-height:1;">${escapeHtml(value)}</div>
+            <td align="center" style="padding:28px 20px 30px 20px;">
+              <div style="font-family:${FONT_STACK};font-size:11px;font-weight:700;color:${BRAND.teal};letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px;">${escapeHtml(label)}</div>
+              <div style="font-family:${MONO_STACK};font-size:38px;font-weight:700;letter-spacing:10px;color:${BRAND.teal};line-height:1;text-shadow:0 0 20px ${BRAND.teal}60;">${escapeHtml(value)}</div>
             </td>
           </tr>
         </table>
@@ -145,8 +159,9 @@ function renderCta(label?: string, url?: string): string {
       <td style="padding:8px 0 20px 0;">
         <table cellpadding="0" cellspacing="0" role="presentation">
           <tr>
-            <td style="border-radius:8px;background:${BRAND.ctaBg};">
-              <a href="${safeUrl}" target="_blank" rel="noopener" style="display:inline-block;padding:13px 24px;font-family:${FONT_STACK};font-size:15px;font-weight:600;color:${BRAND.ctaText};text-decoration:none;border-radius:8px;">${escapeHtml(label)}</a>
+            <td style="border-radius:10px;background:${BRAND.ctaBg};box-shadow:0 2px 12px ${BRAND.accent}40;">
+              <a href="${safeUrl}" target="_blank" rel="noopener"
+                style="display:inline-block;padding:14px 28px;font-family:${FONT_STACK};font-size:15px;font-weight:700;color:${BRAND.ctaText};text-decoration:none;border-radius:10px;letter-spacing:0.01em;">${escapeHtml(label)}</a>
             </td>
           </tr>
         </table>
@@ -154,9 +169,9 @@ function renderCta(label?: string, url?: string): string {
     </tr>
     <tr>
       <td style="padding:0 0 24px 0;">
-        <div style="font-family:${FONT_STACK};font-size:13px;line-height:1.6;color:${BRAND.muted};">
-          Or copy and paste this link into your browser:<br />
-          <a href="${safeUrl}" target="_blank" rel="noopener" style="color:${BRAND.mutedStrong};text-decoration:underline;word-break:break-all;">${safeUrl}</a>
+        <div style="font-family:${FONT_STACK};font-size:12px;line-height:1.6;color:${BRAND.muted};">
+          Or copy this link:&nbsp;
+          <a href="${safeUrl}" target="_blank" rel="noopener" style="color:${BRAND.teal};text-decoration:underline;word-break:break-all;">${safeUrl}</a>
         </div>
       </td>
     </tr>`;
@@ -175,8 +190,8 @@ function buildHtml(params: LayoutParams): string {
   const badge = params.badge
     ? `
           <tr>
-            <td style="padding:0 0 14px 0;">
-              <span style="display:inline-block;font-family:${FONT_STACK};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.accent};background:${BRAND.accentSoft};padding:5px 10px;border-radius:6px;">${escapeHtml(params.badge)}</span>
+            <td style="padding:0 0 18px 0;">
+              <span style="display:inline-block;font-family:${FONT_STACK};font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:${BRAND.teal};background:${BRAND.tealSoft};padding:5px 12px;border-radius:20px;border:1px solid ${BRAND.teal}40;">${escapeHtml(params.badge)}</span>
             </td>
           </tr>`
     : "";
@@ -186,80 +201,143 @@ function buildHtml(params: LayoutParams): string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light" />
-    <meta name="supported-color-schemes" content="light" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="supported-color-schemes" content="dark" />
     <title>${escapeHtml(params.heading)}</title>
+    <style>
+      @media only screen and (max-width: 600px) {
+        .email-card { padding: 28px 20px !important; }
+        .email-header { padding: 18px 20px !important; }
+        .email-footer { padding: 20px 20px 0 20px !important; }
+      }
+    </style>
   </head>
   <body style="margin:0;padding:0;background-color:${BRAND.pageBg};font-family:${FONT_STACK};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
 
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:${BRAND.pageBg};">${escapeHtml(params.preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+    <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.pageBg};padding:32px 16px;">
+    <!-- Preheader -->
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:${BRAND.pageBg};">${escapeHtml(params.preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND.pageBg};padding:40px 16px 32px 16px;">
       <tr>
         <td align="center">
 
-          <!-- Header -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+          <!-- Outer wrapper -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;">
+
+            <!-- ── Logo Header ──────────────────────────────────────────── -->
             <tr>
-              <td style="padding:0 4px 20px 4px;">
-                <table cellpadding="0" cellspacing="0" role="presentation">
+              <td>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                  style="background-color:${BRAND.headerBg};border:1px solid ${BRAND.headerBorder};border-radius:14px 14px 0 0;padding:0;">
                   <tr>
-                    <td valign="middle" style="padding-right:10px;">
-                      <img src="${ICON_URL}" alt="Zoomies" width="28" height="28" style="display:block;width:28px;height:28px;border:0;outline:none;border-radius:6px;" />
+                    <td class="email-header" style="padding:22px 32px;">
+                      <table cellpadding="0" cellspacing="0" role="presentation" width="100%">
+                        <tr>
+                          <td valign="middle">
+                            <table cellpadding="0" cellspacing="0" role="presentation">
+                              <tr>
+                                <td valign="middle" style="padding-right:12px;">
+                                  <img src="${ICON_URL}" alt="" width="36" height="36"
+                                    style="display:block;width:36px;height:36px;border:0;outline:none;border-radius:10px;" />
+                                </td>
+                                <td valign="middle">
+                                  <div style="font-family:${FONT_STACK};font-size:18px;font-weight:700;color:#FFFFFF;letter-spacing:-0.02em;line-height:1;">ZOOMIES</div>
+                                  <div style="font-family:${FONT_STACK};font-size:11px;color:${BRAND.teal};letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">Ride Together</div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                          <td valign="middle" align="right">
+                            <!-- Decorative teal dot accent -->
+                            <div style="width:8px;height:8px;border-radius:50%;background:${BRAND.teal};display:inline-block;"></div>
+                          </td>
+                        </tr>
+                      </table>
                     </td>
-                    <td valign="middle" style="font-family:${FONT_STACK};font-size:15px;font-weight:600;color:${BRAND.text};letter-spacing:-0.01em;">Zoomies</td>
+                  </tr>
+                  <!-- Teal accent line at bottom of header -->
+                  <tr>
+                    <td style="padding:0;">
+                      <div style="height:2px;background:linear-gradient(90deg,${BRAND.teal},${BRAND.accent},transparent);border-radius:0;"></div>
+                    </td>
                   </tr>
                 </table>
               </td>
             </tr>
-          </table>
 
-          <!-- Card -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:${BRAND.cardBg};border:1px solid ${BRAND.border};border-radius:12px;">
+            <!-- ── Card Body ───────────────────────────────────────────── -->
             <tr>
-              <td style="padding:36px 36px 32px 36px;">
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-                  ${badge}
+              <td>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                  style="background-color:${BRAND.cardBg};border:1px solid ${BRAND.border};border-top:0;border-radius:0 0 14px 14px;">
                   <tr>
-                    <td style="padding:0 0 10px 0;">
-                      <h1 style="margin:0;font-family:${FONT_STACK};font-size:24px;line-height:1.25;font-weight:700;color:${BRAND.text};letter-spacing:-0.02em;">${escapeHtml(params.heading)}</h1>
+                    <td class="email-card" style="padding:36px 32px 32px 32px;">
+                      <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                        ${badge}
+                        <tr>
+                          <td style="padding:0 0 8px 0;">
+                            <h1 style="margin:0;font-family:${FONT_STACK};font-size:26px;line-height:1.2;font-weight:700;color:${BRAND.text};letter-spacing:-0.025em;">${escapeHtml(params.heading)}</h1>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 0 26px 0;">
+                            <p style="margin:0;font-family:${FONT_STACK};font-size:15px;line-height:1.6;color:${BRAND.muted};">${escapeHtml(params.subtitle)}</p>
+                          </td>
+                        </tr>
+                        <!-- Divider -->
+                        <tr>
+                          <td style="padding:0 0 22px 0;">
+                            <div style="height:1px;background:${BRAND.border};"></div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.greeting)}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 0 20px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.intro)}</td>
+                        </tr>
+                        ${codeBlock}
+                        ${cta}
+                        ${sections}
+                        ${outro}
+                        ${legal}
+                      </table>
                     </td>
                   </tr>
-                  <tr>
-                    <td style="padding:0 0 24px 0;">
-                      <p style="margin:0;font-family:${FONT_STACK};font-size:15px;line-height:1.6;color:${BRAND.muted};">${escapeHtml(params.subtitle)}</p>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.greeting)}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:0 0 20px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.65;color:${BRAND.textSoft};">${escapeHtml(params.intro)}</td>
-                  </tr>
-                  ${codeBlock}
-                  ${cta}
-                  ${sections}
-                  ${outro}
-                  ${legal}
                 </table>
               </td>
             </tr>
-          </table>
 
-          <!-- Footer -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+            <!-- ── Footer ─────────────────────────────────────────────── -->
             <tr>
-              <td style="padding:24px 4px 0 4px;font-family:${FONT_STACK};font-size:12px;line-height:1.6;color:${BRAND.muted};">
-                <div style="margin-bottom:6px;color:${BRAND.mutedStrong};">Zoomies &middot; by Xride Labs</div>
-                <div style="margin-bottom:10px;">
-                  Need help? Email
-                  <a href="mailto:hello@xride-labs.in" style="color:${BRAND.mutedStrong};text-decoration:underline;">hello@xride-labs.in</a>
-                </div>
-                <div style="color:#A1A1AA;">&copy; ${CURRENT_YEAR} Xride Labs. All rights reserved.</div>
+              <td>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                  style="background-color:${BRAND.footerBg};border:1px solid ${BRAND.headerBorder};border-top:0;border-radius:0 0 8px 8px;margin-top:2px;">
+                  <tr>
+                    <td class="email-footer" style="padding:20px 32px 24px 32px;">
+                      <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                        <tr>
+                          <td style="font-family:${FONT_STACK};font-size:12px;line-height:1.7;color:${BRAND.muted};">
+                            <div style="margin-bottom:6px;">
+                              <span style="color:${BRAND.mutedStrong};font-weight:600;">Zoomies</span>
+                              <span style="color:${BRAND.muted};">&nbsp;&middot;&nbsp;by Xride Labs</span>
+                            </div>
+                            <div style="margin-bottom:8px;">
+                              Questions? <a href="mailto:hello@xride-labs.in" style="color:${BRAND.teal};text-decoration:none;">hello@xride-labs.in</a>
+                            </div>
+                            <div style="color:#52525B;">&copy; ${CURRENT_YEAR} Xride Labs. All rights reserved.</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
-          </table>
 
+          </table>
         </td>
       </tr>
     </table>
@@ -422,7 +500,7 @@ export function buildOtpTemplate(params: {
   const html = buildHtml({
     preheader: `Your Zoomies verification code is ${params.otp}.`,
     badge: "One-time code",
-    heading: "Your verification code",
+    heading: "Your sign-in code",
     subtitle:
       "Enter this code in the app to complete sign-in. Do not share it with anyone.",
     greeting,
@@ -435,7 +513,7 @@ export function buildOtpTemplate(params: {
 
   const text = buildText({
     greeting,
-    heading: "Your verification code",
+    heading: "Your sign-in code",
     intro:
       "Use the code below to finish signing in to your Zoomies account.",
     codeLabel: "Verification code",
@@ -444,10 +522,68 @@ export function buildOtpTemplate(params: {
   });
 
   return {
-    subject: `Zoomies verification code: ${params.otp}`,
+    subject: `${params.otp} — your Zoomies code`,
     html,
     text,
     tags: ["otp"],
+  };
+}
+
+/** Combined welcome + OTP for brand-new users — one email instead of two. */
+export function buildWelcomeOtpTemplate(params: {
+  otp: string;
+  expiresInMinutes?: number;
+}): EmailTemplate {
+  const ttl = params.expiresInMinutes || 10;
+  const sections: TemplateSection[] = [
+    {
+      title: "Discover rides near you",
+      description:
+        "Browse group rides happening in your area and join the ones that match your pace.",
+    },
+    {
+      title: "Join clubs & squads",
+      description:
+        "Build your rider network, plan meetups, and stay coordinated with your crew.",
+    },
+    {
+      title: "Track every ride",
+      description:
+        "Record your routes, hit milestones, and share your adventures mile by mile.",
+    },
+  ];
+
+  const html = buildHtml({
+    preheader: `Welcome to Zoomies! Your verification code is ${params.otp}.`,
+    badge: "Welcome to Zoomies",
+    heading: "You're almost in.",
+    subtitle:
+      "Enter the code below to verify your email and create your rider profile.",
+    greeting: "Hey, welcome aboard!",
+    intro:
+      "We're pumped to have you. Verify your email with the code below and you're ready to roll — discover rides, join clubs, and connect with riders near you.",
+    codeLabel: "Your verification code",
+    codeValue: params.otp,
+    sections,
+    legal: `This code expires in ${ttl} minutes. Zoomies will never ask for this code by phone or chat. If you didn't request this, you can safely ignore it.`,
+  });
+
+  const text = buildText({
+    greeting: "Hey, welcome aboard!",
+    heading: "Welcome to Zoomies",
+    intro:
+      "Verify your email with the code below and you're ready to roll.",
+    codeLabel: "Your verification code",
+    codeValue: params.otp,
+    sections,
+    legal: `This code expires in ${ttl} minutes. Never share it with anyone.`,
+  });
+
+  return {
+    subject: `${params.otp} — welcome to Zoomies 🏍️`,
+    html,
+    text,
+    tags: ["otp", "welcome"],
   };
 }
 

@@ -71,6 +71,8 @@ function buildUserProfileResponse(user: any) {
         ownerSince: bike.ownerSince,
         modifications: bike.modifications,
         isPrimary: bike.isPrimary,
+        image: bike.image,
+        licensePlate: bike.licensePlate,
       })) ?? [],
     clubs:
       user.clubMemberships?.map((membership: any) => ({

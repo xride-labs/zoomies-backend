@@ -197,8 +197,15 @@ export class ApiResponse {
     res: Response,
     message: string = "An unexpected error occurred",
     error?: Error,
+    options?: { log?: boolean },
   ): void {
-    console.error("Internal Error:", error);
+    const shouldLogInConsole =
+      process.env.NODE_ENV === "development" && options?.log !== false;
+
+    if (shouldLogInConsole) {
+      console.error(`[DEV][INTERNAL_ERROR] ${message}`, error);
+    }
+
     this.error(
       res,
       message,

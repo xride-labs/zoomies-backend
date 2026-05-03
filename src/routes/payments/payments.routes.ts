@@ -73,6 +73,59 @@ router.get("/config-status", (_req: Request, res: Response) => {
   ApiResponse.success(res, getDodoConfigStatus(), "Dodo config status loaded");
 });
 
+// Get the current user's subscription details
+router.get(
+  "/subscription",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).session?.user?.id;
+    const subscription = await getCurrentBillingSubscription(userId);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionTier: true },
+    });
+
+    ApiResponse.success(res, {
+      tier: user?.subscriptionTier || "FREE",
+      subscription: subscription
+        ? {
+            id: subscription.id,
+            provider: subscription.provider,
+            plan: subscription.plan,
+            status: subscription.status,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+            cancelAt: subscription.cancelAt,
+            createdAt: subscription.createdAt,
+          }
+        : null,
+    });
+  }),
+);
+
+// Manual sync — force-refreshes the subscription tier from billing records.
+// Call this after a successful payment if the webhook hasn't fired yet.
+router.post(
+  "/sync",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).session?.user?.id;
+    const tier = await refreshUserSubscriptionTier(userId);
+    const subscription = await getCurrentBillingSubscription(userId);
+
+    ApiResponse.success(res, {
+      tier,
+      synced: true,
+      subscription: subscription
+        ? {
+            status: subscription.status,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+          }
+        : null,
+    });
+  }),
+);
+
 // Create a checkout session (e.g. for Pro subscription)
 router.post(
   "/checkout-session",

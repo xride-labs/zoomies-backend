@@ -1582,4 +1582,289 @@ router.patch(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Approvals
+// ---------------------------------------------------------------------------
+
+/**
+ * @swagger
+ * /api/admin/approvals:
+ *   get:
+ *     summary: Get all items awaiting admin action
+ *     description: Returns unverified clubs, pending club join requests, and pending ride participant requests in a single call. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pending items grouped by type
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ */
+router.get(
+  "/approvals",
+  requireAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [pendingClubs, pendingClubRequests, pendingRideRequests] =
+      await Promise.all([
+        prisma.club.findMany({
+          where: { verified: false },
+          take: 100,
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            verified: true,
+            createdAt: true,
+            owner: { select: { id: true, name: true } },
+            _count: { select: { members: true } },
+          },
+        }),
+        prisma.clubJoinRequest.findMany({
+          where: { status: "PENDING" },
+          take: 100,
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            club: { select: { id: true, name: true } },
+            user: { select: { id: true, name: true, email: true, avatar: true } },
+          },
+        }),
+        prisma.rideParticipant.findMany({
+          where: { status: "REQUESTED" },
+          take: 100,
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            ride: { select: { id: true, title: true, status: true } },
+            user: { select: { id: true, name: true, email: true, avatar: true } },
+          },
+        }),
+      ]);
+
+    ApiResponse.success(res, {
+      pendingClubs,
+      pendingClubRequests,
+      pendingRideRequests,
+    });
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/club-join-requests/{requestId}/approve:
+ *   post:
+ *     summary: Approve a club join request
+ *     description: Sets ClubJoinRequest status to APPROVED and creates a ClubMember record if one does not already exist. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Request approved
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.post(
+  "/club-join-requests/:requestId/approve",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { requestId } = req.params;
+
+    const joinRequest = await prisma.clubJoinRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true, clubId: true, userId: true, status: true },
+    });
+
+    if (!joinRequest) {
+      return ApiResponse.notFound(res, "Club join request not found", ErrorCode.NOT_FOUND);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.clubJoinRequest.update({
+        where: { id: requestId },
+        data: { status: "APPROVED" },
+      });
+
+      await tx.clubMember.upsert({
+        where: { clubId_userId: { clubId: joinRequest.clubId, userId: joinRequest.userId } },
+        create: { clubId: joinRequest.clubId, userId: joinRequest.userId, role: "MEMBER" },
+        update: {},
+      });
+    });
+
+    ApiResponse.success(res, { requestId, status: "APPROVED" }, "Club join request approved");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/club-join-requests/{requestId}/reject:
+ *   post:
+ *     summary: Reject a club join request
+ *     description: Sets ClubJoinRequest status to REJECTED. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Request rejected
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.post(
+  "/club-join-requests/:requestId/reject",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { requestId } = req.params;
+
+    const joinRequest = await prisma.clubJoinRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true },
+    });
+
+    if (!joinRequest) {
+      return ApiResponse.notFound(res, "Club join request not found", ErrorCode.NOT_FOUND);
+    }
+
+    await prisma.clubJoinRequest.update({
+      where: { id: requestId },
+      data: { status: "REJECTED" },
+    });
+
+    ApiResponse.success(res, { requestId, status: "REJECTED" }, "Club join request rejected");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/ride-participants/{participantId}/accept:
+ *   post:
+ *     summary: Accept a ride participant request
+ *     description: Sets RideParticipant status to ACCEPTED. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: participantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Participant accepted
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.post(
+  "/ride-participants/:participantId/accept",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { participantId } = req.params;
+
+    const participant = await prisma.rideParticipant.findUnique({
+      where: { id: participantId },
+      select: { id: true },
+    });
+
+    if (!participant) {
+      return ApiResponse.notFound(res, "Ride participant not found", ErrorCode.NOT_FOUND);
+    }
+
+    await prisma.rideParticipant.update({
+      where: { id: participantId },
+      data: { status: "ACCEPTED" },
+    });
+
+    ApiResponse.success(res, { participantId, status: "ACCEPTED" }, "Ride participant accepted");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/admin/ride-participants/{participantId}/decline:
+ *   post:
+ *     summary: Decline a ride participant request
+ *     description: Sets RideParticipant status to DECLINED. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: participantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Participant declined
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.post(
+  "/ride-participants/:participantId/decline",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { participantId } = req.params;
+
+    const participant = await prisma.rideParticipant.findUnique({
+      where: { id: participantId },
+      select: { id: true },
+    });
+
+    if (!participant) {
+      return ApiResponse.notFound(res, "Ride participant not found", ErrorCode.NOT_FOUND);
+    }
+
+    await prisma.rideParticipant.update({
+      where: { id: participantId },
+      data: { status: "DECLINED" },
+    });
+
+    ApiResponse.success(res, { participantId, status: "DECLINED" }, "Ride participant declined");
+  }),
+);
+
 export default router;
+

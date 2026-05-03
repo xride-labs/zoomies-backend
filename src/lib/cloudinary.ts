@@ -396,7 +396,8 @@ export async function uploadMedia(
     folder: options.folder,
     resource_type: options.resourceType || "auto",
     unique_filename: true,
-    overwrite: false,
+    overwrite: true,
+    invalidate: true,
     allowed_formats: policy.allowedFormats,
     max_bytes: policy.maxBytes,
     ...(options.publicId && { public_id: options.publicId }),
@@ -411,10 +412,14 @@ export async function uploadMedia(
       uploadOptions,
     );
 
+    // Append Cloudinary's version number as a cache-bust query param so
+    // mobile <Image> and browser caches fetch the new asset on re-upload.
+    const cacheBust = result.version ? `?v=${result.version}` : "";
+
     return {
       publicId: result.public_id,
-      url: result.url,
-      secureUrl: result.secure_url,
+      url: result.url + cacheBust,
+      secureUrl: result.secure_url + cacheBust,
       format: result.format,
       width: result.width,
       height: result.height,
@@ -422,7 +427,9 @@ export async function uploadMedia(
       duration: result.duration,
       resourceType: result.resource_type,
       createdAt: result.created_at,
-      thumbnailUrl: result.eager?.[0]?.secure_url,
+      thumbnailUrl: result.eager?.[0]?.secure_url
+        ? result.eager[0].secure_url + cacheBust
+        : undefined,
     };
   } catch (error) {
     console.error("Cloudinary upload error:", error);

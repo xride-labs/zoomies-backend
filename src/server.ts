@@ -28,6 +28,7 @@ import {
   notificationRoutes,
   paymentsRoutes,
   eventRoutes,
+  publicRoutes,
 } from "./routes/index.js";
 import {
   initializeScheduledJobs,
@@ -43,15 +44,32 @@ import { healthHandler } from "./routes/health.js";
 export const app = express();
 export const httpServer = createServer(app);
 const PORT = process.env.PORT || 5000;
+let hasRegisteredDevErrorConsole = false;
+const isProduction = process.env.NODE_ENV === "production";
 
-// Trust proxy (required for secure cookies behind reverse proxies)
-app.set("trust proxy", true);
+function registerDevelopmentErrorConsole() {
+  if (process.env.NODE_ENV !== "development" || hasRegisteredDevErrorConsole) {
+    return;
+  }
+
+  process.on("unhandledRejection", (reason) => {
+    console.error("[DEV][UNHANDLED_REJECTION]", reason);
+  });
+
+  process.on("uncaughtException", (error) => {
+    console.error("[DEV][UNCAUGHT_EXCEPTION]", error);
+  });
+
+  hasRegisteredDevErrorConsole = true;
+}
+
+// Trust exactly one reverse proxy in production; trust none in local dev.
+app.set("trust proxy", isProduction ? 1 : false);
 
 // Apply CORS configuration
 app.use(cors(CORS_OPTIONS));
 
 // Rate limiting — protect against brute-force and DoS
-const isProduction = process.env.NODE_ENV === "production";
 
 // Strict limit on auth endpoints (sign-in, sign-up, OTP)
 const authLimiter = rateLimit({
@@ -59,7 +77,12 @@ const authLimiter = rateLimit({
   max: isProduction ? 20 : 1000, // 20 attempts / 15min in prod
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: { code: "RATE_LIMITED", message: "Too many auth attempts. Try again in 15 minutes." } },
+  message: {
+    error: {
+      code: "RATE_LIMITED",
+      message: "Too many auth attempts. Try again in 15 minutes.",
+    },
+  },
 });
 
 // Global limit on the rest of the API
@@ -68,7 +91,9 @@ const apiLimiter = rateLimit({
   max: isProduction ? 120 : 10000, // 120 req/min in prod
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: { code: "RATE_LIMITED", message: "Too many requests. Slow down." } },
+  message: {
+    error: { code: "RATE_LIMITED", message: "Too many requests. Slow down." },
+  },
 });
 
 app.use("/api/auth", authLimiter);
@@ -214,6 +239,7 @@ app.use("/api/friends", friendshipRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/events", eventRoutes);
+app.use("/api/public", publicRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -222,12 +248,16 @@ app.use((req: Request, res: Response) => {
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error("Unhandled error:", err);
+  if (process.env.NODE_ENV === "development") {
+    console.error(`[DEV][HTTP_ERROR] ${req.method} ${req.originalUrl}`, err);
+  }
+
   // Don't leak the raw Error object to clients in production
   ApiResponse.internalError(
     res,
     "An unexpected error occurred",
     process.env.NODE_ENV === "production" ? undefined : err,
+    { log: false },
   );
 });
 
@@ -235,10 +265,15 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 export async function startServer() {
   try {
     console.log("[SERVER] Starting Zoomies Backend Server...");
+    registerDevelopmentErrorConsole();
 
     // Validate required production env vars
     if (process.env.NODE_ENV === "production") {
-      const required = ["DATABASE_URL", "BETTER_AUTH_BASE_URL", "BETTER_AUTH_SECRET"];
+      const required = [
+        "DATABASE_URL",
+        "BETTER_AUTH_BASE_URL",
+        "BETTER_AUTH_SECRET",
+      ];
       const missing = required.filter((key) => !process.env[key]);
       if (missing.length > 0) {
         throw new Error(
@@ -261,7 +296,7 @@ export async function startServer() {
     }
 
     // Initialize Socket.io for real-time chat
-    const io = createSocketServer(httpServer);
+    createSocketServer(httpServer);
     console.log("[SERVER] Socket.io chat server initialized");
 
     // Initialize scheduled background jobs

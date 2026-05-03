@@ -63,12 +63,8 @@ const LISTING_IMAGES: Record<string, string[]> = {
   Gloves: [
     "https://images.unsplash.com/photo-1587731556938-38755b4803a6?w=800",
   ],
-  Boots: [
-    "https://images.unsplash.com/photo-1520639888713-7851133b1ed0?w=800",
-  ],
-  Armor: [
-    "https://images.unsplash.com/photo-1558980394-0a0c5f5a1a80?w=800",
-  ],
+  Boots: ["https://images.unsplash.com/photo-1520639888713-7851133b1ed0?w=800"],
+  Armor: ["https://images.unsplash.com/photo-1558980394-0a0c5f5a1a80?w=800"],
   Motorcycle: [
     "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800",
     "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=800",
@@ -77,34 +73,52 @@ const LISTING_IMAGES: Record<string, string[]> = {
   Camera: [
     "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=800",
   ],
-  Drone: [
-    "https://images.unsplash.com/photo-1507582020474-9a35b7d455d9?w=800",
-  ],
+  Drone: ["https://images.unsplash.com/photo-1507582020474-9a35b7d455d9?w=800"],
   GPS: ["https://images.unsplash.com/photo-1581093588401-fbb62a02f120?w=800"],
   Mount: ["https://images.unsplash.com/photo-1558980664-3a031cf67ea8?w=800"],
-  Lights: ["https://images.unsplash.com/photo-1581093057305-25b8e4e6e3a3?w=800"],
-  Tyres: [
-    "https://images.unsplash.com/photo-1452780212940-6f5c0d14d848?w=800",
+  Lights: [
+    "https://images.unsplash.com/photo-1581093057305-25b8e4e6e3a3?w=800",
   ],
+  Tyres: ["https://images.unsplash.com/photo-1452780212940-6f5c0d14d848?w=800"],
   Exhaust: [
     "https://images.unsplash.com/photo-1580310614729-ccd69652491d?w=800",
   ],
-  Filters: ["https://images.unsplash.com/photo-1518306727298-4c17e1bf6947?w=800"],
-  Guards: ["https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800"],
+  Filters: [
+    "https://images.unsplash.com/photo-1518306727298-4c17e1bf6947?w=800",
+  ],
+  Guards: [
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800",
+  ],
   Oil: ["https://images.unsplash.com/photo-1518458028785-8fbcd101ebb9?w=800"],
-  Battery: ["https://images.unsplash.com/photo-1609697564478-b4a0b98b21c6?w=800"],
-  Protective: ["https://images.unsplash.com/photo-1520975916090-3105956dac38?w=800"],
-  Winter: ["https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=800"],
+  Battery: [
+    "https://images.unsplash.com/photo-1609697564478-b4a0b98b21c6?w=800",
+  ],
+  Protective: [
+    "https://images.unsplash.com/photo-1520975916090-3105956dac38?w=800",
+  ],
+  Winter: [
+    "https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=800",
+  ],
   Luggage: ["https://images.unsplash.com/photo-1553531384-cc64ac80f931?w=800"],
   Tools: ["https://images.unsplash.com/photo-1530124566582-a618bc2615dc?w=800"],
   Pump: ["https://images.unsplash.com/photo-1581091012184-7e0cdfbb6797?w=800"],
   Lock: ["https://images.unsplash.com/photo-1558002038-1055907df827?w=800"],
-  Safety: ["https://images.unsplash.com/photo-1608889476518-738c9b1dcb40?w=800"],
-  Charger: ["https://images.unsplash.com/photo-1609592812743-4c6e0eeb6b5f?w=800"],
-  Mirror: ["https://images.unsplash.com/photo-1525160354320-d8e92641c563?w=800"],
-  Adventure: ["https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800"],
+  Safety: [
+    "https://images.unsplash.com/photo-1608889476518-738c9b1dcb40?w=800",
+  ],
+  Charger: [
+    "https://images.unsplash.com/photo-1609592812743-4c6e0eeb6b5f?w=800",
+  ],
+  Mirror: [
+    "https://images.unsplash.com/photo-1525160354320-d8e92641c563?w=800",
+  ],
+  Adventure: [
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800",
+  ],
   Backpack: ["https://images.unsplash.com/photo-1553531384-cc64ac80f931?w=800"],
-  "Tail Tidy": ["https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800"],
+  "Tail Tidy": [
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800",
+  ],
 };
 
 const POST_IMAGES = [
@@ -948,6 +962,9 @@ async function main() {
       data: {
         name: clubNames[i],
         description: `Premier motorcycle and scooter club in Bangalore. Join ${clubNames[i]} for weekly group rides, track events, and social gatherings!`,
+        image: pickImage(COVER_URLS, i),
+        coverImage: pickImage(COVER_URLS, i + 1),
+        gallery: [pickImage(COVER_URLS, i), pickImage(COVER_URLS, i + 2)],
         location: "Bangalore, India",
         latitude: coords.lat,
         longitude: coords.lng,
@@ -992,6 +1009,9 @@ async function main() {
       data: {
         name: `${clubNames[i]} - ${city} Chapter`,
         description: `${city} chapter of ${clubNames[i]}. Join for rides, meetups, and community events!`,
+        image: pickImage(COVER_URLS, i + 3),
+        coverImage: pickImage(COVER_URLS, i + 4),
+        gallery: [pickImage(COVER_URLS, i + 3), pickImage(COVER_URLS, i + 5)],
         location: `${city}, India`,
         latitude: coords.lat,
         longitude: coords.lng,
@@ -1139,6 +1159,7 @@ async function main() {
       data: {
         title: rideNames[i],
         description: `${rideNames[i]} - A premium experience for motorcycle enthusiasts. Join our community for an unforgettable riding adventure!`,
+        images: [pickImage(COVER_URLS, i)],
         startLocation: rideLocations[i],
         endLocation: rideLocations[(i + 1) % rideLocations.length],
         latitude: coords.lat,
@@ -1193,6 +1214,7 @@ async function main() {
       data: {
         title: `${rideNames[i]} - ${city}`,
         description: `${rideNames[i]} based in ${city}. Experience the best riding routes with fellow enthusiasts in ${city}.`,
+        images: [pickImage(COVER_URLS, i + 5)],
         startLocation: `${city} Meetup Point`,
         endLocation: `${city} Outskirts`,
         latitude: coords.lat,

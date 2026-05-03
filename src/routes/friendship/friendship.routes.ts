@@ -41,7 +41,7 @@ router.get(
       );
 
     const search = (req.query.search as string) || "";
-    const status = (req.query.status as string) || "ACCEPTED";
+    const status = ((req.query.status as string) || "ACCEPTED").toUpperCase();
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const skip = (page - 1) * limit;
@@ -263,6 +263,18 @@ router.post(
       include: { receiver: { select: { id: true, name: true, avatar: true } } },
     });
 
+    // Create Notification for the receiver
+    await prisma.notification.create({
+      data: {
+        userId: receiverId,
+        type: "FRIEND_REQUEST",
+        title: "New Friend Request",
+        message: `${(req as any).session?.user?.name || "Someone"} sent you a friend request.`,
+        relatedType: "friendship",
+        relatedId: friendship.id,
+      },
+    });
+
     return ApiResponse.created(res, { friendship }, "Friend request sent");
   }),
 );
@@ -382,6 +394,42 @@ router.delete(
 
     await prisma.friendship.delete({ where: { id: req.params.id } });
     return ApiResponse.success(res, null, "Friend removed");
+  }),
+);
+
+/**
+ * @swagger
+ * /api/friends/{id}/block:
+ *   patch:
+ *     summary: Block a user
+ *     tags: [Friends]
+ */
+router.patch(
+  "/:id/block",
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).session?.user?.id;
+    if (!userId)
+      return ApiResponse.error(
+        res,
+        "Unauthorized",
+        401,
+        ErrorCode.UNAUTHORIZED,
+      );
+
+    const friendship = await prisma.friendship.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!friendship) return ApiResponse.notFound(res, "Friendship not found");
+    if (friendship.senderId !== userId && friendship.receiverId !== userId)
+      return ApiResponse.forbidden(res, "Not authorized");
+
+    await prisma.friendship.update({
+      where: { id: req.params.id },
+      data: { status: "BLOCKED" },
+    });
+
+    return ApiResponse.success(res, null, "User blocked");
   }),
 );
 

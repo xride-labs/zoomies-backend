@@ -22,6 +22,7 @@
     "db:push": "bunx prisma db push",
     "db:pull": "bunx prisma db pull",
     "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "bunx prisma migrate reset --force && bun run db:seed",
     "db:seed:prod": "NODE_ENV=production node dist/prisma/seed.js",
     "postinstall": "bun run prisma:generate",
     "lint": "eslint . --ext .ts",

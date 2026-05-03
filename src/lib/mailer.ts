@@ -2,6 +2,7 @@ import {
   buildAlertTemplate,
   buildClubJoinTemplate,
   buildOtpTemplate,
+  buildWelcomeOtpTemplate,
   buildResetPasswordTemplate,
   buildRideJoinRequestTemplate,
   buildVerificationTemplate,
@@ -83,6 +84,15 @@ function logBrevoDeliveryHint(parsedBody: any) {
 }
 
 export async function sendEmail(payload: EmailPayload): Promise<boolean> {
+  if (process.env.NODE_ENV === "development") {
+    console.log("\n[DEVELOPMENT] Email Sending is DISABLED");
+    console.log("[Email] Would have sent email:", {
+      subject: payload.subject,
+      to: payload.to,
+    });
+    return true; // Return true to avoid downstream errors
+  }
+
   const { brevoApiKey, senderEmail, senderName, fallbackReplyTo } =
     getRuntimeEmailConfig();
 
@@ -282,11 +292,11 @@ export async function sendOtpEmail(params: {
   to: string;
   otp: string;
   name?: string | null;
+  isNewUser?: boolean;
 }): Promise<boolean> {
-  const template = buildOtpTemplate({
-    name: params.name,
-    otp: params.otp,
-  });
+  const template = params.isNewUser
+    ? buildWelcomeOtpTemplate({ otp: params.otp })
+    : buildOtpTemplate({ name: params.name, otp: params.otp });
 
   return sendEmail({
     to: params.to,

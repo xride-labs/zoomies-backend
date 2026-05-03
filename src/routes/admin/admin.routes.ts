@@ -1639,11 +1639,11 @@ router.get(
         prisma.rideParticipant.findMany({
           where: { status: "REQUESTED" },
           take: 100,
-          orderBy: { createdAt: "desc" },
+          orderBy: { joinedAt: "desc" },
           select: {
             id: true,
             status: true,
-            createdAt: true,
+            joinedAt: true,
             ride: { select: { id: true, title: true, status: true } },
             user: { select: { id: true, name: true, email: true, avatar: true } },
           },

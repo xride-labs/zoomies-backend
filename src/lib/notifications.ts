@@ -1,5 +1,6 @@
 import { NotificationType } from "@prisma/client";
 import prisma from "./prisma.js";
+import { sendPushToUsers, channelForType } from "./push.js";
 
 export type NotificationInput = {
   userId: string;
@@ -10,6 +11,8 @@ export type NotificationInput = {
   relatedId?: string;
   sentViaEmail?: boolean;
   sentViaPush?: boolean;
+  /** Skip the push delivery for this notification (default: send). */
+  skipPush?: boolean;
 };
 
 export async function createNotification(
@@ -24,9 +27,26 @@ export async function createNotification(
       relatedType: input.relatedType,
       relatedId: input.relatedId,
       sentViaEmail: input.sentViaEmail ?? false,
-      sentViaPush: input.sentViaPush ?? false,
+      sentViaPush: input.skipPush ? false : true,
     },
   });
+
+  if (!input.skipPush) {
+    // Fire-and-forget — push delivery must never block the in-app
+    // notification from being created.
+    sendPushToUsers([input.userId], {
+      title: input.title,
+      body: input.message,
+      channelId: channelForType(input.type),
+      data: {
+        notificationType: input.type,
+        relatedType: input.relatedType,
+        relatedId: input.relatedId,
+      },
+    }).catch((err) =>
+      console.error("[notifications] push send failed:", err),
+    );
+  }
 }
 
 export async function createNotifications(
@@ -45,9 +65,41 @@ export async function createNotifications(
       relatedType: input.relatedType,
       relatedId: input.relatedId,
       sentViaEmail: input.sentViaEmail ?? false,
-      sentViaPush: input.sentViaPush ?? false,
+      sentViaPush: input.skipPush ? false : true,
     })),
   });
+
+  // Group by (title, message, type) so we send one push per fan-out instead
+  // of one per recipient — Expo accepts batched recipients per request.
+  const groups = new Map<
+    string,
+    { input: NotificationInput; userIds: string[] }
+  >();
+  for (const input of inputs) {
+    if (input.skipPush) continue;
+    const key = `${input.type}::${input.title}::${input.message ?? ""}::${input.relatedType ?? ""}::${input.relatedId ?? ""}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.userIds.push(input.userId);
+    } else {
+      groups.set(key, { input, userIds: [input.userId] });
+    }
+  }
+
+  for (const { input, userIds } of groups.values()) {
+    sendPushToUsers(userIds, {
+      title: input.title,
+      body: input.message,
+      channelId: channelForType(input.type),
+      data: {
+        notificationType: input.type,
+        relatedType: input.relatedType,
+        relatedId: input.relatedId,
+      },
+    }).catch((err) =>
+      console.error("[notifications] push send failed:", err),
+    );
+  }
 }
 
 export async function notifyUsers(

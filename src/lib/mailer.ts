@@ -84,14 +84,14 @@ function logBrevoDeliveryHint(parsedBody: any) {
 }
 
 export async function sendEmail(payload: EmailPayload): Promise<boolean> {
-  if (process.env.NODE_ENV === "development") {
-    console.log("\n[DEVELOPMENT] Email Sending is DISABLED");
-    console.log("[Email] Would have sent email:", {
-      subject: payload.subject,
-      to: payload.to,
-    });
-    return true; // Return true to avoid downstream errors
-  }
+  // if (process.env.NODE_ENV === "development") {
+  //   console.log("\n[DEVELOPMENT] Email Sending is DISABLED");
+  //   console.log("[Email] Would have sent email:", {
+  //     subject: payload.subject,
+  //     to: payload.to,
+  //   });
+  //   return true; // Return true to avoid downstream errors
+  // }
 
   const { brevoApiKey, senderEmail, senderName, fallbackReplyTo } =
     getRuntimeEmailConfig();
@@ -115,7 +115,7 @@ export async function sendEmail(payload: EmailPayload): Promise<boolean> {
     const response = await fetch(brevoApiUrl, {
       method: "POST",
       headers: {
-        accept: "application/json",
+        "accept": "application/json",
         "content-type": "application/json",
         "api-key": brevoApiKey,
       },

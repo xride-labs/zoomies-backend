@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { phoneNumber, bearer } from "better-auth/plugins";
+import { bearer, emailOTP } from "better-auth/plugins";
 import prisma from "../lib/prisma.js";
 import type { Request, Response, NextFunction } from "express";
 import { fromNodeHeaders } from "better-auth/node";
@@ -160,11 +160,7 @@ export const auth = betterAuth({
             console.warn(`[AUTH] Failed to sync avatar from image:`, error);
           }
 
-          // Skip welcome email for OTP-registered users — they already got a
-          // combined welcome+OTP email at verification time. OTP users have
-          // phone === email (the phone number plugin stores the email there).
-          const isOtpUser = (user as any).phone === user.email;
-          if (user.email && !isOtpUser) {
+          if (user.email) {
             try {
               const sent = await sendWelcomeEmail({
                 to: user.email,
@@ -262,49 +258,25 @@ export const auth = betterAuth({
   // Plugins
   plugins: [
     bearer(),
-    phoneNumber({
-      sendOTP: async ({ phoneNumber: recipient, code }) => {
+    emailOTP({
+      sendVerificationOTP: async ({ email, otp, type: _type }) => {
         if (process.env.NODE_ENV === "development") {
-          console.log("\n==================================");
-          console.log(`[DEVELOPMENT] OTP GENERATED: ${code}`);
-          console.log(`[DEVELOPMENT] RECIPIENT: ${recipient}`);
-          console.log("==================================\n");
-          return; // Skip actually sending email/SMS in development unless changed here
-        }
-
-        const isEmailOtp = recipient.includes("@");
-
-        if (isEmailOtp) {
-          // Check if this is a brand-new user so we can send a combined welcome+OTP
-          // email instead of two separate emails (reduces total email count).
-          let isNewUser = false;
-          try {
-            const existing = await prisma.user.findFirst({
-              where: { email: recipient },
-              select: { id: true, name: true },
-            });
-            isNewUser = !existing;
-            const sent = await sendOtpEmail({
-              to: recipient,
-              otp: code,
-              name: existing?.name,
-              isNewUser,
-            });
-            if (!sent) throw new Error("Failed to send OTP email");
-          } catch (err: any) {
-            if (err.message?.startsWith("Failed to send")) throw err;
-            // DB lookup failed — still send a plain OTP
-            const sent = await sendOtpEmail({ to: recipient, otp: code });
-            if (!sent) throw new Error("Failed to send OTP email");
-          }
+          console.log(`\n==================================`);
+          console.log(`[DEV] OTP for ${email}: ${_type} → ${otp}`);
+          console.log(`==================================\n`);
           return;
         }
-
-        const { sendOTPViaSMS } = await import("../lib/twilio.js");
-        const sent = await sendOTPViaSMS(recipient, code);
-        if (!sent) {
-          throw new Error("Failed to send OTP via SMS");
-        }
+        const existing = await prisma.user.findFirst({
+          where: { email },
+          select: { id: true, name: true },
+        }).catch(() => null);
+        const sent = await sendOtpEmail({
+          to: email,
+          otp,
+          name: existing?.name,
+          isNewUser: !existing,
+        });
+        if (!sent) throw new Error("Failed to send OTP email");
       },
     }),
   ],

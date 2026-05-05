@@ -134,9 +134,31 @@ model User {
 
   // Notification relations
   notifications Notification[]
+  deviceTokens  DeviceToken[]
   billingSubscriptions BillingSubscription[]
 
   @@map("users")
+}
+
+/**
+ * Push-notification device registration. Stores ExpoPushTokens (which the
+ * Expo push service translates to FCM/APNs internally) + minimal device
+ * metadata so users can revoke a single device without losing all sessions.
+ */
+model DeviceToken {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  token      String   @unique
+  platform   String // "ios" | "android"
+  deviceId   String?  @map("device_id")
+  appVersion String?  @map("app_version")
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_device_token_user")
+  @@map("device_tokens")
 }
 
 model BillingSubscription {

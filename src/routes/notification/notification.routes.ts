@@ -106,4 +106,67 @@ router.patch(
   }),
 );
 
+/**
+ * Register (or refresh) a device push token. Idempotent — calling repeatedly
+ * with the same token from the same user just bumps `lastSeenAt`. Tokens are
+ * unique across the system, so re-registering a token previously owned by
+ * another user transfers ownership (typical when a phone is wiped + reused).
+ */
+router.post(
+  "/devices/register",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const userId = session.user.id;
+    const { token, platform, deviceId, appVersion } = req.body ?? {};
+
+    if (typeof token !== "string" || token.length < 10) {
+      return ApiResponse.validationError(res, { token: "required" }, "Missing or invalid push token");
+    }
+    if (platform !== "ios" && platform !== "android") {
+      return ApiResponse.validationError(res, { platform: "required" }, "platform must be 'ios' or 'android'");
+    }
+
+    await prisma.deviceToken.upsert({
+      where: { token },
+      update: {
+        userId,
+        platform,
+        deviceId: typeof deviceId === "string" ? deviceId : null,
+        appVersion: typeof appVersion === "string" ? appVersion : null,
+        lastSeenAt: new Date(),
+      },
+      create: {
+        userId,
+        token,
+        platform,
+        deviceId: typeof deviceId === "string" ? deviceId : null,
+        appVersion: typeof appVersion === "string" ? appVersion : null,
+      },
+    });
+
+    ApiResponse.success(res, { ok: true }, "Device registered");
+  }),
+);
+
+/**
+ * Unregister a token (called on logout). We don't 401 on unknown tokens —
+ * the client may be retrying a previous unregister, and that's fine.
+ */
+router.post(
+  "/devices/unregister",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { token } = req.body ?? {};
+    if (typeof token !== "string") {
+      return ApiResponse.validationError(res, { token: "required" }, "Missing token");
+    }
+
+    await prisma.deviceToken.deleteMany({
+      where: { token, userId: session.user.id },
+    });
+
+    ApiResponse.success(res, { ok: true }, "Device unregistered");
+  }),
+);
+
 export default router;

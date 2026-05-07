@@ -277,6 +277,12 @@ export const updateMemberRoleSchema = z.object({
 // Marketplace Schemas
 // ========================================
 
+const httpsUrl = (label: string) =>
+  z
+    .string()
+    .url(`Invalid ${label} URL`)
+    .transform((u) => u.replace(/^http:\/\//, "https://"));
+
 export const createListingSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters").max(200),
   description: z.string().max(5000).optional(),
@@ -285,8 +291,8 @@ export const createListingSchema = z.object({
     .string()
     .length(3, "Currency must be 3 characters")
     .default("INR"),
-  images: z.array(z.string().url("Invalid image URL")).max(10).optional(),
-  videos: z.array(z.string().url("Invalid video URL")).max(3).optional(),
+  images: z.array(httpsUrl("image")).max(10).optional(),
+  videos: z.array(httpsUrl("video")).max(3).optional(),
   category: z
     .enum(["Motorcycle", "Gear", "Accessories", "Parts", "Other"])
     .optional(),

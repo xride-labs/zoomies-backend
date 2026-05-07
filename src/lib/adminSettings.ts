@@ -3,8 +3,10 @@ import prisma from "./prisma.js";
 const SETTINGS_SCOPE = "global";
 const CACHE_TTL_MS = 30_000;
 
+type AdminSettings = Awaited<ReturnType<typeof prisma.adminSettings.upsert>>;
+
 let cachedSettings: {
-  data: Awaited<ReturnType<typeof prisma.adminSettings.findFirst>> | null;
+  data: AdminSettings | null;
   expiresAt: number;
 } = {
   data: null,
@@ -14,7 +16,7 @@ let cachedSettings: {
 // Deduplicates concurrent calls so only one DB round-trip runs at a time.
 // Without this, simultaneous requests on startup all attempt the upsert and
 // race to INSERT the same unique `scope` row, causing P2002 crashes.
-let inflight: Promise<Awaited<ReturnType<typeof prisma.adminSettings.findFirst>>> | null = null;
+let inflight: Promise<AdminSettings> | null = null;
 
 export async function getAdminSettings(forceRefresh = false) {
   const now = Date.now();

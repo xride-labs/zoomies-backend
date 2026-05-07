@@ -23,13 +23,29 @@ import {
   updateUserRoleSchema,
   updateReportSchema,
   weeklyActivityQuerySchema,
+  adminSettingsUpdateSchema,
+  adminNotificationsQuerySchema,
 } from "../../validators/schemas.js";
 import { runJobManually } from "../../jobs/scheduler.js";
 import { buildDailyRanges } from "../../lib/admin/activity.js";
+import {
+  getAdminSettings,
+  updateAdminSettings,
+} from "../../lib/adminSettings.js";
+import adminCommerceRouter from "./admin.commerce.routes.js";
 
 const router = Router();
 
-const PRIVILEGED_ADMIN_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.CO_ADMIN];
+// Admin CRUD for Phase 5/6/7 entities (businesses, ad campaigns, discounts).
+// Mounted before the existing handlers so the requireAdmin gate inside that
+// sub-router applies cleanly without depending on this file's route order.
+router.use("/", adminCommerceRouter);
+
+const PRIVILEGED_ADMIN_ROLES: UserRole[] = [
+  UserRole.ADMIN,
+  UserRole.CO_ADMIN,
+  UserRole.MODERATOR,
+];
 
 function getRequesterRoles(req: Request): UserRole[] {
   return (((req as any).userRoles ?? []) as UserRole[]).filter(Boolean);
@@ -93,6 +109,131 @@ function toAdminUserRecord(user: {
     ridesCompleted: user.rideStats?.totalRides ?? 0,
     createdAt: user.createdAt.toISOString(),
     _count: user._count,
+  };
+}
+
+function toAdminUserDetail(user: {
+  id: string;
+  email: string | null;
+  name: string | null;
+  username: string | null;
+  avatar: string | null;
+  coverImage: string | null;
+  phone: string | null;
+  bio: string | null;
+  location: string | null;
+  activityLevel: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  dob: Date | null;
+  bloodType: string | null;
+  interests: string[];
+  onboardingCompleted: boolean;
+  xpPoints: number | null;
+  level: number;
+  levelTitle: string;
+  reputationScore: number | null;
+  helmetVerified: boolean;
+  lastSafetyCheck: Date | null;
+  subscriptionTier: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  userRoles: Array<{ role: string }>;
+  rideStats: {
+    totalDistanceKm: number;
+    longestRideKm: number;
+    totalRides: number;
+    nightRides: number;
+    weekendRides: number;
+    soloRides: number;
+    groupRides: number;
+    avgRideDistanceKm: number;
+    totalRideTimeMin: number;
+  } | null;
+  preferences: {
+    rideReminders: boolean;
+    serviceReminderKm: number;
+    darkMode: boolean;
+    units: string;
+    openToInvite: boolean;
+    pushNotifications: boolean;
+    emailNotifications: boolean;
+    smsNotifications: boolean;
+    profileVisibility: string;
+    showLocation: boolean;
+    showBikes: boolean;
+    lowDataMode: boolean;
+    showStats: boolean;
+  } | null;
+  emergencyContacts: Array<{
+    id: string;
+    name: string;
+    phone: string;
+    relationship: string | null;
+    isPrimary: boolean;
+  }>;
+  badges: Array<{
+    earnedAt: Date;
+    badge: {
+      id: string;
+      name: string;
+      icon: string | null;
+      category: string | null;
+      requirement: string | null;
+      auraPoints: number;
+    };
+  }>;
+  _count: {
+    createdRides: number;
+    createdClubs: number;
+    posts: number;
+    comments: number;
+    followers: number;
+    following: number;
+    marketplaceListings: number;
+    clubMemberships: number;
+    rideParticipations: number;
+    eventParticipations: number;
+    notifications: number;
+  };
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    username: user.username,
+    image: user.avatar,
+    coverImage: user.coverImage,
+    phone: user.phone,
+    bio: user.bio,
+    location: user.location,
+    activityLevel: user.activityLevel,
+    emailVerified: user.emailVerified,
+    phoneVerified: user.phoneVerified,
+    status: user.emailVerified ? "active" : "pending",
+    lastActive: user.updatedAt.toISOString(),
+    roles: user.userRoles.map((r) => r.role),
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
+    dob: user.dob?.toISOString() ?? null,
+    bloodType: user.bloodType,
+    interests: user.interests,
+    onboardingCompleted: user.onboardingCompleted,
+    xpPoints: user.xpPoints,
+    level: user.level,
+    levelTitle: user.levelTitle,
+    reputationScore: user.reputationScore,
+    helmetVerified: user.helmetVerified,
+    lastSafetyCheck: user.lastSafetyCheck?.toISOString() ?? null,
+    subscriptionTier: user.subscriptionTier,
+    rideStats: user.rideStats,
+    preferences: user.preferences,
+    emergencyContacts: user.emergencyContacts,
+    badges: user.badges.map((b) => ({
+      earnedAt: b.earnedAt.toISOString(),
+      badge: b.badge,
+    })),
+    counts: user._count,
   };
 }
 
@@ -254,6 +395,26 @@ router.get(
         })(),
       },
     });
+  }),
+);
+
+// Admin Settings (single global record)
+router.get(
+  "/settings",
+  requireSuperAdmin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const settings = await getAdminSettings();
+    ApiResponse.success(res, settings);
+  }),
+);
+
+router.patch(
+  "/settings",
+  requireSuperAdmin,
+  validateBody(adminSettingsUpdateSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const settings = await updateAdminSettings(req.body ?? {});
+    ApiResponse.success(res, settings, "Settings updated");
   }),
 );
 
@@ -427,29 +588,116 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        username: true,
-        avatar: true,
-        phone: true,
-        bio: true,
-        location: true,
-        activityLevel: true,
-        emailVerified: true,
-        phoneVerified: true,
-        userRoles: { select: { role: true } },
-        rideStats: { select: { totalRides: true } },
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: { createdRides: true, createdClubs: true },
+    const [user, unreadNotifications] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          username: true,
+          avatar: true,
+          coverImage: true,
+          phone: true,
+          bio: true,
+          location: true,
+          activityLevel: true,
+          emailVerified: true,
+          phoneVerified: true,
+          dob: true,
+          bloodType: true,
+          interests: true,
+          onboardingCompleted: true,
+          xpPoints: true,
+          level: true,
+          levelTitle: true,
+          reputationScore: true,
+          helmetVerified: true,
+          lastSafetyCheck: true,
+          subscriptionTier: true,
+          userRoles: { select: { role: true } },
+          rideStats: {
+            select: {
+              totalDistanceKm: true,
+              longestRideKm: true,
+              totalRides: true,
+              nightRides: true,
+              weekendRides: true,
+              soloRides: true,
+              groupRides: true,
+              avgRideDistanceKm: true,
+              totalRideTimeMin: true,
+            },
+          },
+          preferences: {
+            select: {
+              rideReminders: true,
+              serviceReminderKm: true,
+              darkMode: true,
+              units: true,
+              openToInvite: true,
+              pushNotifications: true,
+              emailNotifications: true,
+              smsNotifications: true,
+              profileVisibility: true,
+              showLocation: true,
+              showBikes: true,
+              lowDataMode: true,
+              showStats: true,
+            },
+          },
+          emergencyContacts: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              relationship: true,
+              isPrimary: true,
+            },
+            orderBy: { isPrimary: "desc" },
+          },
+          badges: {
+            select: {
+              earnedAt: true,
+              badge: {
+                select: {
+                  id: true,
+                  name: true,
+                  icon: true,
+                  category: true,
+                  requirement: true,
+                  auraPoints: true,
+                },
+              },
+            },
+            orderBy: { earnedAt: "desc" },
+          },
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              createdRides: true,
+              createdClubs: true,
+              posts: true,
+              comments: true,
+              followers: true,
+              following: true,
+              marketplaceListings: true,
+              clubMemberships: true,
+              rideParticipations: true,
+              eventParticipations: true,
+              notifications: true,
+            },
+          },
         },
-      },
-    });
+      }),
+      prisma.notification.count({
+        where: {
+          userId: id,
+          isRead: false,
+        },
+      }),
+    ]);
 
     if (!user) {
       return ApiResponse.notFound(
@@ -459,7 +707,10 @@ router.get(
       );
     }
 
-    ApiResponse.success(res, toAdminUserRecord(user));
+    ApiResponse.success(res, {
+      ...toAdminUserDetail(user),
+      unreadNotifications,
+    });
   }),
 );
 
@@ -1322,6 +1573,83 @@ router.patch(
 
 /**
  * @swagger
+ * /api/admin/notifications:
+ *   get:
+ *     summary: Get notifications (admin)
+ *     description: Get paginated list of user notifications with filters. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ */
+router.get(
+  "/notifications",
+  requireAdmin,
+  validateQuery(adminNotificationsQuerySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const {
+      page = 1,
+      limit = 25,
+      userId,
+      unreadOnly,
+      type,
+      search,
+    } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where: any = {};
+    if (userId) where.userId = userId;
+    if (unreadOnly === true) where.isRead = false;
+    if (type) where.type = type;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { message: { contains: search, mode: "insensitive" } },
+        { user: { is: { name: { contains: search, mode: "insensitive" } } } },
+        { user: { is: { email: { contains: search, mode: "insensitive" } } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      prisma.notification.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      }),
+      prisma.notification.count({ where }),
+    ]);
+
+    const mapped = items.map((notification) => ({
+      id: notification.id,
+      userId: notification.userId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      relatedType: notification.relatedType,
+      relatedId: notification.relatedId,
+      isRead: notification.isRead,
+      readAt: notification.readAt?.toISOString() ?? null,
+      sentViaEmail: notification.sentViaEmail,
+      sentViaPush: notification.sentViaPush,
+      createdAt: notification.createdAt.toISOString(),
+      user: notification.user,
+    }));
+
+    ApiResponse.paginated(res, mapped, {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    });
+  }),
+);
+
+/**
+ * @swagger
  * /api/admin/marketplace:
  *   get:
  *     summary: Get all marketplace listings (admin)
@@ -1633,7 +1961,9 @@ router.get(
             status: true,
             createdAt: true,
             club: { select: { id: true, name: true } },
-            user: { select: { id: true, name: true, email: true, avatar: true } },
+            user: {
+              select: { id: true, name: true, email: true, avatar: true },
+            },
           },
         }),
         prisma.rideParticipant.findMany({
@@ -1645,7 +1975,9 @@ router.get(
             status: true,
             joinedAt: true,
             ride: { select: { id: true, title: true, status: true } },
-            user: { select: { id: true, name: true, email: true, avatar: true } },
+            user: {
+              select: { id: true, name: true, email: true, avatar: true },
+            },
           },
         }),
       ]);
@@ -1696,7 +2028,11 @@ router.post(
     });
 
     if (!joinRequest) {
-      return ApiResponse.notFound(res, "Club join request not found", ErrorCode.NOT_FOUND);
+      return ApiResponse.notFound(
+        res,
+        "Club join request not found",
+        ErrorCode.NOT_FOUND,
+      );
     }
 
     await prisma.$transaction(async (tx) => {
@@ -1706,13 +2042,26 @@ router.post(
       });
 
       await tx.clubMember.upsert({
-        where: { clubId_userId: { clubId: joinRequest.clubId, userId: joinRequest.userId } },
-        create: { clubId: joinRequest.clubId, userId: joinRequest.userId, role: "MEMBER" },
+        where: {
+          clubId_userId: {
+            clubId: joinRequest.clubId,
+            userId: joinRequest.userId,
+          },
+        },
+        create: {
+          clubId: joinRequest.clubId,
+          userId: joinRequest.userId,
+          role: "MEMBER",
+        },
         update: {},
       });
     });
 
-    ApiResponse.success(res, { requestId, status: "APPROVED" }, "Club join request approved");
+    ApiResponse.success(
+      res,
+      { requestId, status: "APPROVED" },
+      "Club join request approved",
+    );
   }),
 );
 
@@ -1754,7 +2103,11 @@ router.post(
     });
 
     if (!joinRequest) {
-      return ApiResponse.notFound(res, "Club join request not found", ErrorCode.NOT_FOUND);
+      return ApiResponse.notFound(
+        res,
+        "Club join request not found",
+        ErrorCode.NOT_FOUND,
+      );
     }
 
     await prisma.clubJoinRequest.update({
@@ -1762,7 +2115,11 @@ router.post(
       data: { status: "REJECTED" },
     });
 
-    ApiResponse.success(res, { requestId, status: "REJECTED" }, "Club join request rejected");
+    ApiResponse.success(
+      res,
+      { requestId, status: "REJECTED" },
+      "Club join request rejected",
+    );
   }),
 );
 
@@ -1804,7 +2161,11 @@ router.post(
     });
 
     if (!participant) {
-      return ApiResponse.notFound(res, "Ride participant not found", ErrorCode.NOT_FOUND);
+      return ApiResponse.notFound(
+        res,
+        "Ride participant not found",
+        ErrorCode.NOT_FOUND,
+      );
     }
 
     await prisma.rideParticipant.update({
@@ -1812,7 +2173,11 @@ router.post(
       data: { status: "ACCEPTED" },
     });
 
-    ApiResponse.success(res, { participantId, status: "ACCEPTED" }, "Ride participant accepted");
+    ApiResponse.success(
+      res,
+      { participantId, status: "ACCEPTED" },
+      "Ride participant accepted",
+    );
   }),
 );
 
@@ -1854,7 +2219,11 @@ router.post(
     });
 
     if (!participant) {
-      return ApiResponse.notFound(res, "Ride participant not found", ErrorCode.NOT_FOUND);
+      return ApiResponse.notFound(
+        res,
+        "Ride participant not found",
+        ErrorCode.NOT_FOUND,
+      );
     }
 
     await prisma.rideParticipant.update({
@@ -1862,9 +2231,12 @@ router.post(
       data: { status: "DECLINED" },
     });
 
-    ApiResponse.success(res, { participantId, status: "DECLINED" }, "Ride participant declined");
+    ApiResponse.success(
+      res,
+      { participantId, status: "DECLINED" },
+      "Ride participant declined",
+    );
   }),
 );
 
 export default router;
-

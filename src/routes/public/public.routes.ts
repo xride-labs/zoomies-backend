@@ -3,6 +3,7 @@ import prisma from "../../lib/prisma.js";
 import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { asyncHandler, validateParams } from "../../middlewares/validation.js";
 import { z } from "zod";
+import { requireMarketplaceEnabled } from "../../middlewares/appSettings.js";
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.get(
       participantCount: ride._count.participants,
       status: ride.status,
     });
-  })
+  }),
 );
 
 /**
@@ -51,6 +52,7 @@ router.get(
 router.get(
   "/marketplace/:id",
   validateParams(idParam),
+  requireMarketplaceEnabled,
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const listing = await prisma.marketplaceListing.findUnique({
@@ -67,7 +69,11 @@ router.get(
       },
     });
     if (!listing) {
-      return ApiResponse.notFound(res, "Listing not found", ErrorCode.NOT_FOUND);
+      return ApiResponse.notFound(
+        res,
+        "Listing not found",
+        ErrorCode.NOT_FOUND,
+      );
     }
     return ApiResponse.success(res, {
       id: listing.id,
@@ -79,7 +85,7 @@ router.get(
       category: listing.category ?? null,
       status: listing.status,
     });
-  })
+  }),
 );
 
 /**
@@ -118,7 +124,7 @@ router.get(
       memberCount: club.memberCount,
       isPublic: club.isPublic,
     });
-  })
+  }),
 );
 
 export default router;

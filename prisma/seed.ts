@@ -327,7 +327,10 @@ async function main() {
   await prisma.clubJoinRequest.deleteMany();
   await prisma.friendGroupJoinRequest.deleteMany();
   await prisma.chatMessage.deleteMany();
+  await prisma.discount.deleteMany();
+  await prisma.adCampaign.deleteMany();
   await prisma.marketplaceListing.deleteMany();
+  await prisma.businessProfile.deleteMany();
   await prisma.friendGroupMember.deleteMany();
   await prisma.friendGroup.deleteMany();
   await prisma.club.deleteMany();
@@ -2000,6 +2003,333 @@ async function main() {
     console.log("✅ Seeded Mongo chat conversations and messages");
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  //  BRANDS & BRAND PRODUCTS
+  // ══════════════════════════════════════════════════════════════════
+
+  const BRAND_LOGO_URLS = [
+    "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=200",
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=200",
+    "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=200",
+    "https://images.unsplash.com/photo-1609630875171-b1321377ee65?w=200",
+    "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200",
+    "https://images.unsplash.com/photo-1520975916090-3105956dac38?w=200",
+  ];
+
+  const BRAND_BANNER_URLS = [
+    "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200",
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=1200",
+    "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=1200",
+    "https://images.unsplash.com/photo-1511994298241-608e28f14fde?w=1200",
+    "https://images.unsplash.com/photo-1580310614729-ccd69652491d?w=1200",
+    "https://images.unsplash.com/photo-1449426468159-d96dbf08f19f?w=1200",
+  ];
+
+  type BrandDef = {
+    name: string; slug: string; email: string; username: string; tagline: string;
+    description: string; city: string; cityKey: keyof typeof CITY_CENTERS;
+    categories: string[]; products: Array<{ title: string; price: number; cat: string; sub: string }>;
+  };
+
+  const BRANDS: BrandDef[] = [
+    {
+      name: "ThunderGear Co.",
+      slug: "thundergear-co",
+      email: "brand1@thundergear.com",
+      username: "thundergear",
+      tagline: "Built for the road, built for speed",
+      description: "India's premier motorcycle gear brand. From helmets to jackets, we craft riding gear that merges safety with style. Trusted by 50,000+ riders across India.",
+      city: "Bangalore",
+      cityKey: "Bangalore",
+      categories: ["GEAR_SELLER", "HELMET_SELLER"],
+      products: [
+        { title: "TG Pro Helmet - AGV Style Full Face", price: 8500, cat: "Gear", sub: "Helmet" },
+        { title: "TG Carbon Touring Jacket - Black/Orange", price: 12000, cat: "Gear", sub: "Jacket" },
+        { title: "TG Street Gloves - Touch Screen Compatible", price: 2200, cat: "Gear", sub: "Gloves" },
+        { title: "TG Adventure Boots - Waterproof", price: 6500, cat: "Gear", sub: "Boots" },
+        { title: "TG Spine Protector - CE Level 2", price: 3800, cat: "Gear", sub: "Armor" },
+        { title: "TG Winter Base Layer Set", price: 1800, cat: "Gear", sub: "Winter" },
+        { title: "TG Modular Helmet - Bluetooth Ready", price: 14500, cat: "Gear", sub: "Helmet" },
+        { title: "TG Racing Gloves - Track Day Spec", price: 4200, cat: "Gear", sub: "Gloves" },
+        { title: "TG Armored Riding Pants - Kevlar", price: 7800, cat: "Gear", sub: "Protective" },
+        { title: "TG Ventilated Summer Jacket - Mesh", price: 5500, cat: "Gear", sub: "Jacket" },
+        { title: "TG Knee Guards - Trail Pack", price: 1600, cat: "Gear", sub: "Guards" },
+        { title: "TG Neck Brace - Carbon Composite", price: 9800, cat: "Gear", sub: "Protective" },
+      ],
+    },
+    {
+      name: "Moto Parts India",
+      slug: "moto-parts-india",
+      email: "brand2@motoparts.com",
+      username: "motopartsindia",
+      tagline: "OEM quality at aftermarket prices",
+      description: "Your one-stop shop for genuine and aftermarket motorcycle spares. We stock parts for 200+ bike models. Fast shipping, 12-month warranty on all parts.",
+      city: "Mumbai",
+      cityKey: "Mumbai",
+      categories: ["PARTS_SELLER"],
+      products: [
+        { title: "Michelin Pilot Road 5 Tyre - 120/70", price: 8800, cat: "Parts", sub: "Tyres" },
+        { title: "Akrapovic Slip-On Exhaust - Universal", price: 18000, cat: "Parts", sub: "Exhaust" },
+        { title: "K&N Air Filter - RE Classic 350", price: 2800, cat: "Parts", sub: "Filters" },
+        { title: "Motul 7100 Engine Oil 4L - 10W40", price: 1600, cat: "Parts", sub: "Oil" },
+        { title: "Bosch Lithium Battery - 12V 9Ah", price: 3400, cat: "Parts", sub: "Battery" },
+        { title: "Excel Rim Tape Set - All Colours", price: 450, cat: "Accessories", sub: "Mirror" },
+        { title: "Brembo Front Brake Disc - 320mm", price: 6500, cat: "Parts", sub: "Guards" },
+        { title: "Renthal Handlebar - Fatbar 28mm", price: 3200, cat: "Parts", sub: "Guards" },
+        { title: "SW Motech Crash Bars - KTM 390", price: 5800, cat: "Accessories", sub: "Guards" },
+        { title: "Metzeler Tourance Tyre - 150/70 R17", price: 9200, cat: "Parts", sub: "Tyres" },
+        { title: "Rizoma Mirror Set - Round Chrome", price: 4100, cat: "Accessories", sub: "Mirror" },
+        { title: "Yoshimura Exhaust - R15 V4 Slip On", price: 12500, cat: "Parts", sub: "Exhaust" },
+      ],
+    },
+    {
+      name: "Helmet Hub",
+      slug: "helmet-hub",
+      email: "brand3@helmethub.in",
+      username: "helmethub",
+      tagline: "Your head deserves the best",
+      description: "Authorized dealers for 15+ global helmet brands including Shoei, Arai, AGV, Bell, and HJC. We also stock affordable Indian brands. All helmets ISI/DOT certified.",
+      city: "Delhi",
+      cityKey: "Delhi",
+      categories: ["HELMET_SELLER"],
+      products: [
+        { title: "Shoei GT-Air 3 - Bluetooth Ready", price: 38000, cat: "Gear", sub: "Helmet" },
+        { title: "AGV K6 S - Full Face Sports", price: 28500, cat: "Gear", sub: "Helmet" },
+        { title: "Arai RX-7V Evo - Corsair Black", price: 52000, cat: "Gear", sub: "Helmet" },
+        { title: "Bell Race Star Flex - DLX MIPS", price: 22000, cat: "Gear", sub: "Helmet" },
+        { title: "HJC i91 Modular - Wireless Music", price: 14500, cat: "Gear", sub: "Helmet" },
+        { title: "LS2 FF900 Valiant 2 - Flip Up", price: 9800, cat: "Gear", sub: "Helmet" },
+        { title: "Nolan N100-6 - Adventure Helmet", price: 19500, cat: "Gear", sub: "Helmet" },
+        { title: "Schuberth C5 - Touring Modular", price: 42000, cat: "Gear", sub: "Helmet" },
+        { title: "Caberg Jackal X - Off Road", price: 8200, cat: "Gear", sub: "Helmet" },
+        { title: "Ruroc Atlas 4.0 - Carbon Lid", price: 24000, cat: "Gear", sub: "Helmet" },
+        { title: "Steelbird Air GT - Dual Visor", price: 3200, cat: "Gear", sub: "Helmet" },
+        { title: "Vega Off Road Helmet - Adventure", price: 2800, cat: "Gear", sub: "Helmet" },
+      ],
+    },
+    {
+      name: "Ride Ready Store",
+      slug: "ride-ready-store",
+      email: "brand4@rideready.in",
+      username: "ridereadystore",
+      tagline: "Everything a rider needs, in one place",
+      description: "Multi-brand riding gear and accessories retailer. From entry-level to pro-grade gear. We serve beginner riders all the way to professional racers.",
+      city: "Pune",
+      cityKey: "Pune",
+      categories: ["GEAR_SELLER", "MARKETPLACE_SELLER"],
+      products: [
+        { title: "Dainese Desert Tex Jacket - Sand", price: 18500, cat: "Gear", sub: "Jacket" },
+        { title: "Alpinestars SP8 V3 Air Gloves", price: 6200, cat: "Gear", sub: "Gloves" },
+        { title: "REV'IT! Sand 4 Touring Pants", price: 14200, cat: "Gear", sub: "Protective" },
+        { title: "Forma ADV Tourer Boot - Black", price: 8800, cat: "Gear", sub: "Boots" },
+        { title: "Kriega R25 Backpack - Waterproof", price: 11500, cat: "Accessories", sub: "Backpack" },
+        { title: "Oxford Cliqr Phone Mount - Universal", price: 1800, cat: "Accessories", sub: "Mount" },
+        { title: "Sena 30K Mesh Intercom - Single", price: 22000, cat: "Accessories", sub: "Camera" },
+        { title: "GoPro Hero 12 Moto Kit - Chin Mount", price: 32000, cat: "Accessories", sub: "Camera" },
+        { title: "Nelson-Rigg Saddlebag Set - 30L", price: 6800, cat: "Accessories", sub: "Luggage" },
+        { title: "Klim Latitude Off-Road Jacket - XL", price: 28000, cat: "Gear", sub: "Jacket" },
+        { title: "BMW GS Dry Bag - 10L", price: 4200, cat: "Accessories", sub: "Luggage" },
+        { title: "Furygan TD21 EVO Leather Gloves", price: 5600, cat: "Gear", sub: "Gloves" },
+      ],
+    },
+    {
+      name: "SpeedWrench Garage",
+      slug: "speedwrench-garage",
+      email: "brand5@speedwrench.in",
+      username: "speedwrench",
+      tagline: "Expert mechanics, honest service",
+      description: "Multi-brand authorized service centre in Hyderabad. Specializing in RE, KTM, Bajaj, Honda, and Yamaha. Performance tuning and custom builds welcome.",
+      city: "Hyderabad",
+      cityKey: "Hyderabad",
+      categories: ["SERVICE_STORE", "MECHANIC"],
+      products: [
+        { title: "Full Service Package - 125-200cc", price: 1800, cat: "Parts", sub: "Oil" },
+        { title: "Full Service Package - 300-400cc", price: 2800, cat: "Parts", sub: "Oil" },
+        { title: "Tyre Change (Tubeless) - Pair", price: 800, cat: "Parts", sub: "Tyres" },
+        { title: "Brake Pad Replacement - Front+Rear", price: 1200, cat: "Parts", sub: "Guards" },
+        { title: "Chain & Sprocket Kit - RE Classic", price: 3800, cat: "Parts", sub: "Guards" },
+        { title: "Performance Tune - KTM Duke/RC", price: 4500, cat: "Parts", sub: "Exhaust" },
+        { title: "Suspension Setup - Race Spec", price: 6000, cat: "Parts", sub: "Guards" },
+        { title: "Full Wash + Polish Detailing", price: 800, cat: "Accessories", sub: "Tools" },
+        { title: "Carburetor Clean + Jet Kit", price: 2200, cat: "Parts", sub: "Filters" },
+        { title: "Battery Test + Replacement", price: 3200, cat: "Parts", sub: "Battery" },
+        { title: "Exhaust Wrap + Heat Shield Fit", price: 1600, cat: "Parts", sub: "Exhaust" },
+        { title: "Fork Oil Change + Seal Kit", price: 2800, cat: "Parts", sub: "Oil" },
+      ],
+    },
+    {
+      name: "Road Gear Nation",
+      slug: "road-gear-nation",
+      email: "brand6@roadgearnation.com",
+      username: "roadgearnation",
+      tagline: "Indian riders, Indian prices",
+      description: "Homegrown Indian gear brand designed specifically for Indian riding conditions — dust, heat, monsoons. Affordable without compromising on safety. Made in India.",
+      city: "Chennai",
+      cityKey: "Chennai",
+      categories: ["BRAND", "GEAR_SELLER"],
+      products: [
+        { title: "RGN Monsoon Jacket - Waterproof L", price: 4200, cat: "Gear", sub: "Jacket" },
+        { title: "RGN Duster Full Face Helmet - Matt", price: 3800, cat: "Gear", sub: "Helmet" },
+        { title: "RGN Touring Gloves - Long Cuff", price: 1200, cat: "Gear", sub: "Gloves" },
+        { title: "RGN Track Boots - Ankle Support", price: 3200, cat: "Gear", sub: "Boots" },
+        { title: "RGN Summer Mesh Jacket - S/M/L/XL", price: 2800, cat: "Gear", sub: "Jacket" },
+        { title: "RGN Back Protector Insert - Slim", price: 900, cat: "Gear", sub: "Armor" },
+        { title: "RGN Hip Pad Set - CE Level 1", price: 650, cat: "Gear", sub: "Protective" },
+        { title: "RGN Rain Suit Over Jacket", price: 1800, cat: "Gear", sub: "Winter" },
+        { title: "RGN Reflective Hi-Vis Vest - Night", price: 550, cat: "Gear", sub: "Safety" },
+        { title: "RGN Tank Bag - Magnetic 10L", price: 1600, cat: "Accessories", sub: "Luggage" },
+        { title: "RGN Knee Slider Set - Street", price: 420, cat: "Gear", sub: "Protective" },
+        { title: "RGN Full Suit Combo - Jacket+Pants", price: 7800, cat: "Gear", sub: "Protective" },
+      ],
+    },
+    // ── Koramangala (dev location) ──────────────────────────────────
+    {
+      name: "Moto Den Koramangala",
+      slug: "moto-den-koramangala",
+      email: "brand7@motoden.in",
+      username: "motoden_koramangala",
+      tagline: "Bangalore's favourite gear stop",
+      description: "Walk-in gear and accessories store on 80 Feet Road, Koramangala. Stocking helmets, jackets, gloves, and accessories from all major brands. Expert fitment advice, no-pressure sales.",
+      city: "Koramangala, Bangalore",
+      cityKey: "Koramangala",
+      categories: ["GEAR_SELLER", "HELMET_SELLER", "MARKETPLACE_SELLER"],
+      products: [
+        { title: "MT Helmets Revenge 2 - Solid Gloss", price: 6200, cat: "Gear", sub: "Helmet" },
+        { title: "Alpinestars Andes v3 Jacket - Black", price: 14500, cat: "Gear", sub: "Jacket" },
+        { title: "Alpinestars SP-8 v3 Gloves - Short", price: 3800, cat: "Gear", sub: "Gloves" },
+        { title: "TCX Street ACE Air Boots - Brown", price: 8900, cat: "Gear", sub: "Boots" },
+        { title: "Biltwell Gringo S Full Face - Flat", price: 11200, cat: "Gear", sub: "Helmet" },
+        { title: "Oxford Layers WB Waterproof Suit", price: 5400, cat: "Gear", sub: "Winter" },
+        { title: "Kriega US-10 Drypack Tail Bag", price: 7200, cat: "Accessories", sub: "Luggage" },
+        { title: "Oxford Chain Boss Lock 1.5m", price: 2800, cat: "Accessories", sub: "Lock" },
+        { title: "Interphone Active Bluetooth Headset", price: 9800, cat: "Accessories", sub: "Charger" },
+        { title: "Pyramid Plastics Bar End Mirrors Pair", price: 1200, cat: "Accessories", sub: "Mirror" },
+        { title: "Held Air N Dry Gloves - 2-in-1", price: 4600, cat: "Gear", sub: "Gloves" },
+        { title: "Shad SH45 Top Box with Universal Fit", price: 6800, cat: "Accessories", sub: "Luggage" },
+      ],
+    },
+    {
+      name: "KTech Moto Service",
+      slug: "ktech-moto-service",
+      email: "brand8@ktech.in",
+      username: "ktech_motoservice",
+      tagline: "Precision service for modern bikes",
+      description: "KTM, RE, Triumph, and Kawasaki specialist workshop in Koramangala. ECU remapping, suspension setup, performance tuning, and factory-grade servicing. Appointment-based for zero wait times.",
+      city: "Koramangala, Bangalore",
+      cityKey: "Koramangala",
+      categories: ["SERVICE_STORE", "MECHANIC"],
+      products: [
+        { title: "KTM Duke/RC Full Service - 5000km", price: 2800, cat: "Parts", sub: "Oil" },
+        { title: "RE Himalayan Complete Service", price: 2200, cat: "Parts", sub: "Oil" },
+        { title: "ECU Remap + Dyno Tune Session", price: 6500, cat: "Parts", sub: "Filters" },
+        { title: "Suspension Revalve + Spring Rate", price: 8000, cat: "Parts", sub: "Guards" },
+        { title: "Pirelli Angel GT2 Tyre - Fitted 180", price: 12500, cat: "Parts", sub: "Tyres" },
+        { title: "Akrapovic Slip-On Exhaust - Fitted", price: 24000, cat: "Parts", sub: "Exhaust" },
+        { title: "Battery Replacement + Load Test", price: 2400, cat: "Parts", sub: "Battery" },
+        { title: "Brake Fluid Flush + Bleed Service", price: 800, cat: "Parts", sub: "Filters" },
+        { title: "Chain + Sprocket Kit - Fitted", price: 3800, cat: "Parts", sub: "Tyres" },
+        { title: "Windscreen Installation + Sealing", price: 1200, cat: "Parts", sub: "Guards" },
+      ],
+    },
+    {
+      name: "Racer's Pit Bangalore",
+      slug: "racers-pit-bangalore",
+      email: "brand9@racerspit.in",
+      username: "racerspit_blr",
+      tagline: "Track-tested. Road-proven.",
+      description: "Performance parts and track-day accessories for serious riders. Bangalore's only dedicated performance moto shop. From crash protection to data loggers — if it makes you faster or safer, we stock it.",
+      city: "Koramangala, Bangalore",
+      cityKey: "Koramangala",
+      categories: ["PARTS_SELLER", "GEAR_SELLER"],
+      products: [
+        { title: "Woodcraft Frame Sliders - KTM RC390", price: 4200, cat: "Parts", sub: "Guards" },
+        { title: "Puig Racing Screen - Clear/Smoke", price: 3800, cat: "Parts", sub: "Guards" },
+        { title: "Bonamici Folding Levers Set - Gold", price: 5600, cat: "Parts", sub: "Guards" },
+        { title: "Rizoma Bar End Weights - Pair", price: 2800, cat: "Accessories", sub: "Mirror" },
+        { title: "GYTR Quick Shifter - Universal", price: 12000, cat: "Parts", sub: "Filters" },
+        { title: "Oxford Heated Grips Premium - 120mm", price: 4500, cat: "Accessories", sub: "Charger" },
+        { title: "Datatag Security System - Full Kit", price: 6800, cat: "Accessories", sub: "Safety" },
+        { title: "Garmin Zumo XT2 GPS Mount Bundle", price: 38000, cat: "Accessories", sub: "GPS" },
+        { title: "Airhawk R Seat Cushion - Medium", price: 7200, cat: "Accessories", sub: "Luggage" },
+        { title: "BikeTrac Tracker + 1yr Subscription", price: 8500, cat: "Accessories", sub: "Safety" },
+        { title: "SW-Motech Crashbars - RE Himalayan", price: 9200, cat: "Parts", sub: "Guards" },
+        { title: "Motul 300V Factory Line 10W-40 4L", price: 3200, cat: "Parts", sub: "Oil" },
+      ],
+    },
+  ];
+
+  const brandProfiles: any[] = [];
+  for (let bi = 0; bi < BRANDS.length; bi++) {
+    const brand = BRANDS[bi];
+    const coords = coordsNear(brand.cityKey, bi * 31);
+
+    // Create a brand owner user
+    const brandOwner = await createUserWithRoles(
+      {
+        email: brand.email,
+        username: brand.username,
+        name: brand.name,
+        emailVerified: true,
+        phoneVerified: true,
+        bio: brand.description.slice(0, 160),
+        location: `${brand.city}, India`,
+        avatar: BRAND_LOGO_URLS[bi % BRAND_LOGO_URLS.length],
+        coverImage: BRAND_BANNER_URLS[bi % BRAND_BANNER_URLS.length],
+        subscriptionTier: "PRO",
+      },
+      ["BRAND_OWNER"],
+      hashedPassword,
+    );
+
+    const bp = await prisma.businessProfile.create({
+      data: {
+        ownerId: brandOwner.id,
+        categories: brand.categories as any[],
+        displayName: brand.name,
+        slug: brand.slug,
+        tagline: brand.tagline,
+        description: brand.description,
+        logoUrl: BRAND_LOGO_URLS[bi % BRAND_LOGO_URLS.length],
+        bannerUrl: BRAND_BANNER_URLS[bi % BRAND_BANNER_URLS.length],
+        city: brand.city,
+        country: "India",
+        latitude: coords.lat,
+        longitude: coords.lng,
+        verification: "APPROVED",
+        phone: `+91${9800000000 + bi}`,
+        email: brand.email,
+        websiteUrl: `https://${brand.slug}.in`,
+        pricingTier: "PRO",
+      },
+    });
+    brandProfiles.push(bp);
+
+    // Create 12 marketplace listings for this brand
+    for (let pi = 0; pi < brand.products.length; pi++) {
+      const p = brand.products[pi];
+      const pCoords = coordsNear(brand.cityKey, bi * 13 + pi);
+      await prisma.marketplaceListing.create({
+        data: {
+          title: p.title,
+          description: `${p.title} — Official ${brand.name} product. Genuine quality, fast shipping, warranty included.`,
+          price: p.price,
+          currency: "INR",
+          category: p.cat,
+          subcategory: p.sub,
+          condition: pi % 3 === 0 ? "New" : "New",
+          images: listingImagesFor(p.sub, bi * 7 + pi),
+          status: ListingStatus.ACTIVE,
+          featured: pi < 3,
+          latitude: pCoords.lat,
+          longitude: pCoords.lng,
+          sellerId: brandOwner.id,
+        },
+      });
+    }
+    listings.push(...Array(brand.products.length).fill(null));
+  }
+  console.log(`✅ Created ${BRANDS.length} brand profiles with ${BRANDS.reduce((s, b) => s + b.products.length, 0)} products`);
+
   console.log("\n🎉 Development seed completed!");
   console.log("\n📊 Summary:");
   console.log(
@@ -2012,6 +2342,7 @@ async function main() {
   console.log(`   - Posts: ${posts.length}`);
   console.log(`   - Friend Groups: ${friendGroups.length}`);
   console.log(`   - Reports: ${reportData.length}`);
+  console.log(`   - Brands: ${brandProfiles.length}`);
   console.log("\n🔑 Credentials (password: password123):");
   console.log("   admin@zoomies.com      → ADMIN + CLUB_OWNER");
   for (const u of devUsers)

@@ -24,6 +24,8 @@ import {
 } from "../../validators/schemas.js";
 import { sendRideJoinRequestEmail } from "../../lib/mailer.js";
 import { ElevationService } from "../../services/elevation.service.js";
+import { computeRideSummary, deriveEffectiveDurationSec } from "../../services/ride-summary.service.js";
+import { markRideCompleted } from "../../lib/socket.js";
 import { requirePro } from "../../lib/subscription.js";
 import { rideToGpx } from "../../lib/gpx.js";
 import { awardBadgeByTitle, awardXp } from "../../lib/xp.js";
@@ -1003,6 +1005,238 @@ router.post(
 
 /**
  * @swagger
+ * /api/rides/{id}/end:
+ *   post:
+ *     summary: End a ride atomically
+ *     description: |
+ *       Single source of truth for completing a ride. In one transaction:
+ *       closes any open break, upserts tracking data, computes the post-ride
+ *       summary (effective duration excludes breaks/detours), transitions
+ *       Ride.status to COMPLETED, and emits `ride-completed` to all sockets in
+ *       the ride room. Replaces the legacy split between `PATCH /rides/:id`
+ *       (status) and `POST /rides/:id/tracking` (metrics).
+ *     tags: [Rides]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Ride ended; returns ride, tracking data, and summary
+ *       403:
+ *         description: Only the ride creator can end the ride
+ *       409:
+ *         description: Ride is already completed or cancelled
+ */
+router.post(
+  "/:id/end",
+  validateParams(idParamSchema),
+  validateBody(
+    z.object({
+      actualStartTime: z.string().datetime().optional().nullable(),
+      actualEndTime: z.string().datetime().optional().nullable(),
+      totalDistanceKm: z.number().min(0).optional(),
+      maxSpeedKmh: z.number().min(0).optional(),
+      avgSpeedKmh: z.number().min(0).optional(),
+      elevationGainM: z.number().min(0).optional().nullable(),
+      routeGeoJson: z.string().optional().nullable(),
+      endedReason: z.enum(["USER_ENDED", "TIMEOUT", "EMERGENCY"]).optional(),
+      riderNotes: z.string().max(5000).optional(),
+    }),
+  ),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+    const userId: string = session.user.id;
+
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      select: { id: true, creatorId: true, status: true },
+    });
+
+    if (!ride) {
+      return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
+    }
+
+    if (ride.creatorId !== userId) {
+      return ApiResponse.forbidden(res, "Only the ride creator can end the ride");
+    }
+
+    if (ride.status === "COMPLETED" || ride.status === "CANCELLED") {
+      return ApiResponse.conflict(res, "Ride has already ended");
+    }
+
+    const now = new Date();
+    const actualEnd = req.body.actualEndTime ? new Date(req.body.actualEndTime) : now;
+
+    const resolvedElevationGain = ElevationService.resolveElevationGain({
+      elevationGainM: req.body.elevationGainM,
+      routeGeoJson: req.body.routeGeoJson,
+    });
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Close any break that's still open. We don't surface a separate
+      //    error for this — the user pressing "End Ride" implicitly ends
+      //    whatever they're currently on.
+      await tx.rideBreak.updateMany({
+        where: { rideId: id, userId, endedAt: null },
+        data: {
+          endedAt: now,
+          // durationSec is best-effort; we don't have startedAt loaded here.
+          // The summary computation falls back to (endedAt - startedAt) when
+          // durationSec is null, so leaving it null is safe.
+        },
+      });
+
+      // 2. Upsert tracking data (same shape as POST /:id/tracking).
+      const trackingData = await tx.rideTrackingData.upsert({
+        where: { rideId: id },
+        create: {
+          rideId: id,
+          actualStartTime: req.body.actualStartTime
+            ? new Date(req.body.actualStartTime)
+            : null,
+          actualEndTime: actualEnd,
+          totalDistanceKm: req.body.totalDistanceKm,
+          maxSpeedKmh: req.body.maxSpeedKmh,
+          avgSpeedKmh: req.body.avgSpeedKmh,
+          elevationGainM: resolvedElevationGain,
+          routeGeoJson: req.body.routeGeoJson,
+          riderNotes: req.body.riderNotes,
+        },
+        update: {
+          actualStartTime: req.body.actualStartTime
+            ? new Date(req.body.actualStartTime)
+            : undefined,
+          actualEndTime: actualEnd,
+          totalDistanceKm: req.body.totalDistanceKm,
+          maxSpeedKmh: req.body.maxSpeedKmh,
+          avgSpeedKmh: req.body.avgSpeedKmh,
+          elevationGainM: resolvedElevationGain ?? undefined,
+          routeGeoJson: req.body.routeGeoJson,
+          riderNotes: req.body.riderNotes,
+        },
+      });
+
+      // 3. Pull all breaks + detours for this ride (post-update, so the
+      //    just-closed break has its endedAt set).
+      const [breaks, detours] = await Promise.all([
+        tx.rideBreak.findMany({
+          where: { rideId: id },
+          select: { startedAt: true, endedAt: true, durationSec: true },
+        }),
+        tx.rideDetour.findMany({
+          where: { rideId: id },
+          select: { id: true },
+        }),
+      ]);
+
+      // 4. Compute summary + effective duration.
+      const summary = computeRideSummary({
+        actualStartTime: trackingData.actualStartTime,
+        actualEndTime: trackingData.actualEndTime,
+        totalDistanceKm: trackingData.totalDistanceKm,
+        maxSpeedKmh: trackingData.maxSpeedKmh,
+        avgSpeedKmh: trackingData.avgSpeedKmh,
+        elevationGainM: trackingData.elevationGainM,
+        breaks,
+        detours,
+      });
+
+      const effectiveDurationSec = deriveEffectiveDurationSec(trackingData, breaks);
+
+      // 5. Aggregate break metrics on the tracking record (used elsewhere
+      //    in the codebase — keep the legacy fields populated).
+      await tx.rideTrackingData.update({
+        where: { rideId: id },
+        data: {
+          breakCount: summary.breakCount,
+          totalBreakMin: Math.round(summary.idleTimeSec / 60),
+          totalDurationMin: Math.round(summary.movingTimeSec / 60),
+          avgSpeedKmh: summary.avgSpeedKmh,
+        },
+      });
+
+      // 6. Persist the snapshot summary.
+      const persistedSummary = await tx.rideSummary.upsert({
+        where: { rideId: id },
+        create: {
+          rideId: id,
+          totalDistanceKm: summary.totalDistanceKm,
+          totalDurationSec: summary.totalDurationSec,
+          movingTimeSec: summary.movingTimeSec,
+          idleTimeSec: summary.idleTimeSec,
+          avgSpeedKmh: summary.avgSpeedKmh,
+          maxSpeedKmh: summary.maxSpeedKmh,
+          elevationGainM: summary.elevationGainM,
+          breakCount: summary.breakCount,
+          detourCount: summary.detourCount,
+          score: summary.score,
+          highlights: summary.highlights,
+          badges: summary.badges,
+        },
+        update: {
+          totalDistanceKm: summary.totalDistanceKm,
+          totalDurationSec: summary.totalDurationSec,
+          movingTimeSec: summary.movingTimeSec,
+          idleTimeSec: summary.idleTimeSec,
+          avgSpeedKmh: summary.avgSpeedKmh,
+          maxSpeedKmh: summary.maxSpeedKmh,
+          elevationGainM: summary.elevationGainM,
+          breakCount: summary.breakCount,
+          detourCount: summary.detourCount,
+          score: summary.score,
+          highlights: summary.highlights,
+          badges: summary.badges,
+          generatedAt: now,
+        },
+      });
+
+      // 7. Transition the ride. `endedAt` is the wall-clock end; effective
+      //    metrics live alongside.
+      const updatedRide = await tx.ride.update({
+        where: { id },
+        data: {
+          status: "COMPLETED",
+          endedAt: now,
+          pausedAt: null,
+          effectiveDurationSec,
+          effectiveDistanceKm: summary.totalDistanceKm,
+          endedReason: req.body.endedReason ?? "USER_ENDED",
+        },
+      });
+
+      return { ride: updatedRide, trackingData, summary: persistedSummary };
+    });
+
+    // 8. Award XP + first-ride badge to the creator. Outside the transaction
+    //    so a downstream notification failure can't roll back the ride end.
+    try {
+      await awardXp(userId, "RIDE_COMPLETED", `ride ${id}`);
+      const completedCount = await prisma.rideParticipant.count({
+        where: { userId, status: "ACCEPTED" },
+      });
+      if (completedCount === 1) {
+        await awardBadgeByTitle(userId, "First Ride");
+      }
+    } catch (err) {
+      console.error("[RIDE_END] post-completion rewards failed", err);
+    }
+
+    // 9. Notify everyone in the ride room and clear the rider cache.
+    await markRideCompleted(id);
+
+    ApiResponse.success(res, result);
+  }),
+);
+
+/**
+ * @swagger
  * /api/rides/{id}/invite:
  *   post:
  *     summary: Invite users to a ride
@@ -1368,6 +1602,11 @@ router.get(
         },
         participants: { where: { userId: session.user.id }, select: { status: true } },
         creator: { select: { id: true, name: true, avatar: true } },
+        // Phase 1 added a denormalized RideSummary snapshot per ride. It's
+        // populated atomically by POST /:id/end. For rides that ended before
+        // the migration this is null — clients fall back to the inline
+        // `summary` block below.
+        summary: true,
       },
     });
 
@@ -1396,6 +1635,10 @@ router.get(
         title: ride.title,
         status: ride.status,
         creator: ride.creator,
+        scheduledAt: ride.scheduledAt,
+        endedAt: ride.endedAt,
+        effectiveDurationSec: ride.effectiveDurationSec,
+        endedReason: ride.endedReason,
       },
       trackingData: td,
       breaks: ride.breaks,
@@ -1411,6 +1654,9 @@ router.get(
         breakCount: completedBreaks.length,
         detourCount: ride.detours.length,
       },
+      // The RideSummary snapshot — score, highlights, badges, idle/moving
+      // time. Null for legacy rides; clients should treat as optional.
+      rideSummary: ride.summary,
     });
   }),
 );

@@ -1,4 +1,5 @@
 import "dotenv/config"; // must be first — ESM hoists all imports before body code runs
+import { initSentry, setupSentryErrorHandler } from "./lib/sentry.js";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -29,6 +30,9 @@ import {
   paymentsRoutes,
   eventRoutes,
   publicRoutes,
+  businessRoutes,
+  adsRoutes,
+  discountRoutes,
 } from "./routes/index.js";
 import {
   initializeScheduledJobs,
@@ -40,6 +44,12 @@ import { requireMonitoringAccess } from "./middlewares/monitoring.js";
 import { createSocketServer } from "./lib/socket.js";
 import { connectPostgres } from "./lib/prisma.js";
 import { healthHandler } from "./routes/health.js";
+import {
+  maintenanceModeMiddleware,
+  signupGateMiddleware,
+} from "./middlewares/appSettings.js";
+
+initSentry(); // env vars are loaded; initialize before any middleware
 
 export const app = express();
 export const httpServer = createServer(app);
@@ -116,6 +126,9 @@ app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Block new registrations when disabled (auth endpoints only)
+app.use("/api/auth", signupGateMiddleware);
+
 // Better Auth handler — MUST be mounted BEFORE express.json()
 // See: https://www.better-auth.com/docs/integrations/express
 app.all("/api/auth/*", toNodeHandler(auth));
@@ -129,6 +142,9 @@ app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 // includes the full route polyline geometry. Default 100kb is too small.
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
+// Maintenance mode gate for API routes (excludes /api/auth and allowlisted paths)
+app.use("/api", maintenanceModeMiddleware);
 
 // Static public assets (email logos, etc.) — resolved relative to the repo
 // root regardless of whether we're running from src (tsx) or dist (node).
@@ -240,11 +256,17 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/public", publicRoutes);
+app.use("/api/business", businessRoutes);
+app.use("/api/ads", adsRoutes);
+app.use("/api/discounts", discountRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
   ApiResponse.notFound(res, "Endpoint not found", ErrorCode.NOT_FOUND);
 });
+
+// Sentry error handler — must be before the global error handler
+setupSentryErrorHandler(app);
 
 // Global error handler
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

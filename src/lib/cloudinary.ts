@@ -4,6 +4,7 @@ import {
   UploadApiResponse,
 } from "cloudinary";
 import { ErrorCode } from "./utils/apiResponse.js";
+import { R2_CONFIGURED, isCloudinaryStorageLimitError, uploadToR2 } from "./r2.js";
 
 // Configure Cloudinary. We surface a loud, actionable error at module load
 // when any of the three env vars are missing — without this, every upload
@@ -406,6 +407,9 @@ export async function uploadMedia(
     ...(options.eager && { eager: options.eager }),
   };
 
+  // Extract mime type from the normalised data URL for the R2 fallback path.
+  const mimeType = normalizedDataUrl.slice(5, normalizedDataUrl.indexOf(";"));
+
   try {
     const result: UploadApiResponse = await cloudinary.uploader.upload(
       normalizedDataUrl,
@@ -418,7 +422,7 @@ export async function uploadMedia(
 
     return {
       publicId: result.public_id,
-      url: result.url + cacheBust,
+      url: result.secure_url + cacheBust,
       secureUrl: result.secure_url + cacheBust,
       format: result.format,
       width: result.width,
@@ -432,6 +436,13 @@ export async function uploadMedia(
         : undefined,
     };
   } catch (error) {
+    if (isCloudinaryStorageLimitError(error) && R2_CONFIGURED) {
+      console.warn(
+        "[CLOUDINARY] Storage/plan limit hit — falling back to Cloudflare R2.",
+      );
+      return uploadToR2(normalizedDataUrl, options.folder, mimeType);
+    }
+
     console.error("Cloudinary upload error:", error);
     throw new Error(`Failed to upload media: ${(error as Error).message}`);
   }

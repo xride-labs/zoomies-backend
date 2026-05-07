@@ -8,7 +8,13 @@
 export enum UserRole {
   ADMIN = "ADMIN",
   CO_ADMIN = "CO_ADMIN",
+  MODERATOR = "MODERATOR",
   CLUB_OWNER = "CLUB_OWNER",
+  CLUB_ADMIN = "CLUB_ADMIN",
+  CLUB_MODERATOR = "CLUB_MODERATOR",
+  BRAND_OWNER = "BRAND_OWNER",
+  BRAND_ADMIN = "BRAND_ADMIN",
+  BRAND_MODERATOR = "BRAND_MODERATOR",
   RIDER = "RIDER",
   SELLER = "SELLER",
 }
@@ -19,7 +25,13 @@ export enum UserRole {
 export const WEB_ACCESS_ROLES: UserRole[] = [
   UserRole.ADMIN,
   UserRole.CO_ADMIN,
+  UserRole.MODERATOR,
   UserRole.CLUB_OWNER,
+  UserRole.CLUB_ADMIN,
+  UserRole.CLUB_MODERATOR,
+  UserRole.BRAND_OWNER,
+  UserRole.BRAND_ADMIN,
+  UserRole.BRAND_MODERATOR,
   UserRole.SELLER,
 ];
 
@@ -27,7 +39,13 @@ export const WEB_ACCESS_ROLES: UserRole[] = [
 export const MOBILE_ACCESS_ROLES: UserRole[] = [
   UserRole.RIDER,
   UserRole.CLUB_OWNER,
+  UserRole.CLUB_ADMIN,
+  UserRole.CLUB_MODERATOR,
+  UserRole.BRAND_OWNER,
+  UserRole.BRAND_ADMIN,
+  UserRole.BRAND_MODERATOR,
   UserRole.SELLER,
+  UserRole.MODERATOR,
   UserRole.CO_ADMIN,
   UserRole.ADMIN,
 ];
@@ -83,34 +101,80 @@ export function normalizeRoles(roles: UserRole[]): UserRole[] {
  */
 export const PERMISSIONS = {
   // Admin
-  VIEW_ADMIN_DASHBOARD: [UserRole.ADMIN, UserRole.CO_ADMIN],
+  VIEW_ADMIN_DASHBOARD: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.MODERATOR],
   MANAGE_USERS: [UserRole.ADMIN, UserRole.CO_ADMIN],
   MANAGE_ADMINS: [UserRole.ADMIN],
   VIEW_METRICS: [UserRole.ADMIN],
-  MODERATE_CONTENT: [UserRole.ADMIN, UserRole.CO_ADMIN],
+  MODERATE_CONTENT: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.MODERATOR],
   VERIFY_CLUBS: [UserRole.ADMIN, UserRole.CO_ADMIN],
 
   // Club owner
-  MANAGE_OWN_CLUBS: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.CLUB_OWNER],
-  MANAGE_CLUB_RIDES: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.CLUB_OWNER],
-  MANAGE_CLUB_MEMBERS: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.CLUB_OWNER],
+  MANAGE_OWN_CLUBS: [
+    UserRole.ADMIN,
+    UserRole.CO_ADMIN,
+    UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+  ],
+  MANAGE_CLUB_RIDES: [
+    UserRole.ADMIN,
+    UserRole.CO_ADMIN,
+    UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+  ],
+  MANAGE_CLUB_MEMBERS: [
+    UserRole.ADMIN,
+    UserRole.CO_ADMIN,
+    UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+  ],
 
   // Seller
   MANAGE_LISTINGS: [UserRole.ADMIN, UserRole.CO_ADMIN, UserRole.SELLER],
 
   // Rider / User (mobile)
-  JOIN_RIDES: [UserRole.RIDER, UserRole.CLUB_OWNER, UserRole.SELLER],
+  JOIN_RIDES: [
+    UserRole.RIDER,
+    UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+    UserRole.BRAND_OWNER,
+    UserRole.BRAND_ADMIN,
+    UserRole.BRAND_MODERATOR,
+    UserRole.SELLER,
+  ],
   CREATE_RIDES: [
     UserRole.RIDER,
     UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+    UserRole.BRAND_OWNER,
+    UserRole.BRAND_ADMIN,
+    UserRole.BRAND_MODERATOR,
     UserRole.SELLER,
     UserRole.CO_ADMIN,
     UserRole.ADMIN,
   ],
-  JOIN_CLUBS: [UserRole.RIDER, UserRole.CLUB_OWNER, UserRole.SELLER],
+  JOIN_CLUBS: [
+    UserRole.RIDER,
+    UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+    UserRole.BRAND_OWNER,
+    UserRole.BRAND_ADMIN,
+    UserRole.BRAND_MODERATOR,
+    UserRole.SELLER,
+  ],
   CREATE_CLUBS: [
     UserRole.RIDER,
     UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+    UserRole.BRAND_OWNER,
+    UserRole.BRAND_ADMIN,
+    UserRole.BRAND_MODERATOR,
     UserRole.SELLER,
     UserRole.CO_ADMIN,
     UserRole.ADMIN,
@@ -118,6 +182,11 @@ export const PERMISSIONS = {
   CREATE_LISTINGS: [
     UserRole.RIDER,
     UserRole.CLUB_OWNER,
+    UserRole.CLUB_ADMIN,
+    UserRole.CLUB_MODERATOR,
+    UserRole.BRAND_OWNER,
+    UserRole.BRAND_ADMIN,
+    UserRole.BRAND_MODERATOR,
     UserRole.SELLER,
     UserRole.CO_ADMIN,
     UserRole.ADMIN,

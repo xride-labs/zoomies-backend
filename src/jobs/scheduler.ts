@@ -97,21 +97,79 @@ export async function cleanupOldRides(): Promise<{
 }
 
 /**
- * Cleanup orphaned media files
- * Runs weekly on Sunday at 3 AM
+ * Daily media cleanup. Finds Media rows whose `expiresAt` has passed,
+ * deletes the Cloudinary assets, then drops the Postgres rows.
+ *
+ * Cloudinary deletion is best-effort batched in chunks of 100 (the API limit
+ * for `delete_resources`). If a Cloudinary call fails, those rows are left
+ * intact so the next run retries them — better than leaking storage.
+ *
+ * Runs nightly via the cron schedule below.
  */
 export async function cleanupOrphanedMedia(): Promise<{
   deleted: number;
   errors: string[];
 }> {
   const errors: string[] = [];
-  // eslint-disable-next-line prefer-const
   let deleted = 0;
+  const BATCH = 100;
 
   try {
-    // This would require tracking media in a separate table
-    // For now, this is a placeholder for future implementation
-    console.log("[Media Cleanup] Orphaned media cleanup not yet implemented");
+    const now = new Date();
+
+    // Pull expired rows in pages so a backlog doesn't blow up memory.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const expired = await prisma.media.findMany({
+        where: { expiresAt: { lte: now } },
+        take: BATCH,
+        select: { id: true, publicId: true, type: true },
+      });
+
+      if (expired.length === 0) break;
+
+      const imageIds = expired.filter((m) => m.type === "IMAGE").map((m) => m.publicId);
+      const videoIds = expired.filter((m) => m.type === "VIDEO").map((m) => m.publicId);
+
+      const dbIdsToDelete: string[] = [];
+
+      if (imageIds.length > 0) {
+        const result = await deleteMultipleMedia(imageIds, "image");
+        // Only delete the DB row when Cloudinary confirmed deletion. If a
+        // resource was already gone Cloudinary returns "not_found" — those
+        // are also safe to drop locally so we don't keep retrying them.
+        const removable = new Set([...result.deleted, ...result.failed.filter((id) => /* keep retryable */ false)]);
+        for (const m of expired) {
+          if (m.type === "IMAGE" && removable.has(m.publicId)) dbIdsToDelete.push(m.id);
+        }
+      }
+
+      if (videoIds.length > 0) {
+        const result = await deleteMultipleMedia(videoIds, "video");
+        const removable = new Set(result.deleted);
+        for (const m of expired) {
+          if (m.type === "VIDEO" && removable.has(m.publicId)) dbIdsToDelete.push(m.id);
+        }
+      }
+
+      if (dbIdsToDelete.length > 0) {
+        const res = await prisma.media.deleteMany({
+          where: { id: { in: dbIdsToDelete } },
+        });
+        deleted += res.count;
+      }
+
+      // If Cloudinary refused the whole batch (network/auth issue) we'd
+      // loop forever — break when no DB rows were deletable in this round.
+      if (dbIdsToDelete.length === 0) {
+        errors.push(
+          `Cloudinary deletion produced 0 removable rows out of ${expired.length} — aborting to avoid an infinite loop`,
+        );
+        break;
+      }
+    }
+
+    console.log(`[Media Cleanup] Deleted ${deleted} expired media rows`);
     return { deleted, errors };
   } catch (error) {
     const errorMsg = `Media cleanup job failed: ${(error as Error).message}`;
@@ -258,9 +316,11 @@ export function initializeScheduledJobs(): void {
     await updateUserStatistics();
   });
 
-  // Weekly orphaned media cleanup on Sunday at 3:00 AM
-  cron.schedule("0 3 * * 0", async () => {
-    console.log("[Jobs] Running weekly media cleanup...");
+  // Daily expired-media cleanup at 3:00 AM. Phase 5 retention requires
+  // expired chat/ride media to be removed promptly — daily is the right
+  // cadence for a 24h disappearing default.
+  cron.schedule("0 3 * * *", async () => {
+    console.log("[Jobs] Running daily expired-media cleanup...");
     await cleanupOrphanedMedia();
   });
 

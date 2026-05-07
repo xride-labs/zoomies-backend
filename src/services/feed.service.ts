@@ -43,6 +43,7 @@ export interface DiscoveryFeedResult {
   upcomingRides: FeedItem[];
   clubsNearYou: FeedItem[];
   newClubs: FeedItem[];
+  nearbyBusinesses: FeedItem[];
   /** Marketplace listings near the user (when available) */
   nearbyListings: FeedItem[];
 }
@@ -62,6 +63,13 @@ const CLUB_WEIGHTS = {
   members: 0.25,
   activity: 0.2,
   newness: 0.2,
+} as const;
+
+const BUSINESS_WEIGHTS = {
+  distance: 0.45,
+  completeness: 0.25,
+  freshness: 0.2,
+  verification: 0.1,
 } as const;
 
 // ──────────────── Normalisation helpers ────────────────
@@ -108,6 +116,37 @@ function memberCountScore(count: number): number {
 function newnessScore(createdAt: Date): number {
   const ageDays = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
   return clamp01(1 - ageDays / 14);
+}
+
+/** Profile completeness score: boosts brands that filled out key fields. */
+function businessCompletenessScore(business: {
+  tagline?: string | null;
+  description?: string | null;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  websiteUrl?: string | null;
+  addressLine1?: string | null;
+  city?: string | null;
+  region?: string | null;
+  country?: string | null;
+}): number {
+  const fields = [
+    business.tagline,
+    business.description,
+    business.logoUrl,
+    business.bannerUrl,
+    business.phone,
+    business.email,
+    business.websiteUrl,
+    business.addressLine1,
+    business.city,
+    business.region,
+    business.country,
+  ];
+  const filled = fields.filter(Boolean).length;
+  return clamp01(filled / fields.length);
 }
 
 // ──────────────── Core query functions ────────────────
@@ -350,29 +389,84 @@ async function queryNearbyListings(q: FeedQuery) {
   return results.slice(skip, skip + limit);
 }
 
+async function queryNearbyBusinesses(q: FeedQuery) {
+  const radiusKm = q.radiusKm ?? 50;
+  const limit = q.limit ?? 10;
+  const page = q.page ?? 1;
+  const skip = (page - 1) * limit;
+
+  const bbox = boundingBox(q.lat, q.lng, radiusKm);
+
+  // Prisma client typing can lag schema updates; cast to reach businessProfile.
+  const businesses = await (prisma as any).businessProfile.findMany({
+    where: {
+      latitude: { not: null, gte: bbox.minLat, lte: bbox.maxLat },
+      longitude: { not: null, gte: bbox.minLng, lte: bbox.maxLng },
+      verification: "APPROVED",
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit * 3,
+  });
+
+  const results: FeedItem[] = [];
+  for (const business of businesses) {
+    if (business.latitude == null || business.longitude == null) continue;
+    const dist = haversineDistance(
+      q.lat,
+      q.lng,
+      business.latitude,
+      business.longitude,
+    );
+    if (dist > radiusKm) continue;
+
+    const score =
+      BUSINESS_WEIGHTS.distance * distanceScore(dist, radiusKm) +
+      BUSINESS_WEIGHTS.completeness * businessCompletenessScore(business) +
+      BUSINESS_WEIGHTS.freshness * freshnessScore(business.createdAt) +
+      BUSINESS_WEIGHTS.verification * 1;
+
+    results.push({
+      distanceKm: Math.round(dist * 10) / 10,
+      score: Math.round(score * 1000) / 1000,
+      data: business,
+    });
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(skip, skip + limit);
+}
+
 // ──────────────── Public API ────────────────
 
 /**
  * Fetch the complete discovery feed in parallel.
- * All five sections are resolved concurrently for <300 ms target.
+ * All six sections are resolved concurrently for <300 ms target.
  */
 export async function getDiscoveryFeed(
   query: FeedQuery,
 ): Promise<DiscoveryFeedResult> {
-  const [nearbyRides, upcomingRides, clubsNearYou, newClubs, nearbyListings] =
-    await Promise.all([
-      queryNearbyRides(query),
-      queryUpcomingRides(query),
-      queryNearbyClubs(query),
-      queryNewClubs(query),
-      queryNearbyListings(query),
-    ]);
+  const [
+    nearbyRides,
+    upcomingRides,
+    clubsNearYou,
+    newClubs,
+    nearbyBusinesses,
+    nearbyListings,
+  ] = await Promise.all([
+    queryNearbyRides(query),
+    queryUpcomingRides(query),
+    queryNearbyClubs(query),
+    queryNewClubs(query),
+    queryNearbyBusinesses(query),
+    queryNearbyListings(query),
+  ]);
 
   return {
     nearbyRides,
     upcomingRides,
     clubsNearYou,
     newClubs,
+    nearbyBusinesses,
     nearbyListings,
   };
 }

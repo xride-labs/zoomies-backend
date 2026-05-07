@@ -6,11 +6,31 @@ import {
   ConversationType,
   MessageType,
   ParticipantRole,
+  DisappearingPolicy,
+  POLICY_TTL_MS,
+  DEFAULT_DISAPPEARING_POLICY,
   IConversation,
   IMessage,
   IAttachment,
   IParticipant,
 } from "../models/chat.model.js";
+
+/**
+ * Compute when a message should expire given a conversation's policy and
+ * the global retention cap. The cap clamps the policy so a misconfigured
+ * retentionMaxDays can't keep messages around longer than legal/policy
+ * allows. Returns null when retention is disabled (OFF policy).
+ */
+export function computeMessageExpiresAt(
+  policy: DisappearingPolicy,
+  retentionMaxDays: number,
+): Date | null {
+  const policyMs = POLICY_TTL_MS[policy];
+  if (policyMs == null) return null;
+  const capMs = Math.max(0, retentionMaxDays) * 24 * 60 * 60 * 1000;
+  const ttlMs = capMs > 0 ? Math.min(policyMs, capMs) : policyMs;
+  return new Date(Date.now() + ttlMs);
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -277,8 +297,36 @@ export class ChatService {
 
   // ── Send a message ──────────────────────────────────────────────────────
 
+  /**
+   * Update a conversation's disappearing-message policy. Only affects
+   * messages sent *after* the change — existing messages keep their
+   * original expiresAt so users don't unexpectedly lose history when a
+   * stricter policy is selected.
+   */
+  static async setDisappearingPolicy(
+    conversationId: string,
+    policy: DisappearingPolicy,
+  ): Promise<void> {
+    await Conversation.findByIdAndUpdate(new Types.ObjectId(conversationId), {
+      $set: { disappearingPolicy: policy },
+    });
+  }
+
   static async sendMessage(input: SendMessageInput): Promise<IMessage> {
     const conversationOid = new Types.ObjectId(input.conversationId);
+
+    // Resolve the conversation's disappearing policy *before* the insert so
+    // the message lands with the correct expiresAt. Reading from a single
+    // findById is fine here — the unread-count updates below already require
+    // a fetch anyway.
+    const convForPolicy = (await Conversation.findById(conversationOid)
+      .select("disappearingPolicy retentionMaxDays")
+      .lean()) as unknown as Pick<IConversation, "disappearingPolicy" | "retentionMaxDays"> | null;
+
+    const expiresAt = computeMessageExpiresAt(
+      convForPolicy?.disappearingPolicy ?? DEFAULT_DISAPPEARING_POLICY,
+      convForPolicy?.retentionMaxDays ?? 30,
+    );
 
     const message = await Message.create({
       conversationId: conversationOid,
@@ -289,6 +337,7 @@ export class ChatService {
       replyTo: input.replyTo ? new Types.ObjectId(input.replyTo) : null,
       readBy: [{ userId: input.senderId, readAt: new Date() }],
       deliveredTo: [{ userId: input.senderId, deliveredAt: new Date() }],
+      expiresAt,
     });
 
     // Update lastMessage on conversation

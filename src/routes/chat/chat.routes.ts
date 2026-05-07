@@ -10,6 +10,7 @@ import {
   conversationQuerySchema,
   updateConversationMetadataSchema,
   muteConversationSchema,
+  setConversationPolicySchema,
   sendMessageSchema,
   editMessageSchema,
   messageQuerySchema,
@@ -26,6 +27,7 @@ import {
   addParticipant,
   removeParticipant,
   muteConversation,
+  setConversationPolicy,
   getMessages,
   sendMessage,
   editMessage,
@@ -235,6 +237,45 @@ router.post(
   requireConversationAccess,
   validateBody(muteConversationSchema),
   asyncHandler(muteConversation),
+);
+
+// ─── Disappearing-message policy ─────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/chat/conversations/{id}/policy:
+ *   patch:
+ *     summary: Set disappearing-message retention for a conversation
+ *     tags: [Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [disappearingPolicy]
+ *             properties:
+ *               disappearingPolicy:
+ *                 type: string
+ *                 enum: [off, day_1, week_1, month_1]
+ *     responses:
+ *       200:
+ *         description: Policy updated
+ */
+router.patch(
+  "/conversations/:id/policy",
+  validateParams(conversationIdParamSchema),
+  requireConversationAccess,
+  validateBody(setConversationPolicySchema),
+  asyncHandler(setConversationPolicy),
 );
 
 // ─── Participants ────────────────────────────────────────────────────────────

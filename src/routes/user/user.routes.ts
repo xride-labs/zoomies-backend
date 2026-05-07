@@ -20,6 +20,7 @@ import {
   updateBikeSchema,
   matchContactsSchema,
 } from "../../validators/schemas.js";
+import { z } from "zod";
 
 const router = Router();
 
@@ -658,10 +659,76 @@ router.patch(
 
 /**
  * @swagger
- * /api/users/{id}/role:
- *   patch:
- *     summary: Update user role
- *     description: Add a role to a user. Requires ADMIN role.
+ * /api/users/{id}/roles:
+ *   get:
+ *     summary: Get user roles
+ *     description: Get all roles assigned to a user. Requires ADMIN role.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User roles retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ */
+router.get(
+  "/:id/roles",
+  validateParams(idParamSchema),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        userRoles: {
+          select: {
+            role: true,
+            assignedAt: true,
+          },
+          orderBy: { assignedAt: "desc" },
+        },
+      },
+    });
+
+    if (!user) {
+      return ApiResponse.notFound(
+        res,
+        "User not found",
+        ErrorCode.USER_NOT_FOUND,
+      );
+    }
+
+    ApiResponse.success(res, {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        roles: user.userRoles,
+      },
+    });
+  }),
+);
+
+/**
+ * @swagger
+ * /api/users/{id}/roles:
+ *   post:
+ *     summary: Add role to user
+ *     description: Add a new role to a user. Requires ADMIN role.
  *     tags: [Users]
  *     security:
  *       - cookieAuth: []
@@ -683,19 +750,19 @@ router.patch(
  *             properties:
  *               role:
  *                 type: string
- *                 enum: [ADMIN, CLUB_OWNER, RIDER, SELLER]
+ *                 enum: [ADMIN, CO_ADMIN, MODERATOR, CLUB_OWNER, CLUB_ADMIN, CLUB_MODERATOR, BRAND_OWNER, BRAND_ADMIN, BRAND_MODERATOR, RIDER, SELLER]
  *     responses:
  *       200:
- *         description: Role updated successfully
+ *         description: Role added successfully
  *       400:
- *         description: Invalid role
+ *         description: Invalid role or role already exists
  *       401:
  *         $ref: '#/components/responses/Unauthorized'
  *       403:
  *         description: Requires ADMIN role
  */
-router.patch(
-  "/:id/role",
+router.post(
+  "/:id/roles",
   validateParams(idParamSchema),
   validateBody(updateUserRoleSchema),
   requireAdmin,
@@ -703,18 +770,36 @@ router.patch(
     const { id } = req.params;
     const { role } = req.body;
 
-    const validRoles = ["ADMIN", "CLUB_OWNER", "RIDER", "SELLER"];
+    const validRoles = [
+      "ADMIN", "CO_ADMIN", "MODERATOR", 
+      "CLUB_OWNER", "CLUB_ADMIN", "CLUB_MODERATOR",
+      "BRAND_OWNER", "BRAND_ADMIN", "BRAND_MODERATOR",
+      "RIDER", "SELLER"
+    ];
+    
     if (!validRoles.includes(role)) {
       return ApiResponse.validationError(res, {
         role: [`Invalid role. Must be one of: ${validRoles.join(", ")}`],
       });
     }
 
-    // Add the role (upsert to avoid duplicates)
-    await prisma.userRoleAssignment.upsert({
+    // Check if role already exists
+    const existingRole = await prisma.userRoleAssignment.findUnique({
       where: { userId_role: { userId: id, role } },
-      create: { userId: id, role },
-      update: {},
+    });
+
+    if (existingRole) {
+      return ApiResponse.error(
+        res,
+        "User already has this role",
+        400,
+        ErrorCode.VALIDATION_ERROR,
+      );
+    }
+
+    // Add the role
+    await prisma.userRoleAssignment.create({
+      data: { userId: id, role },
     });
 
     const user = await prisma.user.findUnique({
@@ -723,15 +808,96 @@ router.patch(
         id: true,
         email: true,
         name: true,
-        userRoles: { select: { role: true } },
+        userRoles: { select: { role: true, assignedAt: true } },
       },
     });
 
-    const roles = user?.userRoles.map((r) => r.role) ?? [];
     ApiResponse.success(
       res,
-      { user: { id: user?.id, email: user?.email, name: user?.name, roles } },
-      "User role updated successfully",
+      { 
+        user: {
+          id: user?.id,
+          email: user?.email,
+          name: user?.name,
+          roles: user?.userRoles || [],
+        },
+      },
+      "Role added successfully",
+    );
+  }),
+);
+
+/**
+ * @swagger
+ * /api/users/{id}/roles/{role}:
+ *   delete:
+ *     summary: Remove role from user
+ *     description: Remove a role from a user. Requires ADMIN role.
+ *     tags: [Users]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: role
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Role removed successfully
+ *       404:
+ *         description: Role not found
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         description: Requires ADMIN role
+ */
+router.delete(
+  "/:id/roles/:role",
+  validateParams(idParamSchema.extend({ role: z.string() })),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, role } = req.params;
+
+    const existingRole = await prisma.userRoleAssignment.findUnique({
+      where: { userId_role: { userId: id, role: role as any } },
+    });
+
+    if (!existingRole) {
+      return ApiResponse.notFound(res, "Role not found for this user");
+    }
+
+    await prisma.userRoleAssignment.delete({
+      where: { userId_role: { userId: id, role: role as any } },
+    });
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        userRoles: { select: { role: true, assignedAt: true } },
+      },
+    });
+
+    ApiResponse.success(
+      res,
+      { 
+        user: {
+          id: user?.id,
+          email: user?.email,
+          name: user?.name,
+          roles: user?.userRoles || [],
+        },
+      },
+      "Role removed successfully",
     );
   }),
 );

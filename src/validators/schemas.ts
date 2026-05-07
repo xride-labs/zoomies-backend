@@ -9,8 +9,16 @@ export const paginationSchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 
+// Accepts both CUID (email/password auth) and Firebase/Google UID formats
+const idSchema = z
+  .string()
+  .regex(
+    /^[a-zA-Z0-9_-]{20,36}$/,
+    "Invalid ID format",
+  );
+
 export const idParamSchema = z.object({
-  id: z.string().cuid("Invalid ID format"),
+  id: idSchema,
 });
 
 // ========================================
@@ -197,15 +205,22 @@ export const createRideSchema = z.object({
   startLng: z.number().min(-180).max(180).optional(),
   endLat: z.number().min(-90).max(90).optional(),
   endLng: z.number().min(-180).max(180).optional(),
-  waypoints: z.array(z.object({
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    name: z.string().max(500).optional(),
-    address: z.string().max(500).optional(),
-  })).max(10).optional(),
-  routeData: z.union([z.string(), z.record(z.string(), z.any()), z.array(z.any())]).optional(),
+  waypoints: z
+    .array(
+      z.object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        name: z.string().max(500).optional(),
+        address: z.string().max(500).optional(),
+      }),
+    )
+    .max(10)
+    .optional(),
+  routeData: z
+    .union([z.string(), z.record(z.string(), z.any()), z.array(z.any())])
+    .optional(),
   maxParticipants: z.number().int().positive().max(1000).optional(),
-  friendGroupId: z.string().cuid().optional(),
+  friendGroupId: idSchema.optional(),
   image: z.string().optional(), // initial banner data URL (base64) — uploaded after create
 });
 
@@ -295,6 +310,8 @@ export const listingQuerySchema = paginationSchema.extend({
   condition: z.string().optional(),
   status: z.enum(["ACTIVE", "SOLD", "INACTIVE"]).optional(),
   search: z.string().optional(),
+  featured: z.enum(["true", "false"]).optional(),
+  sellerId: z.string().optional(),
 });
 
 export const createReviewSchema = z.object({
@@ -354,16 +371,16 @@ export const createPostSchema = z.object({
   type: z.enum(["ride", "content", "listing", "club-activity"]),
   content: z.string().max(5000).optional(),
   images: z.array(z.string().url("Invalid image URL")).max(10).optional(),
-  rideId: z.string().cuid().optional(),
-  listingId: z.string().cuid().optional(),
-  clubId: z.string().cuid().optional(),
+  rideId: idSchema.optional(),
+  listingId: idSchema.optional(),
+  clubId: idSchema.optional(),
 });
 
 export const updatePostSchema = createPostSchema.partial();
 
 export const postQuerySchema = paginationSchema.extend({
   type: z.enum(["ride", "content", "listing", "club-activity"]).optional(),
-  authorId: z.string().cuid().optional(),
+  authorId: idSchema.optional(),
 });
 
 export const createCommentSchema = z.object({
@@ -384,12 +401,12 @@ export const uploadMediaSchema = z.object({
 // ========================================
 
 export const updateUserRoleSchema = z.object({
-  role: z.enum(["ADMIN", "CO_ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]),
+  role: z.enum(["ADMIN", "CO_ADMIN", "MODERATOR", "RIDER", "SELLER", "CLUB_OWNER", "CLUB_ADMIN", "CLUB_MODERATOR", "BRAND_OWNER", "BRAND_ADMIN", "BRAND_MODERATOR"]),
 });
 
 export const adminUsersQuerySchema = paginationSchema.extend({
   role: z
-    .enum(["ADMIN", "CO_ADMIN", "CLUB_OWNER", "RIDER", "SELLER"])
+    .enum(["ADMIN", "CO_ADMIN", "MODERATOR", "CLUB_OWNER", "CLUB_ADMIN", "CLUB_MODERATOR", "BRAND_OWNER", "BRAND_ADMIN", "BRAND_MODERATOR", "RIDER", "SELLER"])
     .optional(),
   status: z.enum(["active", "pending"]).optional(),
   search: z.string().optional(),
@@ -412,7 +429,7 @@ export const createAdminUserSchema = z.object({
   emailVerified: z.boolean().optional(),
   phoneVerified: z.boolean().optional(),
   roles: z
-    .array(z.enum(["ADMIN", "CO_ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]))
+    .array(z.enum(["ADMIN", "CO_ADMIN", "MODERATOR", "RIDER", "SELLER", "CLUB_OWNER", "CLUB_ADMIN", "CLUB_MODERATOR", "BRAND_OWNER", "BRAND_ADMIN", "BRAND_MODERATOR"]))
     .min(1)
     .optional(),
 });
@@ -431,7 +448,7 @@ export const updateAdminUserSchema = z
     emailVerified: z.boolean().optional(),
     phoneVerified: z.boolean().optional(),
     roles: z
-      .array(z.enum(["ADMIN", "CO_ADMIN", "RIDER", "SELLER", "CLUB_OWNER"]))
+      .array(z.enum(["ADMIN", "CO_ADMIN", "MODERATOR", "RIDER", "SELLER", "CLUB_OWNER", "CLUB_ADMIN", "CLUB_MODERATOR", "BRAND_OWNER", "BRAND_ADMIN", "BRAND_MODERATOR"]))
       .optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
@@ -442,9 +459,72 @@ export const weeklyActivityQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(7),
 });
 
+export const adminSettingsUpdateSchema = z
+  .object({
+    siteName: z.string().min(2).max(80).optional(),
+    siteUrl: z.string().url().optional(),
+    supportEmail: z.string().email().optional(),
+    timezone: z.string().max(64).optional(),
+    maintenanceMode: z.boolean().optional(),
+    allowRegistration: z.boolean().optional(),
+    marketplaceEnabled: z.boolean().optional(),
+    clubCreationEnabled: z.boolean().optional(),
+    requireAdmin2FA: z.boolean().optional(),
+    sessionTimeoutMinutes: z.number().int().min(5).max(1440).optional(),
+    passwordStrength: z.enum(["basic", "medium", "strong"]).optional(),
+    loginAttempts: z.number().int().min(1).max(20).optional(),
+    notifyNewUser: z.boolean().optional(),
+    notifyNewReports: z.boolean().optional(),
+    notifyClubVerification: z.boolean().optional(),
+    notifySystemAlerts: z.boolean().optional(),
+    notifyDailySummary: z.boolean().optional(),
+    smtpHost: z.string().max(120).optional(),
+    smtpPort: z.number().int().min(1).max(65535).optional(),
+    smtpUser: z.string().max(120).optional(),
+    smtpPass: z.string().max(200).optional(),
+    fromEmail: z.string().email().optional(),
+    fromName: z.string().max(120).optional(),
+    welcomeEmailSubject: z.string().max(200).optional(),
+    welcomeEmailBody: z.string().max(4000).optional(),
+    primaryColor: z.string().max(20).optional(),
+    darkModeDefault: z.boolean().optional(),
+    compactMode: z.boolean().optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field must be provided",
+  });
+
 export const updateReportSchema = z.object({
   status: z.enum(["pending", "investigating", "resolved", "dismissed"]),
   resolution: z.string().max(2000).optional(),
+});
+
+export const adminNotificationsQuerySchema = paginationSchema.extend({
+  userId: idSchema.optional(),
+  unreadOnly: z.coerce.boolean().optional(),
+  type: z
+    .enum([
+      "RIDE_INVITE",
+      "CLUB_INVITE",
+      "CLUB_JOIN_REQUEST",
+      "CLUB_JOIN_ACCEPTED",
+      "CLUB_ANNOUNCEMENT",
+      "RIDE_JOIN_REQUEST",
+      "RIDE_JOIN_ACCEPTED",
+      "RIDE_REMINDER",
+      "RIDE_CANCELLED",
+      "MARKETPLACE_MESSAGE",
+      "LISTING_SOLD",
+      "LISTING_OFFER",
+      "LISTING_INTERESTED",
+      "MESSAGE",
+      "FOLLOW",
+      "COMMENT",
+      "LIKE",
+      "FRIEND_REQUEST",
+    ])
+    .optional(),
+  search: z.string().max(120).optional(),
 });
 
 export const adminStatsQuerySchema = z.object({
@@ -466,7 +546,7 @@ export const createReportSchema = z.object({
   title: z.string().min(3).max(160),
   description: z.string().min(5).max(2000).optional(),
   priority: z.enum(["low", "medium", "high", "critical"]).optional(),
-  reportedItemId: z.string().cuid(),
+  reportedItemId: idSchema,
   reportedItemType: z.string().min(2).max(50).optional(),
 });
 
@@ -508,7 +588,7 @@ export const myListingsQuerySchema = paginationSchema.extend({
 export const feedQuerySchema = paginationSchema.extend({
   search: z.string().optional(),
   type: z.enum(["ride", "content", "listing", "club-activity"]).optional(),
-  authorId: z.string().cuid().optional(),
+  authorId: idSchema.optional(),
 });
 
 export const friendRequestsQuerySchema = paginationSchema;

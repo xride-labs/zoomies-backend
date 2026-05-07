@@ -31,13 +31,32 @@ async function syncSubscriptionFromEvent(event: DodoWebhookEvent) {
   const data = event.data;
   const metadata = data?.metadata || {};
   const userId = metadata.userId || metadata.user_id;
+  const businessId = metadata.businessId || metadata.business_id;
+  const subscriptionType = metadata.type || metadata.subscriptionType;
   const providerSubscriptionId = data?.subscription_id;
+  const status = data?.status?.toLowerCase() || null;
 
-  if (!userId) {
+  // ── Brand portal subscription ──────────────────────────
+  if (subscriptionType === "BRAND_PRO" && businessId) {
+    const isActive =
+      event.type === "subscription.active" ||
+      event.type === "subscription.renewed" ||
+      event.type === "subscription.created";
+
+    const brandTier = isActive ? "PRO" : "FREE";
+    const brandProExpiresAt = isActive
+      ? toDate(data?.next_billing_date) ?? new Date(Date.now() + 31 * 24 * 60 * 60 * 1000)
+      : null;
+
+    await prisma.businessProfile.update({
+      where: { id: businessId },
+      data: { brandTier, brandProExpiresAt },
+    });
     return;
   }
 
-  const status = data?.status?.toLowerCase() || null;
+  // ── Rider PRO subscription (original flow) ──────────────
+  if (!userId) return;
 
   if (!providerSubscriptionId || !status) {
     await prisma.user.update({
@@ -228,6 +247,101 @@ router.get(
       { portalUrl: portal.portal_url || portal.url },
       "Customer portal created successfully",
     );
+  }),
+);
+
+// Brand portal subscription checkout
+router.post(
+  "/brand-checkout",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { businessId, returnUrl, cancelUrl } = req.body || {};
+
+    if (!businessId) {
+      return ApiResponse.error(res, "businessId is required", 400);
+    }
+
+    const business = await prisma.businessProfile.findFirst({
+      where: { id: businessId, ownerId: session.user.id },
+      select: { id: true, displayName: true, brandTier: true },
+    });
+
+    if (!business) {
+      return ApiResponse.error(res, "Business not found or access denied", 404);
+    }
+
+    if (business.brandTier === "PRO") {
+      return ApiResponse.error(res, "This business already has a Brand Pro subscription", 409);
+    }
+
+    const productId = process.env.DODO_BRAND_MONTHLY_PRODUCT_ID?.trim();
+    if (!productId) {
+      return ApiResponse.error(
+        res,
+        "Brand subscription is not configured yet. Set DODO_BRAND_MONTHLY_PRODUCT_ID in the backend .env.",
+        500,
+      );
+    }
+
+    const webUrl = process.env.EXPO_PUBLIC_WEB_URL || process.env.WEB_URL || "https://zoomies.app";
+    const checkout = await createDodoCheckoutSession({
+      productId,
+      customer: { email: session.user.email, name: session.user.name },
+      returnUrl: returnUrl || `${webUrl}/brand/billing?status=success`,
+      cancelUrl: cancelUrl || `${webUrl}/brand/billing?status=cancelled`,
+      metadata: {
+        type: "BRAND_PRO",
+        businessId: business.id,
+        userId: session.user.id,
+        plan: "monthly",
+      },
+    });
+
+    const checkoutUrl = checkout.checkout_url || checkout.url;
+    if (!checkoutUrl) {
+      return ApiResponse.error(res, "Dodo did not return a checkout URL", 502);
+    }
+
+    ApiResponse.success(res, { checkoutUrl }, "Brand checkout session created");
+  }),
+);
+
+// Get brand subscription status
+router.get(
+  "/brand-status/:businessId",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { businessId } = req.params;
+
+    const business = await prisma.businessProfile.findFirst({
+      where: { id: businessId, ownerId: session.user.id },
+      select: { id: true, brandTier: true, brandProExpiresAt: true },
+    });
+
+    if (!business) {
+      return ApiResponse.error(res, "Business not found or access denied", 404);
+    }
+
+    // Auto-downgrade if the subscription has expired
+    const now = new Date();
+    if (
+      business.brandTier === "PRO" &&
+      business.brandProExpiresAt &&
+      business.brandProExpiresAt < now
+    ) {
+      await prisma.businessProfile.update({
+        where: { id: businessId },
+        data: { brandTier: "FREE", brandProExpiresAt: null },
+      });
+      return ApiResponse.success(res, { tier: "FREE", expiresAt: null });
+    }
+
+    ApiResponse.success(res, {
+      tier: business.brandTier,
+      expiresAt: business.brandProExpiresAt,
+    });
   }),
 );
 

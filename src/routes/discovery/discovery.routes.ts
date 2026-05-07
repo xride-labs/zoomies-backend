@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../../config/auth.js";
-import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
+import { ApiResponse } from "../../lib/utils/apiResponse.js";
 import { validateQuery, asyncHandler } from "../../middlewares/validation.js";
 import { discoveryFeedQuerySchema } from "../../validators/schemas.js";
 import { getDiscoveryFeed } from "../../services/feed.service.js";
@@ -17,7 +17,7 @@ router.use(requireAuth);
  *     summary: Get location-based discovery feed
  *     description: |
  *       Returns a ranked, location-first discovery feed containing nearby rides,
- *       upcoming rides, popular clubs, new clubs, and marketplace listings.
+ *       upcoming rides, popular clubs, new clubs, nearby businesses, and marketplace listings.
  *       All items include their distance from the user in kilometres.
  *     tags: [Discovery]
  *     security:
@@ -101,6 +101,8 @@ router.use(requireAuth);
  *                 clubsNearYou:
  *                   type: array
  *                 newClubs:
+ *                   type: array
+ *                 nearbyBusinesses:
  *                   type: array
  *                 nearbyListings:
  *                   type: array

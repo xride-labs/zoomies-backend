@@ -127,6 +127,61 @@ function removeCachedRider(rideId: string, userId: string) {
 // Track which rides each socket is in so we can clean up on disconnect
 const socketRides = new Map<string, Set<string>>(); // socketId → Set<rideId>
 
+// ── Completed-ride tombstones ──────────────────────────────────────────────
+// When a ride ends we add it here for ~30min. Late `update_location` packets
+// from clients that haven't received the `ride-completed` event yet are
+// rejected without broadcasting, so the live screen can't keep updating
+// after the ride is officially done.
+const completedRideIds = new Map<string, number>(); // rideId → expiry epoch ms
+const COMPLETED_RIDE_TOMBSTONE_MS = 30 * 60_000;
+
+function isRideCompleted(rideId: string): boolean {
+  const exp = completedRideIds.get(rideId);
+  if (!exp) return false;
+  if (exp < Date.now()) {
+    completedRideIds.delete(rideId);
+    return false;
+  }
+  return true;
+}
+
+// ─── Module-scope io reference ───────────────────────────────────────────────
+// Routes need to emit ride lifecycle events (e.g. `ride-completed`) without
+// holding the http server. `getIO()` returns the live instance after
+// `createSocketServer` has run, or null in test environments.
+let ioInstance: Server | null = null;
+
+export function getIO(): Server | null {
+  return ioInstance;
+}
+
+/**
+ * Mark a ride as completed: tombstone the id, drop cached rider positions,
+ * notify everyone in the ride room, and force them to leave so subsequent
+ * location packets can't keep the room alive.
+ */
+export async function markRideCompleted(rideId: string): Promise<void> {
+  completedRideIds.set(rideId, Date.now() + COMPLETED_RIDE_TOMBSTONE_MS);
+
+  // Drop cached rider positions so a rejoin returns an empty list.
+  if (redisCacheClient) {
+    redisCacheClient.del(`ride:${rideId}:riders`).catch(() => {});
+  }
+  rideRiderCache.delete(rideId);
+
+  if (ioInstance) {
+    ioInstance.to(`ride:${rideId}`).emit("ride-completed", { rideId });
+    // Force-leave the room so reconnects don't auto-rejoin a dead ride.
+    try {
+      const sockets = await ioInstance.in(`ride:${rideId}`).fetchSockets();
+      for (const s of sockets) s.leave(`ride:${rideId}`);
+    } catch {
+      // Best-effort — if fetchSockets fails (e.g. Redis adapter hiccup) the
+      // tombstone in `completedRideIds` still blocks broadcasts.
+    }
+  }
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createSocketServer(httpServer: HttpServer): Server {
@@ -144,6 +199,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
     pingTimeout: 20_000,
     transports: ["websocket", "polling"],
   });
+
+  ioInstance = io;
 
   // ── Optional Redis adapter for horizontal scaling ────────────────────────
 
@@ -570,6 +627,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
           ack?.({
             success: false,
             error: "latitude and longitude are required",
+          });
+          return;
+        }
+
+        // Reject location packets for rides that have already ended. Without
+        // this, a slow client could keep broadcasting after the ride summary
+        // is generated and pollute the room for any participant who hasn't
+        // received the `ride-completed` event yet.
+        if (incoming.rideId && isRideCompleted(incoming.rideId)) {
+          ack?.({
+            success: false,
+            error: "Ride has ended",
+            code: "RIDE_COMPLETED",
           });
           return;
         }

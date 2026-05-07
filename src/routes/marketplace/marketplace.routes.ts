@@ -26,11 +26,13 @@ import {
   FREE_MARKETPLACE_LISTING_LIMIT,
   isUserPro,
 } from "../../lib/subscription.js";
+import { requireMarketplaceEnabled } from "../../middlewares/appSettings.js";
 
 const router = Router();
 
 // All marketplace routes require authentication
 router.use(requireAuth);
+router.use(requireMarketplaceEnabled);
 
 const offerIdParamSchema = z.object({
   id: z.string().cuid("Invalid listing ID format"),
@@ -144,12 +146,16 @@ router.get(
       condition,
       status,
       search,
+      featured,
+      sellerId,
     } = req.query as any;
     const skip = (page - 1) * limit;
 
     const where: any = { status: status || "ACTIVE" };
     if (category) where.category = category;
     if (condition) where.condition = condition;
+    if (sellerId) where.sellerId = sellerId;
+    if (featured === "true") where.featured = true;
     if (minPrice !== undefined || maxPrice !== undefined) {
       where.price = {};
       if (minPrice !== undefined) where.price.gte = minPrice;
@@ -174,10 +180,7 @@ router.get(
         take: limit,
         // Featured (Pro-boosted) listings sort first; ties broken by recency.
         // The marketplace_featured_idx covers this query.
-        orderBy: [
-          { featured: "desc" },
-          { createdAt: "desc" },
-        ],
+        orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
         include: {
           seller: {
             select: { id: true, name: true, avatar: true },

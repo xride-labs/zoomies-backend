@@ -10,6 +10,28 @@ export enum ConversationType {
   GROUP = "group",
 }
 
+/**
+ * How long messages live in a conversation before being auto-deleted.
+ * Server enforces via a Mongo TTL index on `expiresAt` (cron-free cleanup).
+ * Mobile clients additionally filter expired messages from in-memory state
+ * so a stale cache doesn't render content that's already gone server-side.
+ */
+export enum DisappearingPolicy {
+  OFF = "off",
+  DAY_1 = "day_1",     // 24h — default for new conversations
+  WEEK_1 = "week_1",
+  MONTH_1 = "month_1", // 30d — maximum retention per Phase 5 spec
+}
+
+export const POLICY_TTL_MS: Record<DisappearingPolicy, number | null> = {
+  [DisappearingPolicy.OFF]: null,
+  [DisappearingPolicy.DAY_1]: 24 * 60 * 60 * 1000,
+  [DisappearingPolicy.WEEK_1]: 7 * 24 * 60 * 60 * 1000,
+  [DisappearingPolicy.MONTH_1]: 30 * 24 * 60 * 60 * 1000,
+};
+
+export const DEFAULT_DISAPPEARING_POLICY = DisappearingPolicy.DAY_1;
+
 export enum MessageType {
   TEXT = "text",
   IMAGE = "image",
@@ -65,6 +87,11 @@ export interface IConversation extends Document {
   lastMessage?: ILastMessage;
   isActive: boolean;
   createdBy: string;
+  // Phase 5 retention — controls how long messages in this conversation live.
+  // `disappearingPolicy` is user-controlled; `retentionMaxDays` is a hard cap
+  // (default 30) that the server clamps the policy to.
+  disappearingPolicy: DisappearingPolicy;
+  retentionMaxDays: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -108,6 +135,10 @@ export interface IMessage extends Document {
   deliveredTo: IDeliveryReceipt[];
   editedAt?: Date;
   deletedAt?: Date;
+  // Phase 5 retention — when set, Mongo's TTL index drops the document at
+  // (expiresAt + 60s ± monitor jitter). Null/undefined means "keep forever"
+  // (only possible when the conversation policy is OFF).
+  expiresAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -183,6 +214,12 @@ const ConversationSchema = new Schema<IConversation>(
     lastMessage: { type: LastMessageSchema, default: null },
     isActive: { type: Boolean, default: true },
     createdBy: { type: String, required: true },
+    disappearingPolicy: {
+      type: String,
+      enum: Object.values(DisappearingPolicy),
+      default: DEFAULT_DISAPPEARING_POLICY,
+    },
+    retentionMaxDays: { type: Number, default: 30 },
   },
   {
     timestamps: true,
@@ -281,11 +318,21 @@ const MessageSchema = new Schema<IMessage>(
     deliveredTo: { type: [DeliveryReceiptSchema], default: [] },
     editedAt: { type: Date, default: null },
     deletedAt: { type: Date, default: null },
+    expiresAt: { type: Date, default: null },
   },
   {
     timestamps: true,
     collection: "messages",
   },
+);
+
+// Mongo TTL index — automatically deletes messages whose `expiresAt` has
+// passed. Mongo runs the monitor every ~60s, so deletion can lag by up to
+// a minute. `expireAfterSeconds: 0` means "expire exactly at the timestamp
+// stored in the field". Null values are skipped (kept forever).
+MessageSchema.index(
+  { expiresAt: 1 },
+  { name: "idx_message_ttl", expireAfterSeconds: 0 },
 );
 
 // ─── Message Indexes ─────────────────────────────────────────────────────────

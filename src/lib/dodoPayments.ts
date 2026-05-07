@@ -159,5 +159,8 @@ export function getDodoConfigStatus() {
     hasAnnualProductId: Boolean(
       process.env.DODO_PRO_ANNUAL_PRODUCT_ID?.trim(),
     ),
+    hasBrandMonthlyProductId: Boolean(
+      process.env.DODO_BRAND_MONTHLY_PRODUCT_ID?.trim(),
+    ),
   };
 }

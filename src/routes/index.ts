@@ -15,3 +15,6 @@ export { default as notificationRoutes } from "./notification/notification.route
 export { default as paymentsRoutes } from "./payments/payments.routes.js";
 export { default as eventRoutes } from "./event/event.routes.js";
 export { default as publicRoutes } from "./public/public.routes.js";
+export { default as businessRoutes } from "./business/business.routes.js";
+export { default as adsRoutes } from "./ads/ads.routes.js";
+export { default as discountRoutes } from "./discount/discount.routes.js";

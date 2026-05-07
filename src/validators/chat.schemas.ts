@@ -65,6 +65,12 @@ export const muteConversationSchema = z.object({
   mute: z.boolean(),
 });
 
+export const disappearingPolicyEnum = z.enum(["off", "day_1", "week_1", "month_1"]);
+
+export const setConversationPolicySchema = z.object({
+  disappearingPolicy: disappearingPolicyEnum,
+});
+
 // ─── Message Schemas ─────────────────────────────────────────────────────────
 
 export const messageTypeEnum = z.enum([

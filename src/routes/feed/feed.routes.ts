@@ -258,7 +258,7 @@ router.get(
  *         description: Post created
  */
 router.post(
-  "/posts",
+  "/",
   validateBody(createPostSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
@@ -366,7 +366,7 @@ router.post(
  *       - bearerAuth: []
  */
 router.get(
-  "/posts/:id",
+  "/:id",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
@@ -418,7 +418,7 @@ router.get(
  *     tags: [Feed]
  */
 router.patch(
-  "/posts/:id",
+  "/:id",
   validateParams(idParamSchema),
   validateBody(createPostSchema.partial()),
   asyncHandler(async (req: Request, res: Response) => {
@@ -466,7 +466,7 @@ router.patch(
  *     tags: [Feed]
  */
 router.delete(
-  "/posts/:id",
+  "/:id",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
@@ -499,7 +499,7 @@ router.delete(
  *     tags: [Feed]
  */
 router.post(
-  "/posts/:id/like",
+  "/:id/like",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
@@ -528,7 +528,7 @@ router.post(
  *     tags: [Feed]
  */
 router.delete(
-  "/posts/:id/like",
+  "/:id/like",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
@@ -550,7 +550,7 @@ router.delete(
  *     tags: [Feed]
  */
 router.get(
-  "/posts/:id/comments",
+  "/:id/comments",
   validateParams(idParamSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
@@ -598,7 +598,7 @@ router.get(
  *     tags: [Feed]
  */
 router.post(
-  "/posts/:id/comments",
+  "/:id/comments",
   validateParams(idParamSchema),
   validateBody(createCommentSchema),
   asyncHandler(async (req: Request, res: Response) => {
@@ -646,7 +646,7 @@ router.post(
  *     tags: [Feed]
  */
 router.delete(
-  "/posts/:id/comments/:commentId",
+  "/:id/comments/:commentId",
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { commentId } = req.params;

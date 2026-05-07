@@ -174,6 +174,34 @@ export async function removeParticipant(
 }
 
 /**
+ * PATCH /api/chat/conversations/:id/policy
+ * Update the conversation's disappearing-message retention policy. Affects
+ * future messages only. Existing messages keep their original expiresAt.
+ */
+export async function setConversationPolicy(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { disappearingPolicy } = req.body as {
+      disappearingPolicy: "off" | "day_1" | "week_1" | "month_1";
+    };
+    await ChatService.setDisappearingPolicy(
+      id,
+      disappearingPolicy as any,
+    );
+    ApiResponse.success(res, { disappearingPolicy }, "Policy updated");
+  } catch (error) {
+    ApiResponse.internalError(
+      res,
+      "Failed to update retention policy",
+      error as Error,
+    );
+  }
+}
+
+/**
  * POST /api/chat/conversations/:id/mute
  * Mute or unmute a conversation for the current user.
  */

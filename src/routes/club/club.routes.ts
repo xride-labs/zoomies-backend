@@ -12,6 +12,7 @@ import {
   requireOwnershipOrAdmin,
   requireClubMembership,
 } from "../../middlewares/rbac.js";
+import { requireClubCreationEnabled } from "../../middlewares/appSettings.js";
 import {
   createClubSchema,
   updateClubSchema,
@@ -151,8 +152,8 @@ router.get(
   "/",
   validateQuery(clubQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { page, limit, isPublic,
-        requiresLicense, verified, search } = req.query as any;
+    const { page, limit, isPublic, requiresLicense, verified, search } =
+      req.query as any;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -623,6 +624,7 @@ router.get(
  */
 router.post(
   "/",
+  requireClubCreationEnabled,
   validateBody(createClubSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
@@ -646,7 +648,7 @@ router.post(
       location,
       clubType,
       isPublic,
-        requiresLicense,
+      requiresLicense,
       image,
       coverImage,
     } = req.body;
@@ -660,7 +662,7 @@ router.post(
         image,
         coverImage,
         isPublic: isPublic ?? true,
-          requiresLicense: requiresLicense ?? false,
+        requiresLicense: requiresLicense ?? false,
         ownerId: session.user.id,
       },
       include: {
@@ -753,7 +755,7 @@ router.patch(
       location,
       clubType,
       isPublic,
-        requiresLicense,
+      requiresLicense,
       image,
       coverImage,
     } = req.body;
@@ -768,7 +770,7 @@ router.patch(
         ...(image !== undefined && { image }),
         ...(coverImage !== undefined && { coverImage }),
         ...(isPublic !== undefined && { isPublic }),
-          ...(requiresLicense !== undefined && { requiresLicense }),
+        ...(requiresLicense !== undefined && { requiresLicense }),
       },
       include: {
         owner: {
@@ -2047,6 +2049,55 @@ router.post(
     }
 
     ApiResponse.created(res, { ride }, "Group ride created successfully");
+  }),
+);
+
+/**
+ * GET /clubs/:id/marketplace
+ * Member-only: returns active listings from club members, newest first.
+ */
+router.get(
+  "/:id/marketplace",
+  validateParams(idParamSchema),
+  validateQuery(
+    z.object({
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(50).default(20),
+      category: z.string().optional(),
+    }),
+  ),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id: clubId } = req.params;
+    const { page, limit, category } = req.query as any;
+    const skip = (page - 1) * limit;
+
+    const members = await prisma.clubMember.findMany({
+      where: { clubId },
+      select: { userId: true },
+    });
+    const memberIds = members.map((m) => m.userId);
+
+    const where: any = { sellerId: { in: memberIds }, status: "ACTIVE" };
+    if (category) where.category = category;
+
+    const [listings, total] = await Promise.all([
+      prisma.marketplaceListing.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
+        include: { seller: { select: { id: true, name: true, avatar: true } } },
+      }),
+      prisma.marketplaceListing.count({ where }),
+    ]);
+
+    ApiResponse.paginated(res, listings, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    });
   }),
 );
 

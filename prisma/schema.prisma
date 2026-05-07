@@ -125,17 +125,21 @@ model User {
   rideRatingsReceived RideRating[] @relation("RideRatingReceiver")
 
   // Ride lifecycle (breaks/detours) relations
-  rideBreaks   RideBreak[]
-  rideDetours  RideDetour[]
+  rideBreaks  RideBreak[]
+  rideDetours RideDetour[]
 
   // Marketplace relations
   listingOffersMade ListingOffer[]    @relation("ListingOffersBuyer")
   listingInterests  ListingInterest[] @relation("ListingInterests")
 
   // Notification relations
-  notifications Notification[]
-  deviceTokens  DeviceToken[]
+  notifications        Notification[]
+  deviceTokens         DeviceToken[]
   billingSubscriptions BillingSubscription[]
+
+  // Phase 6: business profiles owned by this user (brand owners, sellers,
+  // service stores, mechanics, etc.). One user can own multiple businesses.
+  businessProfiles BusinessProfile[]
 
   @@map("users")
 }
@@ -188,9 +192,59 @@ model BillingSubscription {
 enum UserRole {
   ADMIN // Super admin with full platform access (web + mobile)
   CO_ADMIN // Delegated admin with broad dashboard access
+  MODERATOR // Platform moderator - can moderate content, handle reports
   CLUB_OWNER // Club creator/manager (web + mobile)
+  CLUB_ADMIN // Club admin/co-admin
+  CLUB_MODERATOR // Club moderator
+  BRAND_OWNER // Brand/business owner
+  BRAND_ADMIN // Brand admin/co-admin
+  BRAND_MODERATOR // Brand moderator
   RIDER // Default role for new signups - active motorcycle rider (mobile)
   SELLER // Marketplace seller - assigned when user lists items (web + mobile)
+}
+
+// Platform-wide admin settings (single-row, scope = "global")
+model AdminSettings {
+  id           String @id @default(cuid())
+  scope        String @unique @default("global")
+  siteName     String @default("Zoomies") @map("site_name")
+  siteUrl      String @default("https://zoomies.app") @map("site_url")
+  supportEmail String @default("support@zoomies.app") @map("support_email")
+  timezone     String @default("America/Phoenix")
+
+  maintenanceMode     Boolean @default(false) @map("maintenance_mode")
+  allowRegistration   Boolean @default(true) @map("allow_registration")
+  marketplaceEnabled  Boolean @default(true) @map("marketplace_enabled")
+  clubCreationEnabled Boolean @default(true) @map("club_creation_enabled")
+
+  requireAdmin2FA       Boolean @default(false) @map("require_admin_2fa")
+  sessionTimeoutMinutes Int     @default(30) @map("session_timeout_minutes")
+  passwordStrength      String  @default("strong") @map("password_strength")
+  loginAttempts         Int     @default(5) @map("login_attempts")
+
+  notifyNewUser          Boolean @default(true) @map("notify_new_user")
+  notifyNewReports       Boolean @default(true) @map("notify_new_reports")
+  notifyClubVerification Boolean @default(true) @map("notify_club_verification")
+  notifySystemAlerts     Boolean @default(true) @map("notify_system_alerts")
+  notifyDailySummary     Boolean @default(false) @map("notify_daily_summary")
+
+  smtpHost            String @default("smtp.sendgrid.net") @map("smtp_host")
+  smtpPort            Int    @default(587) @map("smtp_port")
+  smtpUser            String @default("apikey") @map("smtp_user")
+  smtpPass            String @default("") @map("smtp_pass")
+  fromEmail           String @default("noreply@zoomies.app") @map("from_email")
+  fromName            String @default("Zoomies") @map("from_name")
+  welcomeEmailSubject String @default("Welcome to Zoomies!") @map("welcome_email_subject")
+  welcomeEmailBody    String @default("Hi {{name}}, Welcome to Zoomies!") @map("welcome_email_body")
+
+  primaryColor    String  @default("#f97316") @map("primary_color")
+  darkModeDefault Boolean @default(false) @map("dark_mode_default")
+  compactMode     Boolean @default(false) @map("compact_mode")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("admin_settings")
 }
 
 // Many-to-many user role assignments (multi-role support)
@@ -228,15 +282,192 @@ model Media {
   listingId String? @map("listing_id")
   postId    String? @map("post_id")
 
+  // Phase 5 retention. `retentionPolicy` is a free-form tag that maps to a
+  // policy in retention.service (e.g. "SHARED_24H", "PROFILE_PERMANENT").
+  // `expiresAt` is the resolved deadline; the daily cleanup job deletes any
+  // row past it from both Postgres and Cloudinary. Null means keep forever.
+  retentionPolicy String?   @map("retention_policy")
+  expiresAt       DateTime? @map("expires_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@index([expiresAt], map: "media_expires_at_idx")
   @@map("media")
 }
 
 enum MediaType {
   IMAGE
   VIDEO
+}
+
+// ─── Phase 6: Business / Brand Portal ────────────────────────────────────────
+
+enum BusinessCategory {
+  BRAND               // motorcycle brands (Triumph, Royal Enfield, ...)
+  GEAR_SELLER         // jackets, gloves, riding pants
+  HELMET_SELLER
+  PARTS_SELLER        // spares, accessories
+  MARKETPLACE_SELLER  // generic seller (new + second-hand)
+  CLUB                // alias for clubs that want a public business page
+  SERVICE_STORE
+  MECHANIC
+  CONSULTATION
+}
+
+enum BusinessVerificationStatus {
+  PENDING       // draft — owner is still filling in details
+  SUBMITTED     // sent for admin review
+  APPROVED      // visible publicly
+  REJECTED      // admin rejected; verificationNotes explains why
+}
+
+/**
+ * Business / brand profile. Owners can set up a public storefront for any
+ * supported category. Verification is required before the profile shows up
+ * in discovery — admins approve via the admin portal.
+ */
+model BusinessProfile {
+  id                String                     @id @default(cuid())
+  ownerId           String                     @map("owner_id")
+  categories        BusinessCategory[]
+  displayName       String                     @map("display_name")
+  // URL-safe slug used in deep links (zoomies://business/<slug>) and the
+  // public web mirror. Generated from displayName at create time; uniqueness
+  // is enforced so two businesses can't share a slug.
+  slug              String                     @unique
+  tagline           String?
+  description       String?                    @db.Text
+  logoUrl           String?                    @map("logo_url")
+  bannerUrl         String?                    @map("banner_url")
+  // Contact + location. All optional so the wizard can save partial drafts.
+  phone             String?
+  email             String?
+  websiteUrl        String?                    @map("website_url")
+  addressLine1      String?                    @map("address_line1")
+  addressLine2      String?                    @map("address_line2")
+  city              String?
+  region            String?
+  country           String?
+  latitude          Float?
+  longitude         Float?
+  pricingTier       String?                    @map("pricing_tier") // BASIC | PRO | ENTERPRISE
+  // Brand portal subscription — FREE (default) or PRO (paid via Dodo).
+  brandTier         String                     @default("FREE") @map("brand_tier")
+  brandProExpiresAt DateTime?                  @map("brand_pro_expires_at")
+  // Verification state machine. Only APPROVED profiles surface in discovery.
+  verification      BusinessVerificationStatus @default(PENDING)
+  verificationNotes String?                    @map("verification_notes") @db.Text
+  // Free-form list of uploaded verification docs:
+  // [{ type: "GST" | "TRADE_LICENSE" | "ID_PROOF", url, uploadedAt }]
+  documents         Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Phase 7 back-relations — campaigns and discounts the business owns.
+  campaigns AdCampaign[]
+  discounts Discount[]
+
+  @@index([verification], map: "business_category_status_idx")
+  @@index([latitude, longitude], map: "business_geo_idx")
+  @@index([ownerId], map: "business_owner_idx")
+  @@map("business_profiles")
+}
+
+// ─── Phase 7: Ads + Discounts ───────────────────────────────────────────────
+
+enum AdPlacementSlot {
+  HOME_FEED            // top of the home tab
+  DISCOVER_TOP         // discover tab hero
+  MARKETPLACE_INLINE   // injected between marketplace listings
+  CHAT_LIST_TOP        // top of the conversations list
+  POST_RIDE_SUMMARY    // shown on the summary screen (NOT during the ride)
+}
+
+enum AdStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  PAUSED
+  COMPLETED
+  REJECTED
+}
+
+/**
+ * Direct-sold ad campaign owned by a business. Admin moderates state
+ * transitions (DRAFT/PENDING → ACTIVE/REJECTED). Free-tier users see
+ * approved campaigns in the slots they target; Pro users see none.
+ *
+ * Ad serving in this app is *intentionally simple*: pick the next ACTIVE
+ * campaign that targets the requested slot and is within its run window.
+ * No bidding, no exchange — Phase 7 is a managed-list system.
+ */
+model AdCampaign {
+  id              String            @id @default(cuid())
+  businessId      String            @map("business_id")
+  business        BusinessProfile   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  title           String
+  ctaLabel        String            @map("cta_label")
+  ctaUrl          String?           @map("cta_url")
+  // App-internal deep link (e.g. "business/<id>"). When present, taps route
+  // in-app instead of opening the external URL.
+  deepLink        String?           @map("deep_link")
+  imageUrl        String            @map("image_url")
+  videoUrl        String?           @map("video_url")
+
+  startsAt        DateTime          @map("starts_at")
+  endsAt          DateTime          @map("ends_at")
+  budgetPaise     Int               @default(0) @map("budget_paise")
+  status          AdStatus          @default(DRAFT)
+  slots           AdPlacementSlot[]
+  // Coarse targeting tags — ride styles, regions, anything that helps the
+  // backend pick a relevant campaign for the requesting user. Free-form
+  // strings; meaning is decided by the targeting service.
+  targetTags      String[]          @map("target_tags")
+  impressionCap   Int?              @map("impression_cap")
+  impressionCount Int               @default(0) @map("impression_count")
+  clickCount      Int               @default(0) @map("click_count")
+  reviewNotes     String?           @map("review_notes") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status, startsAt, endsAt], map: "ad_campaign_status_window_idx")
+  @@index([businessId], map: "ad_campaign_owner_idx")
+  @@map("ad_campaigns")
+}
+
+/**
+ * Promotional discount or offer attached to a business. Surfaced via the
+ * /discounts feed and on the business's public page.
+ */
+model Discount {
+  id             String          @id @default(cuid())
+  businessId     String          @map("business_id")
+  business       BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  code           String?         @unique
+  title          String
+  description    String?         @db.Text
+  imageUrl       String?         @map("image_url")
+  percentOff     Int?            @map("percent_off")
+  amountOffPaise Int?            @map("amount_off_paise")
+  validFrom      DateTime        @map("valid_from")
+  validUntil     DateTime        @map("valid_until")
+  // Free-form list of category/product IDs the discount applies to.
+  appliesTo      Json?           @map("applies_to")
+  isFeatured     Boolean         @default(false) @map("is_featured")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([validFrom, validUntil], map: "discount_window_idx")
+  @@index([businessId], map: "discount_owner_idx")
+  @@map("discounts")
 }
 
 enum RideStatus {
@@ -303,7 +534,7 @@ model Ride {
 
   // Route data (for GPS tracking)
   routeData String?  @map("route_data") // JSON string of waypoints
-  waypoints Json?    @map("waypoints")  // Planned stops: [{latitude, longitude, name?, address?}]
+  waypoints Json?    @map("waypoints") // Planned stops: [{latitude, longitude, name?, address?}]
   images    String[] // Array of image URLs
 
   // Chat fields
@@ -337,6 +568,17 @@ model Ride {
   // Pause/resume tracking — set when an active ride is paused, cleared on resume.
   pausedAt DateTime? @map("paused_at")
 
+  // Effective ride metrics — computed once at end-of-ride from
+  // actualStartTime/actualEndTime minus break and detour overhead. The
+  // top-level `duration` field stays the planned duration in minutes; these
+  // fields are the source of truth for the post-ride summary.
+  effectiveDurationSec Int?    @map("effective_duration_sec")
+  effectiveDistanceKm  Float?  @map("effective_distance_km")
+  endedReason          String? @map("ended_reason") // USER_ENDED | TIMEOUT | EMERGENCY
+
+  // Denormalized summary for fast share-card render and historical browsing.
+  summary RideSummary?
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -345,6 +587,34 @@ model Ride {
   @@index([status, scheduledAt], map: "rides_status_scheduled_idx")
   @@index([createdAt], map: "rides_created_idx")
   @@map("rides")
+}
+
+// Post-ride summary — denormalized snapshot of computed stats. Generated
+// atomically when the ride ends and never recomputed (so badges/score don't
+// shift if scoring rules change later).
+model RideSummary {
+  id              String   @id @default(cuid())
+  rideId          String   @unique @map("ride_id")
+  ride            Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  totalDistanceKm Float    @default(0) @map("total_distance_km")
+  totalDurationSec Int     @default(0) @map("total_duration_sec") // wall-clock from start to end
+  movingTimeSec   Int      @default(0) @map("moving_time_sec")    // duration minus breaks
+  idleTimeSec     Int      @default(0) @map("idle_time_sec")       // sum of break durations
+  avgSpeedKmh     Float    @default(0) @map("avg_speed_kmh")
+  maxSpeedKmh     Float    @default(0) @map("max_speed_kmh")
+  elevationGainM  Float    @default(0) @map("elevation_gain_m")
+  breakCount      Int      @default(0) @map("break_count")
+  detourCount     Int      @default(0) @map("detour_count")
+
+  score           Int      @default(0) // 0..100
+  highlights      Json?    // ["First 100km ride", "New top speed"]
+  badges          String[] // badge slugs awarded for this ride
+  routeSnapshotUrl String? @map("route_snapshot_url") // optional Cloudinary preview
+
+  generatedAt     DateTime @default(now()) @map("generated_at")
+
+  @@map("ride_summaries")
 }
 
 // Ride tracking data — populated during and after live rides
@@ -402,17 +672,17 @@ model RideBreak {
 // Detour proposed/recorded during a ride. Lives separately from the planned
 // route so we can show a "ride deviated here" pin in the post-ride summary.
 model RideDetour {
-  id              String    @id @default(cuid())
-  rideId          String    @map("ride_id")
-  ride            Ride      @relation(fields: [rideId], references: [id], onDelete: Cascade)
-  userId          String    @map("user_id")
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label           String?
-  latitude        Float
-  longitude       Float
-  distanceAddedKm Float?    @map("distance_added_km")
+  id               String   @id @default(cuid())
+  rideId           String   @map("ride_id")
+  ride             Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  userId           String   @map("user_id")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label            String?
+  latitude         Float
+  longitude        Float
+  distanceAddedKm  Float?   @map("distance_added_km")
   durationAddedMin Int?     @map("duration_added_min")
-  addedAt         DateTime  @default(now()) @map("added_at")
+  addedAt          DateTime @default(now()) @map("added_at")
 
   @@index([rideId, addedAt], map: "ride_detours_ride_idx")
   @@map("ride_detours")
@@ -485,8 +755,8 @@ model MarketplaceListing {
   // Pro-only featured flag — boosted listings sort first in /marketplace.
   // featuredUntil lets us auto-expire boosts so a sold listing doesn't stay
   // pinned forever.
-  featured       Boolean   @default(false)
-  featuredUntil  DateTime? @map("featured_until")
+  featured      Boolean   @default(false)
+  featuredUntil DateTime? @map("featured_until")
 
   // Geo coordinates for location-based discovery
   latitude  Float? @map("latitude")

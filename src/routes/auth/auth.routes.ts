@@ -600,6 +600,16 @@ router.post(
   }),
 );
 
+// Returns the current session enriched with DB-sourced roles.
+// Used by the Next.js web app for SSR role checks.
+router.get(
+  "/session",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    ApiResponse.success(res, (req as any).session);
+  }),
+);
+
 // ─── Emergency Contacts ─────────────────────────────────────────────────────
 // CRUD endpoints for the EmergencyContact model. Surfaced under /api/account
 // (the model is per-user) so the mobile safety screen can manage them

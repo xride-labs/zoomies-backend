@@ -176,7 +176,7 @@ function toAdminUserDetail(user: {
     earnedAt: Date;
     badge: {
       id: string;
-      name: string;
+      title: string;
       icon: string | null;
       category: string | null;
       requirement: string | null;
@@ -662,7 +662,7 @@ router.get(
               badge: {
                 select: {
                   id: true,
-                  name: true,
+                  title: true,
                   icon: true,
                   category: true,
                   requirement: true,

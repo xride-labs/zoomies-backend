@@ -60,7 +60,7 @@ router.get(
               displayName: true,
               slug: true,
               logoUrl: true,
-              category: true,
+              categories: true,
             },
           },
         },

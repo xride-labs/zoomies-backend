@@ -517,6 +517,10 @@ model Ride {
   scheduledAt     DateTime?  @map("scheduled_at")
   endedAt         DateTime?  @map("ended_at") // When ride actually ended
   status          RideStatus @default(PLANNED)
+  // Set by the 5-minute reminder cron once the 30-min-before push has fired.
+  // Acts as a dedupe flag so the cron's overlapping windows don't notify
+  // the same ride twice.
+  startReminderSentAt DateTime? @map("start_reminder_sent_at")
 
   // Geo coordinates for location-based discovery (mirrors startLat/startLng on write).
   latitude  Float? @map("latitude")
@@ -1070,6 +1074,11 @@ model UserPreferences {
   showBikes         Boolean @default(true) @map("show_bikes")
   lowDataMode       Boolean @default(false) @map("low_data_mode")
   showStats         Boolean @default(true) @map("show_stats")
+  // Beta sensor/ghost-mode toggles — persisted so the live ride and ghost
+  // location settings survive logout. Default off because the flow assumes
+  // explicit opt-in (battery + privacy implications).
+  sensorMode        Boolean @default(false) @map("sensor_mode")
+  ghostMode         Boolean @default(false) @map("ghost_mode")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -303,6 +303,40 @@ async function queryNearbyClubs(q: FeedQuery) {
     });
   }
 
+  // Most clubs are created without lat/lng (only a free-text location string).
+  // The strict bbox query above silently excludes them, which is why the
+  // "Clubs Near You" carousel renders empty in regions with mostly-untagged
+  // clubs. Fall back to the most popular public clubs without a known
+  // location so the section never looks dead — UI sorts these to the bottom
+  // by leaving distanceKm undefined.
+  if (scored.length < limit) {
+    const fallbackClubs = await prisma.club.findMany({
+      where: {
+        isPublic: true,
+        OR: [
+          { latitude: null },
+          { longitude: null },
+        ],
+      },
+      include: {
+        owner: { select: { id: true, name: true, avatar: true } },
+        _count: { select: { members: true } },
+      },
+      orderBy: { memberCount: "desc" },
+      take: limit - scored.length,
+    });
+
+    const seen = new Set(scored.map((s: any) => s.data.id));
+    for (const club of fallbackClubs) {
+      if (seen.has(club.id)) continue;
+      scored.push({
+        distanceKm: undefined as unknown as number,
+        score: 0,
+        data: club,
+      });
+    }
+  }
+
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(skip, skip + limit);
 }

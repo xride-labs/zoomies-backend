@@ -23,6 +23,7 @@ import {
   updateParticipantStatusSchema,
 } from "../../validators/schemas.js";
 import { sendRideJoinRequestEmail } from "../../lib/mailer.js";
+import { createNotification, notifyUsers } from "../../lib/notifications.js";
 import { ElevationService } from "../../services/elevation.service.js";
 import { computeRideSummary, deriveEffectiveDurationSec } from "../../services/ride-summary.service.js";
 import { markRideCompleted } from "../../lib/socket.js";
@@ -1298,14 +1299,20 @@ router.post(
     z.object({
       userIds: z.array(z.string()).min(1).max(50),
       message: z.string().max(500).optional(),
+      // When true, the organiser is *adding* people directly rather than
+      // inviting them — recipients land as ACCEPTED participants and skip
+      // the approval queue. Default false preserves the existing invite UX
+      // for friend-to-friend invites.
+      directAdd: z.boolean().optional(),
     }),
   ),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { id } = req.params;
-    const { userIds, message } = req.body as {
+    const { userIds, message, directAdd } = req.body as {
       userIds: string[];
       message?: string;
+      directAdd?: boolean;
     };
 
     // Verify ride exists and user is creator
@@ -1340,7 +1347,10 @@ router.post(
       );
     }
 
-    // Create REQUESTED RideParticipant records for each user
+    // The organiser-direct-add path lands recipients as ACCEPTED so they
+    // appear in the Riders list immediately. The invite path keeps the old
+    // REQUESTED behaviour and goes through the approval queue.
+    const targetStatus = directAdd ? "ACCEPTED" : "REQUESTED";
     const invitations = await Promise.all(
       userIds.map((userId) =>
         prisma.rideParticipant.upsert({
@@ -1348,10 +1358,10 @@ router.post(
           create: {
             rideId: id,
             userId,
-            status: "REQUESTED",
+            status: targetStatus,
           },
           update: {
-            status: "REQUESTED", // Resend if previously declined
+            status: targetStatus,
           },
           include: {
             user: {
@@ -1362,23 +1372,21 @@ router.post(
       ),
     );
 
-    // Create Notification records for each invited user
-    const notifications = await Promise.all(
-      userIds.map((userId) =>
-        prisma.notification.create({
-          data: {
-            userId,
-            type: "RIDE_INVITE",
-            title: `You're invited to ${ride.title}`,
-            message:
-              message || `${session.user.name} invited you to join their ride`,
-            relatedType: "ride",
-            relatedId: id,
-            sentViaPush: true,
-          },
-        }),
-      ),
-    );
+    // Send notifications + push + socket via the central helper. Routing
+    // through notifyUsers keeps the inbox row, the real-time socket event,
+    // and the device push in lockstep — the previous prisma.create skipped
+    // both push and the personal-room emit so invitees never got banners.
+    const inviterName = session.user.name || "A rider";
+    await notifyUsers(userIds, {
+      type: "RIDE_INVITE",
+      title: directAdd
+        ? `${inviterName} added you to ${ride.title}`
+        : `You're invited to ${ride.title}`,
+      message: message || `${inviterName} invited you to join their ride`,
+      relatedType: "ride",
+      relatedId: id,
+    });
+    const notifications = userIds;
 
     // Emit Socket.IO event to invited users (if IO instance available)
     const io = (req as any).io;

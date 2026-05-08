@@ -8,6 +8,7 @@ import { ChatService } from "../services/chat.service.js";
 import { LocationService } from "../services/location.service.js";
 import { MessageType } from "../models/chat.model.js";
 import type { IAttachment } from "../models/chat.model.js";
+import { sendPushToUsers } from "./push.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,32 @@ interface JoinRidePayload {
 const onlineUsers = new Map<string, Set<string>>(); // userId → Set<socketId>
 // Track users subscribed to location updates
 const locationSubscribers = new Map<string, Set<string>>(); // rideId → Set<socketId>
+
+// Track which conversations each user has open right now. Used to suppress
+// push notifications for chat messages they are actively reading — Mirrors
+// WhatsApp's "you don't get a banner for the chat you're in" behaviour.
+const activeChatPresence = new Map<string, Set<string>>(); // conversationId → Set<userId>
+
+function addActiveChat(conversationId: string, userId: string) {
+  if (!activeChatPresence.has(conversationId)) {
+    activeChatPresence.set(conversationId, new Set());
+  }
+  activeChatPresence.get(conversationId)!.add(userId);
+}
+
+function removeActiveChat(conversationId: string, userId: string) {
+  const set = activeChatPresence.get(conversationId);
+  if (!set) return;
+  set.delete(userId);
+  if (set.size === 0) activeChatPresence.delete(conversationId);
+}
+
+export function isUserActiveInChat(
+  conversationId: string,
+  userId: string,
+): boolean {
+  return activeChatPresence.get(conversationId)?.has(userId) ?? false;
+}
 
 // ── Rider location cache for late joiners ─────────────────────────────────
 // Stores the last-known location for every rider currently in a live ride.
@@ -306,6 +333,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           }
 
           socket.join(`conversation:${conversationId}`);
+          addActiveChat(conversationId, userId);
 
           // Mark messages as delivered
           const { messages } = await ChatService.getMessages(conversationId, {
@@ -335,6 +363,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "leave_conversation",
       (payload: JoinConversationPayload, ack?: (...args: any[]) => void) => {
         socket.leave(`conversation:${payload.conversationId}`);
+        removeActiveChat(payload.conversationId, userId);
         ack?.({ success: true });
       },
     );
@@ -387,19 +416,53 @@ export function createSocketServer(httpServer: HttpServer): Server {
           const conversation =
             await ChatService.getConversationById(conversationId);
           if (conversation) {
+            const recipientsForPush: string[] = [];
             for (const p of conversation.participants) {
-              if (p.userId !== userId) {
-                io.to(`user:${p.userId}`).emit("conversation_updated", {
-                  conversationId,
-                  lastMessage: {
-                    text: (text ?? "").slice(0, 200) || "Attachment",
-                    senderId: userId,
-                    senderName: userName,
-                    sentAt: message.createdAt,
-                    messageType: messageType ?? "text",
-                  },
-                });
+              if (p.userId === userId) continue;
+
+              io.to(`user:${p.userId}`).emit("conversation_updated", {
+                conversationId,
+                lastMessage: {
+                  text: (text ?? "").slice(0, 200) || "Attachment",
+                  senderId: userId,
+                  senderName: userName,
+                  sentAt: message.createdAt,
+                  messageType: messageType ?? "text",
+                },
+              });
+
+              // Suppress push for participants who currently have this chat
+              // open. Stale presence (socket dropped without leave) self-heals
+              // on disconnect, so the worst case is one missing banner — the
+              // unread badge still updates via conversation_updated above.
+              if (!isUserActiveInChat(conversationId, p.userId)) {
+                recipientsForPush.push(p.userId);
               }
+            }
+
+            if (recipientsForPush.length) {
+              const previewText =
+                (text ?? "").trim() ||
+                (attachments?.length ? `Sent ${attachments[0].type}` : "New message");
+              const convoTitle =
+                conversation.metadata?.name ||
+                (conversation.type === "direct" ? userName : "New message");
+              sendPushToUsers(recipientsForPush, {
+                title: convoTitle,
+                body:
+                  conversation.type === "direct"
+                    ? previewText.slice(0, 140)
+                    : `${userName}: ${previewText.slice(0, 140)}`,
+                channelId: "messages",
+                data: {
+                  notificationType: "MESSAGE",
+                  relatedType: "conversation",
+                  relatedId: conversationId,
+                  messageId: message._id.toString(),
+                },
+              }).catch((err) =>
+                console.error("[socket] message push failed:", err),
+              );
             }
           }
 
@@ -928,6 +991,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
       onlineUsers.get(userId)?.delete(socket.id);
       if (onlineUsers.get(userId)?.size === 0) {
         onlineUsers.delete(userId);
+        // Once the user has no live sockets we can no longer assume they
+        // have any chat open — drop them from every active-chat set so
+        // pushes for new messages start landing again.
+        for (const [convId, set] of activeChatPresence) {
+          if (set.delete(userId) && set.size === 0) {
+            activeChatPresence.delete(convId);
+          }
+        }
       }
 
       // Remove this rider from all ride caches they were part of

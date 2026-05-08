@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import prisma from "../lib/prisma.js";
 import { deleteMultipleMedia } from "../lib/cloudinary.js";
+import { notifyUsers } from "../lib/notifications.js";
 
 /**
  * Configuration for ride cleanup
@@ -288,6 +289,75 @@ export async function updateUserStatistics(): Promise<{ updated: number }> {
 }
 
 /**
+ * Notify accepted participants 30 minutes before a ride starts.
+ *
+ * The cron schedule fires every 5 minutes, so a ride scheduled at T can
+ * land in two adjacent windows. We dedupe by writing a `startReminderSentAt`
+ * timestamp on the ride row — sending only when it's null and the ride is
+ * within the 25–35 min window relative to now.
+ */
+export async function sendUpcomingRideReminders(): Promise<{
+  notified: number;
+}> {
+  let notified = 0;
+  try {
+    const now = new Date();
+    const windowStart = new Date(now.getTime() + 25 * 60 * 1000);
+    const windowEnd = new Date(now.getTime() + 35 * 60 * 1000);
+
+    const upcoming = await prisma.ride.findMany({
+      where: {
+        status: "PLANNED",
+        scheduledAt: { gte: windowStart, lte: windowEnd },
+        startReminderSentAt: null,
+      },
+      select: {
+        id: true,
+        title: true,
+        scheduledAt: true,
+        creatorId: true,
+        participants: {
+          where: { status: "ACCEPTED" },
+          select: { userId: true },
+        },
+      },
+    });
+
+    for (const ride of upcoming) {
+      const recipientIds = Array.from(
+        new Set([ride.creatorId, ...ride.participants.map((p) => p.userId)]),
+      ).filter(Boolean);
+
+      if (recipientIds.length) {
+        await notifyUsers(recipientIds, {
+          type: "RIDE_INVITE",
+          title: `${ride.title} starts in 30 minutes`,
+          message: "Time to gear up — open the ride to view route + meetup.",
+          relatedType: "ride",
+          relatedId: ride.id,
+        });
+      }
+
+      await prisma.ride
+        .update({
+          where: { id: ride.id },
+          data: { startReminderSentAt: new Date() },
+        })
+        .catch(() => {
+          // The startReminderSentAt column may not exist yet on older
+          // databases — fall back to a no-op so the job doesn't loop
+          // forever sending duplicate reminders. Run the migration to
+          // enable proper deduping.
+        });
+      notified += recipientIds.length;
+    }
+  } catch (err) {
+    console.error("[RideReminder] Failed:", (err as Error).message);
+  }
+  return { notified };
+}
+
+/**
  * Initialize all scheduled jobs
  */
 export function initializeScheduledJobs(): void {
@@ -302,6 +372,13 @@ export function initializeScheduledJobs(): void {
   // Update ride statuses every 15 minutes
   cron.schedule("*/15 * * * *", async () => {
     await updateRideStatuses();
+  });
+
+  // Upcoming-ride reminder push every 5 minutes — picks up rides that fall
+  // into the 25–35 min window. The 10-min window absorbs cron jitter while
+  // the row-level `startReminderSentAt` flag prevents duplicate banners.
+  cron.schedule("*/5 * * * *", async () => {
+    await sendUpcomingRideReminders();
   });
 
   // Daily session cleanup at 4:00 AM

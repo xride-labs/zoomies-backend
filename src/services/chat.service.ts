@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import prisma from "../lib/prisma.js";
 import {
   Conversation,
   Message,
@@ -14,6 +15,72 @@ import {
   IAttachment,
   IParticipant,
 } from "../models/chat.model.js";
+
+// ─── Participant Hydration ──────────────────────────────────────────────────
+//
+// Conversations live in MongoDB but Users live in Postgres, so participants
+// are stored as bare userIds. Mobile lists conversations using whichever
+// participant isn't the viewer — without hydrated names this falls back to
+// rendering raw cuids as conversation titles. These helpers do a single
+// batched Prisma lookup per response and merge name/avatar onto each
+// participant in-memory before serialising.
+
+export interface HydratedParticipant extends Omit<IParticipant, "nickname"> {
+  nickname?: string;
+  displayName?: string;
+  avatar?: string | null;
+  username?: string | null;
+}
+
+export interface HydratedConversation extends Omit<IConversation, "participants"> {
+  participants: HydratedParticipant[];
+}
+
+export async function hydrateParticipants<
+  T extends { participants: IParticipant[] | HydratedParticipant[] },
+>(conversations: T[]): Promise<(T & { participants: HydratedParticipant[] })[]> {
+  if (!conversations.length) return conversations as any;
+
+  const ids = new Set<string>();
+  for (const c of conversations) {
+    for (const p of c.participants) {
+      if (p?.userId && p.userId !== "system") ids.add(p.userId);
+    }
+  }
+  if (!ids.size) return conversations as any;
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: Array.from(ids) } },
+    select: { id: true, name: true, username: true, avatar: true, image: true },
+  });
+  const byId = new Map(users.map((u) => [u.id, u]));
+
+  return conversations.map((c) => ({
+    ...c,
+    participants: c.participants.map((p: IParticipant | HydratedParticipant) => {
+      const u = byId.get(p.userId);
+      const displayName = u?.name ?? u?.username ?? null;
+      return {
+        ...p,
+        // Keep `nickname` populated for mobile clients whose `getDisplayName`
+        // already falls back to it — this means the fix lands without a
+        // mobile release.
+        nickname: p.nickname || displayName || undefined,
+        displayName: displayName ?? undefined,
+        avatar: u?.avatar ?? u?.image ?? null,
+        username: u?.username ?? null,
+      } as HydratedParticipant;
+    }),
+  })) as any;
+}
+
+export async function hydrateConversation<
+  T extends { participants: IParticipant[] | HydratedParticipant[] },
+>(conversation: T | null): Promise<(T & { participants: HydratedParticipant[] }) | null> {
+  if (!conversation) return null;
+  const [hydrated] = await hydrateParticipants([conversation]);
+  return hydrated;
+}
 
 /**
  * Compute when a message should expire given a conversation's policy and

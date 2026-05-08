@@ -1,5 +1,9 @@
 import type { Request, Response } from "express";
-import { ChatService } from "../services/chat.service.js";
+import {
+  ChatService,
+  hydrateParticipants,
+  hydrateConversation,
+} from "../services/chat.service.js";
 import { ConversationType, MessageType } from "../models/chat.model.js";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
 
@@ -24,8 +28,10 @@ export async function listConversations(
       limit: limit ? parseInt(limit, 10) : undefined,
     });
 
+    const conversations = await hydrateParticipants(result.conversations);
+
     ApiResponse.success(res, {
-      conversations: result.conversations,
+      conversations,
       nextCursor: result.nextCursor,
     });
   } catch (error) {
@@ -47,7 +53,8 @@ export async function getConversation(
 ): Promise<void> {
   try {
     const conversation = (req as any).conversation;
-    ApiResponse.success(res, conversation);
+    const hydrated = await hydrateConversation(conversation);
+    ApiResponse.success(res, hydrated);
   } catch (error) {
     ApiResponse.internalError(
       res,
@@ -80,7 +87,8 @@ export async function createConversation(
       createdBy: userId,
     });
 
-    ApiResponse.created(res, conversation, "Conversation created");
+    const hydrated = await hydrateConversation(conversation.toObject ? conversation.toObject() : conversation);
+    ApiResponse.created(res, hydrated, "Conversation created");
   } catch (error) {
     ApiResponse.internalError(
       res,

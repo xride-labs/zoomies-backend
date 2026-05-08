@@ -4,6 +4,7 @@ import { requireAuth } from "../../config/auth.js";
 import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { asyncHandler, validateQuery } from "../../middlewares/validation.js";
 import { friendRequestsQuerySchema } from "../../validators/schemas.js";
+import { createNotification } from "../../lib/notifications.js";
 
 const router = Router();
 
@@ -260,19 +261,30 @@ router.post(
 
     const friendship = await prisma.friendship.create({
       data: { senderId: userId, receiverId, status: "PENDING" },
-      include: { receiver: { select: { id: true, name: true, avatar: true } } },
+      include: {
+        receiver: { select: { id: true, name: true, avatar: true } },
+        sender: { select: { id: true, name: true, username: true, avatar: true } },
+      },
     });
 
-    // Create Notification for the receiver
-    await prisma.notification.create({
-      data: {
-        userId: receiverId,
-        type: "FRIEND_REQUEST",
-        title: "New Friend Request",
-        message: `${(req as any).session?.user?.name || "Someone"} sent you a friend request.`,
-        relatedType: "friendship",
-        relatedId: friendship.id,
-      },
+    // Resolve a real name. Session.user.name can be null (OAuth users who
+    // haven't completed onboarding), so fall back to the freshly-included
+    // sender record before reaching for the "Someone" placeholder.
+    const senderName =
+      (req as any).session?.user?.name ||
+      friendship.sender?.name ||
+      friendship.sender?.username ||
+      "A rider";
+
+    // Use createNotification so the receiver also gets a push + socket event,
+    // not just a row in their inbox.
+    await createNotification({
+      userId: receiverId,
+      type: "FRIEND_REQUEST",
+      title: `${senderName} wants to be friends`,
+      message: "Tap to accept or decline.",
+      relatedType: "friendship",
+      relatedId: friendship.id,
     });
 
     return ApiResponse.created(res, { friendship }, "Friend request sent");
@@ -316,7 +328,24 @@ router.patch(
     const updated = await prisma.friendship.update({
       where: { id: req.params.id },
       data: { status: "ACCEPTED" },
+      include: {
+        receiver: { select: { id: true, name: true, username: true } },
+      },
     });
+
+    // Notify the original requester that their friend request was accepted.
+    // Uses FRIEND_REQUEST type since the schema doesn't have a separate
+    // accepted enum value — title disambiguates.
+    const accepterName =
+      updated.receiver?.name || updated.receiver?.username || "Someone";
+    createNotification({
+      userId: updated.senderId,
+      type: "FRIEND_REQUEST",
+      title: `${accepterName} accepted your friend request`,
+      message: "You're now friends. Say hi!",
+      relatedType: "user",
+      relatedId: userId,
+    }).catch((err) => console.error("[friendship] accept notify failed:", err));
 
     return ApiResponse.success(
       res,

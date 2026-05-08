@@ -580,6 +580,11 @@ export const updatePreferencesSchema = z
     showLocation: z.boolean().optional(),
     showBikes: z.boolean().optional(),
     showStats: z.boolean().optional(),
+    // Mobile-only persistence flags. Without these the PATCH errors with
+    // "Validation failed for body" the moment the user toggles the switch.
+    lowDataMode: z.boolean().optional(),
+    sensorMode: z.boolean().optional(),
+    ghostMode: z.boolean().optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: "At least one preference must be provided",

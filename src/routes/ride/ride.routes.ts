@@ -120,6 +120,76 @@ router.use(requireAuth);
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
+/**
+ * GET /api/rides/mine — the authenticated user's own rides, with the per-ride
+ * RideSummary snapshot attached so the mobile profile carousel can render a
+ * map preview + distance/time/score without a second fetch.
+ *
+ * Defaults to `status=COMPLETED` because the carousel is "past rides". Pass
+ * `status=all` to get everything (used by the full-list screen).
+ */
+router.get(
+  "/mine",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const userId: string = session.user.id;
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const statusFilter = (req.query.status as string | undefined) ?? "COMPLETED";
+
+    const where: any = { creatorId: userId };
+    if (statusFilter !== "all") where.status = statusFilter;
+
+    const [rides, total] = await Promise.all([
+      prisma.ride.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: [{ endedAt: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          startLocation: true,
+          endLocation: true,
+          startLat: true,
+          startLng: true,
+          endLat: true,
+          endLng: true,
+          scheduledAt: true,
+          endedAt: true,
+          createdAt: true,
+          keepPermanently: true,
+          waypoints: true,
+          trackingData: {
+            select: { routeGeoJson: true, totalDistanceKm: true, maxSpeedKmh: true },
+          },
+          summary: {
+            select: {
+              totalDistanceKm: true,
+              totalDurationSec: true,
+              movingTimeSec: true,
+              idleTimeSec: true,
+              avgSpeedKmh: true,
+              maxSpeedKmh: true,
+              score: true,
+              badges: true,
+            },
+          },
+        },
+      }),
+      prisma.ride.count({ where }),
+    ]);
+
+    ApiResponse.paginated(res, rides, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    });
+  }),
+);
+
 router.get(
   "/",
   validateQuery(rideQuerySchema),
@@ -1048,12 +1118,19 @@ router.post(
       routeGeoJson: z.string().optional().nullable(),
       endedReason: z.enum(["USER_ENDED", "TIMEOUT", "EMERGENCY"]).optional(),
       riderNotes: z.string().max(5000).optional(),
+      // Auto-idle time the client detected (rider stationary without
+      // manually pressing pause). We prefer this over the break-derived
+      // idleTimeSec when present, because the client has the real
+      // stationary signal; the server would only know that no break was
+      // logged at all.
+      clientIdleSec: z.number().int().min(0).max(86_400).optional(),
     }),
   ),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { id } = req.params;
     const userId: string = session.user.id;
+    const clientIdleSec: number | undefined = req.body.clientIdleSec;
 
     const ride = await prisma.ride.findUnique({
       where: { id },
@@ -1163,6 +1240,12 @@ router.post(
         },
       });
 
+      // Prefer client-detected auto-idle when provided. Falls back to the
+      // break-derived idle (which is 0 if the rider never logged a break).
+      const finalIdleTimeSec = typeof clientIdleSec === "number" && clientIdleSec > summary.idleTimeSec
+        ? clientIdleSec
+        : summary.idleTimeSec;
+
       // 6. Persist the snapshot summary.
       const persistedSummary = await tx.rideSummary.upsert({
         where: { rideId: id },
@@ -1171,7 +1254,7 @@ router.post(
           totalDistanceKm: summary.totalDistanceKm,
           totalDurationSec: summary.totalDurationSec,
           movingTimeSec: summary.movingTimeSec,
-          idleTimeSec: summary.idleTimeSec,
+          idleTimeSec: finalIdleTimeSec,
           avgSpeedKmh: summary.avgSpeedKmh,
           maxSpeedKmh: summary.maxSpeedKmh,
           elevationGainM: summary.elevationGainM,
@@ -1185,7 +1268,7 @@ router.post(
           totalDistanceKm: summary.totalDistanceKm,
           totalDurationSec: summary.totalDurationSec,
           movingTimeSec: summary.movingTimeSec,
-          idleTimeSec: summary.idleTimeSec,
+          idleTimeSec: finalIdleTimeSec,
           avgSpeedKmh: summary.avgSpeedKmh,
           maxSpeedKmh: summary.maxSpeedKmh,
           elevationGainM: summary.elevationGainM,

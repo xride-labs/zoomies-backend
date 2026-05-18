@@ -115,6 +115,10 @@ const rideRiderCache = new Map<string, Map<string, CachedRiderLocation>>();
 // Redis client reused from the adapter setup (null when REDIS_URL is absent)
 let redisCacheClient: Redis | null = null;
 
+export function getRedisClient(): Redis | null {
+  return redisCacheClient;
+}
+
 async function cacheRiderLocation(
   rideId: string,
   userId: string,
@@ -141,10 +145,15 @@ async function getCachedRiders(rideId: string): Promise<CachedRiderLocation[]> {
     try {
       const data = await redisCacheClient.hgetall(`ride:${rideId}:riders`);
       if (data && Object.keys(data).length > 0) {
-        return Object.values(data).map((v) => JSON.parse(v) as CachedRiderLocation);
+        return Object.values(data).map(
+          (v) => JSON.parse(v) as CachedRiderLocation,
+        );
       }
     } catch {
       // Redis read failure — fall through to in-memory
+      console.warn(
+        `[SOCKET] Failed to read rider cache from Redis for ride ${rideId}`,
+      );
     }
   }
   const cache = rideRiderCache.get(rideId);
@@ -209,7 +218,8 @@ export async function fanoutNewMessage(opts: {
   const { conversationId, senderId, senderName, message } = opts;
 
   io?.to(`conversation:${conversationId}`).emit("new_message", {
-    message: typeof message?.toObject === "function" ? message.toObject() : message,
+    message:
+      typeof message?.toObject === "function" ? message.toObject() : message,
     conversationId,
   });
 
@@ -256,9 +266,7 @@ export async function fanoutNewMessage(opts: {
         relatedId: conversationId,
         messageId: message._id.toString(),
       },
-    }).catch((err) =>
-      console.error("[chat] REST message push failed:", err),
-    );
+    }).catch((err) => console.error("[chat] REST message push failed:", err));
   }
 }
 
@@ -534,7 +542,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
             if (recipientsForPush.length) {
               const previewText =
                 (text ?? "").trim() ||
-                (attachments?.length ? `Sent ${attachments[0].type}` : "New message");
+                (attachments?.length
+                  ? `Sent ${attachments[0].type}`
+                  : "New message");
               const convoTitle =
                 conversation.metadata?.name ||
                 (conversation.type === "direct" ? userName : "New message");
@@ -1089,9 +1099,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             relatedType: "ride",
             relatedId: payload.rideId,
           },
-        }).catch((err) =>
-          console.error("[socket] SOS push failed:", err),
-        );
+        }).catch((err) => console.error("[socket] SOS push failed:", err));
       } catch (err) {
         console.error("[socket] SOS persist/push failed:", err);
       }

@@ -705,4 +705,390 @@ router.get(
   }),
 );
 
+// ─── Helper: check owner OR team member ────────────────────────────────────
+// Returns the business if the session user is the owner or an active member.
+// minRole: null = any member, "ADMIN" = admin or owner only.
+
+async function ensureBusinessAccess(
+  req: Request,
+  res: Response,
+  minRole: "ADMIN" | null = null,
+): Promise<{ business: { id: string; ownerId: string; verification: string } } | null> {
+  const session = (req as any).session;
+  const { id } = req.params;
+
+  const business = await prisma.businessProfile.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true, verification: true },
+  });
+  if (!business) {
+    ApiResponse.notFound(res, "Business not found");
+    return null;
+  }
+
+  if (business.ownerId === session.user.id) {
+    return { business };
+  }
+
+  const member = await prisma.brandMember.findUnique({
+    where: { businessId_userId: { businessId: id, userId: session.user.id } },
+    select: { role: true },
+  });
+
+  if (!member) {
+    ApiResponse.forbidden(res, "Access denied");
+    return null;
+  }
+
+  if (minRole === "ADMIN" && !["OWNER", "ADMIN"].includes(member.role)) {
+    ApiResponse.forbidden(res, "Admin or owner role required");
+    return null;
+  }
+
+  return { business };
+}
+
+// ─── Team members ──────────────────────────────────────────────────────────
+
+const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(["ADMIN", "MODERATOR", "MEMBER"]).default("MEMBER"),
+});
+
+const updateMemberRoleSchema = z.object({
+  role: z.enum(["ADMIN", "MODERATOR", "MEMBER"]),
+});
+
+const memberParamSchema = z.object({
+  id: z.string().min(1),
+  uid: z.string().min(1),
+});
+
+router.get(
+  "/:id/members",
+  requireAuth,
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const members = await prisma.brandMember.findMany({
+      where: { businessId: ctx.business.id },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+      orderBy: { joinedAt: "asc" },
+    });
+    ApiResponse.success(res, members);
+  }),
+);
+
+router.post(
+  "/:id/members",
+  requireAuth,
+  validateParams(idParamSchema),
+  validateBody(inviteMemberSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const ctx = await ensureBusinessAccess(req, res, "ADMIN");
+    if (!ctx) return;
+
+    const { email, role } = req.body;
+    const target = await prisma.user.findFirst({
+      where: { email },
+      select: { id: true, name: true, email: true },
+    });
+    if (!target) {
+      return ApiResponse.notFound(res, "No user found with that email");
+    }
+    if (target.id === ctx.business.ownerId) {
+      return ApiResponse.conflict(res, "Owner is already a member");
+    }
+
+    const member = await prisma.brandMember.upsert({
+      where: { businessId_userId: { businessId: ctx.business.id, userId: target.id } },
+      create: {
+        businessId: ctx.business.id,
+        userId: target.id,
+        role,
+        invitedBy: session.user.id,
+      },
+      update: { role },
+      include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
+    });
+
+    // Grant the appropriate platform role so the portal works for them.
+    const platformRole = role === "ADMIN" ? "BRAND_ADMIN" : role === "MODERATOR" ? "BRAND_MODERATOR" : null;
+    if (platformRole) {
+      await prisma.userRoleAssignment.upsert({
+        where: { userId_role: { userId: target.id, role: platformRole as any } },
+        create: { userId: target.id, role: platformRole as any },
+        update: {},
+      });
+    }
+
+    ApiResponse.success(res, member, "Member added");
+  }),
+);
+
+router.patch(
+  "/:id/members/:uid/role",
+  requireAuth,
+  validateParams(memberParamSchema),
+  validateBody(updateMemberRoleSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res, "ADMIN");
+    if (!ctx) return;
+    const { uid } = req.params;
+    const existing = await prisma.brandMember.findUnique({
+      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+    });
+    if (!existing) return ApiResponse.notFound(res, "Member not found");
+
+    const updated = await prisma.brandMember.update({
+      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+      data: { role: req.body.role },
+      include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
+    });
+    ApiResponse.success(res, updated, "Role updated");
+  }),
+);
+
+router.delete(
+  "/:id/members/:uid",
+  requireAuth,
+  validateParams(memberParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res, "ADMIN");
+    if (!ctx) return;
+    const { uid } = req.params;
+    if (uid === ctx.business.ownerId) {
+      return ApiResponse.forbidden(res, "Cannot remove the owner");
+    }
+    const existing = await prisma.brandMember.findUnique({
+      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+    });
+    if (!existing) return ApiResponse.notFound(res, "Member not found");
+    await prisma.brandMember.delete({
+      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+    });
+    ApiResponse.success(res, null, "Member removed");
+  }),
+);
+
+// ─── Service listings ──────────────────────────────────────────────────────
+
+const serviceCategoryEnum = z.enum([
+  "GENERAL_SERVICE",
+  "OIL_CHANGE",
+  "BRAKE_SERVICE",
+  "TYRE_CHANGE",
+  "ELECTRICAL",
+  "SUSPENSION",
+  "ENGINE_WORK",
+  "CUSTOM_MODIFICATION",
+  "INSPECTION",
+  "ROADSIDE_ASSISTANCE",
+  "CONSULTATION",
+]);
+
+const createServiceSchema = z.object({
+  title: z.string().min(2).max(120),
+  description: z.string().max(2000).optional().nullable(),
+  category: serviceCategoryEnum.default("GENERAL_SERVICE"),
+  priceRange: z.string().max(60).optional().nullable(),
+  duration: z.string().max(60).optional().nullable(),
+  isActive: z.boolean().default(true),
+});
+
+const updateServiceSchema = createServiceSchema.partial();
+
+const sidParamSchema = z.object({
+  id: z.string().min(1),
+  sid: z.string().min(1),
+});
+
+// Public — any authenticated user can browse services of an approved business.
+router.get(
+  "/:id/services",
+  requireAuth,
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const session = (req as any).session;
+
+    const business = await prisma.businessProfile.findUnique({
+      where: { id },
+      select: { ownerId: true, verification: true },
+    });
+    if (!business) return ApiResponse.notFound(res, "Business not found");
+
+    const isOwnerOrMember =
+      business.ownerId === session.user.id ||
+      !!(await prisma.brandMember.findUnique({
+        where: { businessId_userId: { businessId: id, userId: session.user.id } },
+      }));
+
+    const where: any = { businessId: id };
+    if (!isOwnerOrMember) {
+      if (business.verification !== "APPROVED") return ApiResponse.notFound(res, "Business not found");
+      where.isActive = true;
+    }
+
+    const services = await prisma.serviceListing.findMany({
+      where,
+      orderBy: { createdAt: "asc" },
+    });
+    ApiResponse.success(res, services);
+  }),
+);
+
+router.post(
+  "/:id/services",
+  requireAuth,
+  validateParams(idParamSchema),
+  validateBody(createServiceSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const created = await prisma.serviceListing.create({
+      data: { businessId: ctx.business.id, ...req.body },
+    });
+    ApiResponse.success(res, created, "Service created");
+  }),
+);
+
+router.patch(
+  "/:id/services/:sid",
+  requireAuth,
+  validateParams(sidParamSchema),
+  validateBody(updateServiceSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const { sid } = req.params;
+    const existing = await prisma.serviceListing.findUnique({ where: { id: sid } });
+    if (!existing || existing.businessId !== ctx.business.id) {
+      return ApiResponse.notFound(res, "Service not found");
+    }
+    const updated = await prisma.serviceListing.update({
+      where: { id: sid },
+      data: req.body,
+    });
+    ApiResponse.success(res, updated, "Service updated");
+  }),
+);
+
+router.delete(
+  "/:id/services/:sid",
+  requireAuth,
+  validateParams(sidParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const { sid } = req.params;
+    const existing = await prisma.serviceListing.findUnique({ where: { id: sid } });
+    if (!existing || existing.businessId !== ctx.business.id) {
+      return ApiResponse.notFound(res, "Service not found");
+    }
+    await prisma.serviceListing.delete({ where: { id: sid } });
+    ApiResponse.success(res, null, "Service deleted");
+  }),
+);
+
+// ─── Business inquiries ────────────────────────────────────────────────────
+
+const createInquirySchema = z.object({
+  subject: z.string().min(2).max(200),
+  message: z.string().min(10).max(5000),
+});
+
+const updateInquiryStatusSchema = z.object({
+  status: z.enum(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]),
+});
+
+const iidParamSchema = z.object({
+  id: z.string().min(1),
+  iid: z.string().min(1),
+});
+
+// Owner/team: list all inquiries for their business.
+router.get(
+  "/:id/inquiries",
+  requireAuth,
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const inquiries = await prisma.businessInquiry.findMany({
+      where: { businessId: ctx.business.id },
+      include: {
+        fromUser: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    ApiResponse.success(res, inquiries);
+  }),
+);
+
+// Any authenticated user can send an inquiry to an approved business.
+router.post(
+  "/:id/inquiries",
+  requireAuth,
+  validateParams(idParamSchema),
+  validateBody(createInquirySchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    const business = await prisma.businessProfile.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true, verification: true },
+    });
+    if (!business || business.verification !== "APPROVED") {
+      return ApiResponse.notFound(res, "Business not found");
+    }
+    if (business.ownerId === session.user.id) {
+      return ApiResponse.error(res, "Cannot inquire to your own business", 400, ErrorCode.VALIDATION_ERROR);
+    }
+
+    const inquiry = await prisma.businessInquiry.create({
+      data: {
+        businessId: id,
+        fromUserId: session.user.id,
+        subject: req.body.subject,
+        message: req.body.message,
+      },
+      include: {
+        fromUser: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+    });
+    ApiResponse.success(res, inquiry, "Inquiry sent");
+  }),
+);
+
+// Owner/team: update inquiry status.
+router.patch(
+  "/:id/inquiries/:iid",
+  requireAuth,
+  validateParams(iidParamSchema),
+  validateBody(updateInquiryStatusSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const { iid } = req.params;
+    const existing = await prisma.businessInquiry.findUnique({ where: { id: iid } });
+    if (!existing || existing.businessId !== ctx.business.id) {
+      return ApiResponse.notFound(res, "Inquiry not found");
+    }
+    const updated = await prisma.businessInquiry.update({
+      where: { id: iid },
+      data: { status: req.body.status },
+      include: {
+        fromUser: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+    });
+    ApiResponse.success(res, updated, "Inquiry updated");
+  }),
+);
+
 export default router;

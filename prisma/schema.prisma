@@ -141,6 +141,11 @@ model User {
   // service stores, mechanics, etc.). One user can own multiple businesses.
   businessProfiles BusinessProfile[]
 
+  // Phase 8: brand team membership + inquiries
+  brandMemberships  BrandMember[]     @relation("BrandMemberships")
+  brandInvitesSent  BrandMember[]     @relation("BrandInviter")
+  businessInquiries BusinessInquiry[] @relation("InquiriesMade")
+
   @@map("users")
 }
 
@@ -372,11 +377,104 @@ model BusinessProfile {
   // Phase 7 back-relations — campaigns and discounts the business owns.
   campaigns AdCampaign[]
   discounts Discount[]
+  // Phase 8: team, services, and inquiries
+  members   BrandMember[]
+  services  ServiceListing[]
+  inquiries BusinessInquiry[]
 
   @@index([verification], map: "business_category_status_idx")
   @@index([latitude, longitude], map: "business_geo_idx")
   @@index([ownerId], map: "business_owner_idx")
   @@map("business_profiles")
+}
+
+// ─── Phase 8: Brand Teams ────────────────────────────────────────────────────
+
+enum BrandMemberRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+model BrandMember {
+  id         String          @id @default(cuid())
+  businessId String          @map("business_id")
+  userId     String          @map("user_id")
+  role       BrandMemberRole @default(MEMBER)
+  invitedBy  String?         @map("invited_by")
+  joinedAt   DateTime        @default(now()) @map("joined_at")
+
+  business BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User            @relation("BrandMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  inviter  User?           @relation("BrandInviter", fields: [invitedBy], references: [id])
+
+  @@unique([businessId, userId])
+  @@index([businessId], map: "brand_member_business_idx")
+  @@map("brand_members")
+}
+
+// ─── Phase 8: Service Listings (garages + mechanics) ────────────────────────
+
+enum ServiceCategory {
+  GENERAL_SERVICE
+  OIL_CHANGE
+  BRAKE_SERVICE
+  TYRE_CHANGE
+  ELECTRICAL
+  SUSPENSION
+  ENGINE_WORK
+  CUSTOM_MODIFICATION
+  INSPECTION
+  ROADSIDE_ASSISTANCE
+  CONSULTATION
+}
+
+model ServiceListing {
+  id          String          @id @default(cuid())
+  businessId  String          @map("business_id")
+  title       String
+  description String?         @db.Text
+  category    ServiceCategory @default(GENERAL_SERVICE)
+  priceRange  String?         @map("price_range")
+  duration    String?
+  isActive    Boolean         @default(true) @map("is_active")
+
+  business BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([businessId, isActive], map: "service_listing_business_idx")
+  @@map("service_listings")
+}
+
+// ─── Phase 8: Business Inquiries ─────────────────────────────────────────────
+
+enum InquiryStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model BusinessInquiry {
+  id         String        @id @default(cuid())
+  businessId String        @map("business_id")
+  fromUserId String        @map("from_user_id")
+  subject    String
+  message    String        @db.Text
+  status     InquiryStatus @default(OPEN)
+
+  business BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  fromUser User            @relation("InquiriesMade", fields: [fromUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([businessId], map: "inquiry_business_idx")
+  @@index([fromUserId], map: "inquiry_user_idx")
+  @@map("business_inquiries")
 }
 
 // ─── Phase 7: Ads + Discounts ───────────────────────────────────────────────

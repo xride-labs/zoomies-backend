@@ -6,6 +6,7 @@ import {
 } from "../services/chat.service.js";
 import { ConversationType, MessageType } from "../models/chat.model.js";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import { fanoutNewMessage } from "../lib/socket.js";
 
 // ─── Conversations ───────────────────────────────────────────────────────────
 
@@ -272,7 +273,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     const { id } = req.params;
     const userId = req.session!.user.id;
     const userName = req.session!.user.name ?? "Unknown";
-    const { text, messageType, attachments, replyTo } = req.body;
+    const { text, messageType, attachments, location, replyTo } = req.body;
 
     const message = await ChatService.sendMessage({
       conversationId: id,
@@ -281,8 +282,24 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
       text,
       messageType: (messageType as MessageType) ?? MessageType.TEXT,
       attachments,
+      location,
       replyTo,
     });
+
+    // Real-time broadcast + push so a REST-sent message reaches the
+    // recipient even when the sender's socket is down (otherwise it would
+    // only appear in-app on the sender's side until a manual refetch).
+    await fanoutNewMessage({
+      conversationId: id,
+      senderId: userId,
+      senderName: userName,
+      message,
+      text,
+      messageType,
+      attachments,
+    }).catch((err) =>
+      console.error("[chat] fanoutNewMessage failed:", err),
+    );
 
     ApiResponse.created(res, message, "Message sent");
   } catch (error) {

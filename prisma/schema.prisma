@@ -158,10 +158,12 @@ model DeviceToken {
   appVersion String?  @map("app_version")
   createdAt  DateTime @default(now()) @map("created_at")
   lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId], map: "idx_device_token_user")
+  @@index([lastSeenAt], map: "idx_device_token_stale") // used by stale-token cleanup cron
   @@map("device_tokens")
 }
 
@@ -304,22 +306,22 @@ enum MediaType {
 // ─── Phase 6: Business / Brand Portal ────────────────────────────────────────
 
 enum BusinessCategory {
-  BRAND               // motorcycle brands (Triumph, Royal Enfield, ...)
-  GEAR_SELLER         // jackets, gloves, riding pants
+  BRAND // motorcycle brands (Triumph, Royal Enfield, ...)
+  GEAR_SELLER // jackets, gloves, riding pants
   HELMET_SELLER
-  PARTS_SELLER        // spares, accessories
-  MARKETPLACE_SELLER  // generic seller (new + second-hand)
-  CLUB                // alias for clubs that want a public business page
+  PARTS_SELLER // spares, accessories
+  MARKETPLACE_SELLER // generic seller (new + second-hand)
+  CLUB // alias for clubs that want a public business page
   SERVICE_STORE
   MECHANIC
   CONSULTATION
 }
 
 enum BusinessVerificationStatus {
-  PENDING       // draft — owner is still filling in details
-  SUBMITTED     // sent for admin review
-  APPROVED      // visible publicly
-  REJECTED      // admin rejected; verificationNotes explains why
+  PENDING // draft — owner is still filling in details
+  SUBMITTED // sent for admin review
+  APPROVED // visible publicly
+  REJECTED // admin rejected; verificationNotes explains why
 }
 
 /**
@@ -380,11 +382,11 @@ model BusinessProfile {
 // ─── Phase 7: Ads + Discounts ───────────────────────────────────────────────
 
 enum AdPlacementSlot {
-  HOME_FEED            // top of the home tab
-  DISCOVER_TOP         // discover tab hero
-  MARKETPLACE_INLINE   // injected between marketplace listings
-  CHAT_LIST_TOP        // top of the conversations list
-  POST_RIDE_SUMMARY    // shown on the summary screen (NOT during the ride)
+  HOME_FEED // top of the home tab
+  DISCOVER_TOP // discover tab hero
+  MARKETPLACE_INLINE // injected between marketplace listings
+  CHAT_LIST_TOP // top of the conversations list
+  POST_RIDE_SUMMARY // shown on the summary screen (NOT during the ride)
 }
 
 enum AdStatus {
@@ -400,24 +402,23 @@ enum AdStatus {
  * Direct-sold ad campaign owned by a business. Admin moderates state
  * transitions (DRAFT/PENDING → ACTIVE/REJECTED). Free-tier users see
  * approved campaigns in the slots they target; Pro users see none.
- *
  * Ad serving in this app is *intentionally simple*: pick the next ACTIVE
  * campaign that targets the requested slot and is within its run window.
  * No bidding, no exchange — Phase 7 is a managed-list system.
  */
 model AdCampaign {
-  id              String            @id @default(cuid())
-  businessId      String            @map("business_id")
-  business        BusinessProfile   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String          @id @default(cuid())
+  businessId String          @map("business_id")
+  business   BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  title           String
-  ctaLabel        String            @map("cta_label")
-  ctaUrl          String?           @map("cta_url")
+  title    String
+  ctaLabel String  @map("cta_label")
+  ctaUrl   String? @map("cta_url")
   // App-internal deep link (e.g. "business/<id>"). When present, taps route
   // in-app instead of opening the external URL.
-  deepLink        String?           @map("deep_link")
-  imageUrl        String            @map("image_url")
-  videoUrl        String?           @map("video_url")
+  deepLink String? @map("deep_link")
+  imageUrl String  @map("image_url")
+  videoUrl String? @map("video_url")
 
   startsAt        DateTime          @map("starts_at")
   endsAt          DateTime          @map("ends_at")
@@ -446,21 +447,21 @@ model AdCampaign {
  * /discounts feed and on the business's public page.
  */
 model Discount {
-  id             String          @id @default(cuid())
-  businessId     String          @map("business_id")
-  business       BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String          @id @default(cuid())
+  businessId String          @map("business_id")
+  business   BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  code           String?         @unique
+  code           String?  @unique
   title          String
-  description    String?         @db.Text
-  imageUrl       String?         @map("image_url")
-  percentOff     Int?            @map("percent_off")
-  amountOffPaise Int?            @map("amount_off_paise")
-  validFrom      DateTime        @map("valid_from")
-  validUntil     DateTime        @map("valid_until")
+  description    String?  @db.Text
+  imageUrl       String?  @map("image_url")
+  percentOff     Int?     @map("percent_off")
+  amountOffPaise Int?     @map("amount_off_paise")
+  validFrom      DateTime @map("valid_from")
+  validUntil     DateTime @map("valid_until")
   // Free-form list of category/product IDs the discount applies to.
-  appliesTo      Json?           @map("applies_to")
-  isFeatured     Boolean         @default(false) @map("is_featured")
+  appliesTo      Json?    @map("applies_to")
+  isFeatured     Boolean  @default(false) @map("is_featured")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -495,6 +496,30 @@ enum ClubMemberRole {
   FOUNDER // Club founder
 }
 
+// Moderation state of a club member. ACTIVE is the normal state; the others
+// are driven by the *Until timestamps on ClubMember and re-derived lazily
+// (a SUSPENDED member whose suspendedUntil has passed is treated as ACTIVE).
+enum ClubMemberStatus {
+  ACTIVE
+  MUTED // can read but not post in any club group
+  SUSPENDED // temporarily removed from posting + group activity
+  BANNED // removed from the club; cannot rejoin until bannedUntil
+}
+
+// Audit log of every moderation action a club admin takes. Append-only;
+// the live state lives on ClubMember for fast checks, this is the history.
+enum ClubModerationActionType {
+  PROMOTE // role change up (e.g. MEMBER -> ADMIN)
+  DEMOTE // role change down
+  MUTE
+  UNMUTE
+  SUSPEND
+  UNSUSPEND
+  BAN
+  UNBAN
+  KICK // removed from club (not banned)
+}
+
 enum RideParticipantStatus {
   REQUESTED
   ACCEPTED
@@ -504,23 +529,23 @@ enum RideParticipantStatus {
 }
 
 model Ride {
-  id              String     @id @default(cuid())
-  title           String
-  description     String?
-  startLocation   String     @map("start_location")
-  endLocation     String?    @map("end_location")
-  experienceLevel String?    @map("experience_level") // e.g., Beginner, Intermediate, Expert
-  xpRequired      Int?       @map("xp_required")
-  pace            String? // e.g., Leisurely, Moderate, Fast
-  distance        Float?
-  duration        Int? // in minutes
-  scheduledAt     DateTime?  @map("scheduled_at")
-  endedAt         DateTime?  @map("ended_at") // When ride actually ended
-  status          RideStatus @default(PLANNED)
+  id                  String     @id @default(cuid())
+  title               String
+  description         String?
+  startLocation       String     @map("start_location")
+  endLocation         String?    @map("end_location")
+  experienceLevel     String?    @map("experience_level") // e.g., Beginner, Intermediate, Expert
+  xpRequired          Int?       @map("xp_required")
+  pace                String? // e.g., Leisurely, Moderate, Fast
+  distance            Float?
+  duration            Int? // in minutes
+  scheduledAt         DateTime?  @map("scheduled_at")
+  endedAt             DateTime?  @map("ended_at") // When ride actually ended
+  status              RideStatus @default(PLANNED)
   // Set by the 5-minute reminder cron once the 30-min-before push has fired.
   // Acts as a dedupe flag so the cron's overlapping windows don't notify
   // the same ride twice.
-  startReminderSentAt DateTime? @map("start_reminder_sent_at")
+  startReminderSentAt DateTime?  @map("start_reminder_sent_at")
 
   // Geo coordinates for location-based discovery (mirrors startLat/startLng on write).
   latitude  Float? @map("latitude")
@@ -597,26 +622,26 @@ model Ride {
 // atomically when the ride ends and never recomputed (so badges/score don't
 // shift if scoring rules change later).
 model RideSummary {
-  id              String   @id @default(cuid())
-  rideId          String   @unique @map("ride_id")
-  ride            Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  rideId String @unique @map("ride_id")
+  ride   Ride   @relation(fields: [rideId], references: [id], onDelete: Cascade)
 
-  totalDistanceKm Float    @default(0) @map("total_distance_km")
-  totalDurationSec Int     @default(0) @map("total_duration_sec") // wall-clock from start to end
-  movingTimeSec   Int      @default(0) @map("moving_time_sec")    // duration minus breaks
-  idleTimeSec     Int      @default(0) @map("idle_time_sec")       // sum of break durations
-  avgSpeedKmh     Float    @default(0) @map("avg_speed_kmh")
-  maxSpeedKmh     Float    @default(0) @map("max_speed_kmh")
-  elevationGainM  Float    @default(0) @map("elevation_gain_m")
-  breakCount      Int      @default(0) @map("break_count")
-  detourCount     Int      @default(0) @map("detour_count")
+  totalDistanceKm  Float @default(0) @map("total_distance_km")
+  totalDurationSec Int   @default(0) @map("total_duration_sec") // wall-clock from start to end
+  movingTimeSec    Int   @default(0) @map("moving_time_sec") // duration minus breaks
+  idleTimeSec      Int   @default(0) @map("idle_time_sec") // sum of break durations
+  avgSpeedKmh      Float @default(0) @map("avg_speed_kmh")
+  maxSpeedKmh      Float @default(0) @map("max_speed_kmh")
+  elevationGainM   Float @default(0) @map("elevation_gain_m")
+  breakCount       Int   @default(0) @map("break_count")
+  detourCount      Int   @default(0) @map("detour_count")
 
-  score           Int      @default(0) // 0..100
-  highlights      Json?    // ["First 100km ride", "New top speed"]
-  badges          String[] // badge slugs awarded for this ride
-  routeSnapshotUrl String? @map("route_snapshot_url") // optional Cloudinary preview
+  score            Int      @default(0) // 0..100
+  highlights       Json? // ["First 100km ride", "New top speed"]
+  badges           String[] // badge slugs awarded for this ride
+  routeSnapshotUrl String?  @map("route_snapshot_url") // optional Cloudinary preview
 
-  generatedAt     DateTime @default(now()) @map("generated_at")
+  generatedAt DateTime @default(now()) @map("generated_at")
 
   @@map("ride_summaries")
 }
@@ -719,9 +744,10 @@ model Club {
   owner   User   @relation("ClubOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
   // Members relation
-  members      ClubMember[]
-  joinRequests ClubJoinRequest[]
-  groups       FriendGroup[]
+  members           ClubMember[]
+  joinRequests      ClubJoinRequest[]
+  groups            FriendGroup[]
+  moderationActions ClubModerationAction[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -804,11 +830,48 @@ model ClubMember {
   role     ClubMemberRole @default(MEMBER)
   joinedAt DateTime       @default(now()) @map("joined_at")
 
+  // ── Moderation state (Discord-style, club-wide) ──────────────────────────
+  // `status` is the fast-path flag; the *Until fields back it so timed
+  // punishments auto-expire without a cron (callers treat an elapsed
+  // timestamp as ACTIVE and lazily reset on next write). bannedUntil far in
+  // the future == permanent ban.
+  status         ClubMemberStatus @default(ACTIVE)
+  mutedUntil     DateTime?        @map("muted_until")
+  suspendedUntil DateTime?        @map("suspended_until")
+  bannedUntil    DateTime?        @map("banned_until")
+
+  // ── Activity analytics (surfaced in the web club-admin dashboard) ────────
+  lastInteractionAt DateTime? @map("last_interaction_at") // any club action
+  lastMessageAt     DateTime? @map("last_message_at") // last chat message in a club group
+  messageCount      Int       @default(0) @map("message_count")
+
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([clubId, userId])
+  @@index([clubId, status], map: "club_members_status_idx")
   @@map("club_members")
+}
+
+// Append-only audit trail of moderation actions taken by club admins.
+// Target/actor are stored as bare userIds (no back-relations) to avoid
+// bloating the already-large User model; the club relation is enough for
+// the admin moderation-log query.
+model ClubModerationAction {
+  id           String                   @id @default(cuid())
+  clubId       String                   @map("club_id")
+  targetUserId String                   @map("target_user_id")
+  actorId      String                   @map("actor_id")
+  action       ClubModerationActionType
+  reason       String?
+  expiresAt    DateTime?                @map("expires_at") // for timed mute/suspend/ban
+  createdAt    DateTime                 @default(now()) @map("created_at")
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, targetUserId], map: "club_mod_actions_target_idx")
+  @@index([clubId, createdAt(sort: Desc)], map: "club_mod_actions_feed_idx")
+  @@map("club_moderation_actions")
 }
 
 // Club join request for private clubs or moderated joins
@@ -1144,6 +1207,14 @@ model FriendGroup {
   clubId               String? @map("club_id")
   joinApprovalRequired Boolean @default(false) @map("join_approval_required")
 
+  // ── WhatsApp-Community fields ────────────────────────────────────────────
+  // Every club auto-gets exactly one isAnnouncement group (admin-post-only by
+  // default via postPolicy). `conversationId` is the Mongo Conversation _id
+  // that backs this group's chat — null until lazily linked on first open.
+  isAnnouncement Boolean @default(false) @map("is_announcement")
+  postPolicy     String  @default("ALL") @map("post_policy") // ALL | ADMINS_ONLY
+  conversationId String? @map("conversation_id")
+
   creator      User                     @relation("FriendGroupOwner", fields: [creatorId], references: [id], onDelete: Cascade)
   club         Club?                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
   members      FriendGroupMember[]
@@ -1347,18 +1418,39 @@ model ListingInterest {
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum NotificationType {
+  // Ride
   RIDE_INVITE // Invited to a ride
   RIDE_JOINED // Someone joined your ride
   RIDE_COMPLETED // Ride completed reminder
-  CLUB_INVITE // Invited to club
-  CLUB_REQUEST // New member request
-  LISTING_OFFER // Received offer on listing
-  LISTING_INTERESTED // Someone interested in listing
+  RIDE_REMINDER // 30-min reminder before a scheduled ride
+  RIDE_STARTED // Creator started the ride — notify participants
+  RIDE_CANCELLED // Creator cancelled the ride — notify participants
+  RIDE_REQUEST // Someone requested to join your ride
+  // Club
+  CLUB_INVITE // Invited to a club
+  CLUB_REQUEST // New club join request
+  // Marketplace
+  LISTING_OFFER // Received an offer on your listing
+  LISTING_INTERESTED // Someone marked interest in your listing
+  LISTING_SOLD // Your listing was marked as sold
+  // Social
   MESSAGE // New chat message
   FOLLOW // New follower
   COMMENT // Comment on your post
   LIKE // Like on your post
   FRIEND_REQUEST // Friend request received
+  FRIEND_ACCEPTED // Your friend request was accepted
+  // Events
+  EVENT_INVITE // Invited to a club event
+  EVENT_REMINDER // 1-hour reminder before an event
+  // Safety
+  SOS_ALERT // Emergency triggered in a live ride you're part of
+  // Gamification
+  BADGE_EARNED // You earned a new badge
+  // Business / admin
+  BUSINESS_APPROVED // Your brand/business profile was approved
+  BUSINESS_REJECTED // Your brand/business profile was rejected
+  SYSTEM_ALERT // Platform-wide message from admin
 }
 
 model Notification {
@@ -1385,9 +1477,13 @@ model Notification {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([userId], map: "idx_notification_user")
-  @@index([isRead], map: "idx_notification_read")
-  @@index([createdAt], map: "idx_notification_created")
+  // Composite indexes replace the three single-column ones:
+  // • (userId, isRead, createdAt DESC) → covers unread-count + unread-feed queries
+  // • (userId, createdAt DESC)         → covers all-notifications-feed query
+  // The old idx_notification_read (boolean) had near-zero selectivity and
+  // idx_notification_created alone never matched a useful WHERE clause.
+  @@index([userId, isRead, createdAt(sort: Desc)], map: "idx_notification_user_unread")
+  @@index([userId, createdAt(sort: Desc)], map: "idx_notification_user_feed")
   @@map("notifications")
 }
 

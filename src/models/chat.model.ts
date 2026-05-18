@@ -39,6 +39,7 @@ export enum MessageType {
   VIDEO = "video",
   FILE = "file",
   SYSTEM = "system",
+  LOCATION = "location",
 }
 
 export enum AttachmentType {
@@ -106,6 +107,13 @@ export interface IAttachment {
   thumbnailUrl?: string;
 }
 
+export interface ILocation {
+  latitude: number;
+  longitude: number;
+  label?: string; // e.g. "Current location" / a place name
+  address?: string;
+}
+
 export interface IReaction {
   userId: string;
   emoji: string;
@@ -129,6 +137,7 @@ export interface IMessage extends Document {
   text?: string;
   messageType: MessageType;
   attachments: IAttachment[];
+  location?: ILocation | null;
   replyTo?: Types.ObjectId;
   reactions: IReaction[];
   readBy: IReadReceipt[];
@@ -272,6 +281,16 @@ const AttachmentSchema = new Schema<IAttachment>(
   { _id: false },
 );
 
+const LocationSchema = new Schema<ILocation>(
+  {
+    latitude: { type: Number, required: true },
+    longitude: { type: Number, required: true },
+    label: { type: String },
+    address: { type: String },
+  },
+  { _id: false },
+);
+
 const ReactionSchema = new Schema<IReaction>(
   {
     userId: { type: String, required: true },
@@ -312,6 +331,7 @@ const MessageSchema = new Schema<IMessage>(
       default: MessageType.TEXT,
     },
     attachments: { type: [AttachmentSchema], default: [] },
+    location: { type: LocationSchema, default: null },
     replyTo: { type: Schema.Types.ObjectId, ref: "Message", default: null },
     reactions: { type: [ReactionSchema], default: [] },
     readBy: { type: [ReadReceiptSchema], default: [] },

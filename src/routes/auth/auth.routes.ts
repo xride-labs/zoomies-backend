@@ -12,6 +12,7 @@ import {
   verifyEmailSchema,
 } from "../../validators/schemas.js";
 import { z } from "zod";
+import { invalidatePushPrefCache } from "../../lib/notifications.js";
 
 const router = Router();
 
@@ -416,6 +417,12 @@ router.patch(
         ...req.body,
       },
     });
+
+    // If pushNotifications changed, drop the cached value immediately so the
+    // next notification respects the new preference without waiting 60 s.
+    if ("pushNotifications" in req.body) {
+      invalidatePushPrefCache(session.user.id);
+    }
 
     ApiResponse.success(
       res,

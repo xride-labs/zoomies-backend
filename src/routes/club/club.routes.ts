@@ -25,6 +25,23 @@ import {
 import { sendClubJoinEmail } from "../../lib/mailer.js";
 import { notifyUsers, createNotification } from "../../lib/notifications.js";
 import { countUserOwnedClubs, isUserPro } from "../../lib/subscription.js";
+import {
+  ensureGroupConversation,
+  addGroupParticipant,
+  removeGroupParticipant,
+  postGroupSystemMessage,
+  syncGroupMetadata,
+  archiveGroupConversation,
+  ensureAnnouncementsGroup,
+  addClubMemberToAnnouncements,
+  removeClubMemberFromClubChats,
+  getGroupChatSummaries,
+} from "../../services/clubGroupChat.service.js";
+import {
+  applyModeration,
+  effectiveStatus,
+  type ModerationAction,
+} from "../../services/clubModeration.service.js";
 import { z } from "zod";
 
 const router = Router();
@@ -36,6 +53,28 @@ const clubGroupQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(50).default(20),
   search: z.string().max(120).optional(),
+});
+
+const moderationBodySchema = z.object({
+  action: z.enum([
+    "PROMOTE",
+    "DEMOTE",
+    "MUTE",
+    "UNMUTE",
+    "SUSPEND",
+    "UNSUSPEND",
+    "BAN",
+    "UNBAN",
+    "KICK",
+  ]),
+  // Timed mute/suspend/ban. Omit for permanent. Clamp to ≤ 1 year.
+  expiresInMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(366 * 24 * 60 * 60 * 1000)
+    .optional(),
+  reason: z.string().max(500).optional(),
 });
 
 const createClubGroupSchema = z.object({
@@ -688,6 +727,13 @@ router.post(
       update: {},
     });
 
+    // WhatsApp-Community bootstrap: every club gets a default, admin-only
+    // "Announcements" group + chat. Best-effort so chat infra hiccups never
+    // block club creation.
+    await ensureAnnouncementsGroup(club.id).catch((e) =>
+      console.error("[clubs] announcements bootstrap failed:", e),
+    );
+
     ApiResponse.created(res, { club }, "Club created successfully");
   }),
 );
@@ -888,6 +934,12 @@ router.post(
     });
 
     if (existing) {
+      if (effectiveStatus(existing) === "BANNED") {
+        return ApiResponse.forbidden(
+          res,
+          "You are banned from this community",
+        );
+      }
       return ApiResponse.conflict(res, "You are already a member of this club");
     }
 
@@ -972,6 +1024,9 @@ router.post(
       where: { id },
       data: { memberCount: { increment: 1 } },
     });
+
+    // Auto-enroll into the club's Announcements channel.
+    await addClubMemberToAnnouncements(id, session.user.id);
 
     // if (club.owner?.email && club.owner.id !== session.user.id) {
     //   const memberName = membership.user?.name || "A new member";
@@ -1065,6 +1120,9 @@ router.delete(
       where: { clubId_userId: { clubId: id, userId: session.user.id } },
     });
 
+    // Drop them from every club group + chat (Announcements included).
+    await removeClubMemberFromClubChats(id, session.user.id);
+
     // Update member count
     await prisma.club.update({
       where: { id },
@@ -1130,6 +1188,10 @@ router.get(
         user: m.user,
         role: m.role,
         joinedAt: m.joinedAt,
+        status: effectiveStatus(m),
+        lastInteractionAt: m.lastInteractionAt,
+        lastMessageAt: m.lastMessageAt,
+        messageCount: m.messageCount,
       })),
       hasMore,
     });
@@ -1232,6 +1294,9 @@ router.post(
       where: { id },
       data: { memberCount: { increment: 1 } },
     });
+
+    // Auto-enroll into the club's Announcements channel.
+    await addClubMemberToAnnouncements(id, userId);
 
     await createNotification({
       userId,
@@ -1472,6 +1537,9 @@ router.delete(
       where: { clubId_userId: { clubId: id, userId } },
     });
 
+    // Drop them from every club group + chat (Announcements included).
+    await removeClubMemberFromClubChats(id, userId);
+
     // Update member count
     await prisma.club.update({
       where: { id },
@@ -1479,6 +1547,154 @@ router.delete(
     });
 
     ApiResponse.success(res, null, "Member removed successfully");
+  }),
+);
+
+/**
+ * Club moderation — make/remove admin, timed mute/suspend/ban, kick.
+ * ADMIN/FOUNDER only. Enforced on the club's group chats + audit-logged.
+ */
+router.post(
+  "/:id/members/:userId/moderation",
+  validateParams(idParamSchema.extend({ userId: idParamSchema.shape.id })),
+  validateBody(moderationBodySchema),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, userId } = req.params;
+    const session = (req as any).session;
+    const { action, expiresInMs, reason } = req.body as {
+      action: ModerationAction;
+      expiresInMs?: number;
+      reason?: string;
+    };
+
+    try {
+      const result = await applyModeration({
+        clubId: id,
+        actorId: session.user.id,
+        actorName: session.user.name || "An admin",
+        targetUserId: userId,
+        action,
+        expiresInMs,
+        reason,
+      });
+      ApiResponse.success(res, result, "Moderation applied");
+    } catch (e: any) {
+      const msg = e?.message || "Moderation failed";
+      const code =
+        msg.includes("not found") ? 404 : msg.includes("founder") ? 403 : 400;
+      ApiResponse.error(res, msg, code, ErrorCode.INVALID_INPUT);
+    }
+  }),
+);
+
+/** Moderation audit log (most recent first). ADMIN/FOUNDER only. */
+router.get(
+  "/:id/moderation",
+  validateParams(idParamSchema),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const actions = await prisma.clubModerationAction.findMany({
+      where: { clubId: id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    const userIds = Array.from(
+      new Set(actions.flatMap((a) => [a.targetUserId, a.actorId])),
+    );
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true, avatar: true },
+    });
+    const byId = new Map(users.map((u) => [u.id, u]));
+
+    ApiResponse.success(res, {
+      actions: actions.map((a) => ({
+        ...a,
+        target: byId.get(a.targetUserId) ?? null,
+        actor: byId.get(a.actorId) ?? null,
+      })),
+    });
+  }),
+);
+
+/**
+ * Club-admin analytics: per-member activity (last interaction, last message,
+ * message volume, moderation status) + community aggregates. ADMIN/FOUNDER
+ * only — surfaced in the web club dashboard.
+ */
+router.get(
+  "/:id/analytics",
+  validateParams(idParamSchema),
+  requireClubMembership("ADMIN", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const [members, groupCount, club] = await Promise.all([
+      prisma.clubMember.findMany({
+        where: { clubId: id },
+        include: {
+          user: {
+            select: { id: true, name: true, avatar: true, email: true },
+          },
+        },
+        orderBy: { lastInteractionAt: "desc" },
+      }),
+      prisma.friendGroup.count({ where: { clubId: id } }),
+      prisma.club.findUnique({
+        where: { id },
+        select: { name: true, memberCount: true, createdAt: true },
+      }),
+    ]);
+
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    const memberRows = members.map((m) => ({
+      userId: m.userId,
+      user: m.user,
+      role: m.role,
+      status: effectiveStatus(m),
+      joinedAt: m.joinedAt,
+      lastInteractionAt: m.lastInteractionAt,
+      lastMessageAt: m.lastMessageAt,
+      messageCount: m.messageCount,
+    }));
+
+    const activeWeek = memberRows.filter(
+      (m) =>
+        m.lastInteractionAt &&
+        now - new Date(m.lastInteractionAt).getTime() < 7 * DAY,
+    ).length;
+    const activeToday = memberRows.filter(
+      (m) =>
+        m.lastInteractionAt &&
+        now - new Date(m.lastInteractionAt).getTime() < DAY,
+    ).length;
+    const dormant = memberRows.filter(
+      (m) =>
+        !m.lastInteractionAt ||
+        now - new Date(m.lastInteractionAt).getTime() > 30 * DAY,
+    ).length;
+    const totalMessages = memberRows.reduce(
+      (a, m) => a + (m.messageCount || 0),
+      0,
+    );
+
+    ApiResponse.success(res, {
+      club: { name: club?.name, memberCount: club?.memberCount },
+      summary: {
+        totalMembers: memberRows.length,
+        activeToday,
+        activeWeek,
+        dormant,
+        totalMessages,
+        groupCount,
+        moderated: memberRows.filter((m) => m.status !== "ACTIVE").length,
+      },
+      members: memberRows,
+    });
   }),
 );
 
@@ -1530,6 +1746,12 @@ router.get(
     const { page, limit, search } = req.query as any;
     const skip = (page - 1) * limit;
 
+    // Lazy backfill: pre-existing clubs get their Announcements group on
+    // first community open. Idempotent + best-effort.
+    await ensureAnnouncementsGroup(id).catch((e) =>
+      console.error("[clubs] announcements backfill failed:", e),
+    );
+
     const where: any = { clubId: id };
     if (search) {
       where.OR = [
@@ -1574,18 +1796,39 @@ router.get(
       prisma.friendGroup.count({ where }),
     ]);
 
-    const enriched = groups.map((group) => {
-      const isMember = group.members.some(
-        (member) => member.userId === session.user.id,
-      );
-      const requestStatus = group.joinRequests[0]?.status || null;
-
-      return {
-        ...group,
-        isMember,
-        requestStatus,
-      };
+    const chatSummaries = await getGroupChatSummaries(
+      groups.map((g) => g.id),
+      session.user.id,
+    ).catch((e: unknown) => {
+      console.error("[clubs] group chat summaries failed:", e);
+      return {} as Record<string, any>;
     });
+
+    const enriched = groups
+      .map((group) => {
+        const isMember = group.members.some(
+          (member) => member.userId === session.user.id,
+        );
+        const requestStatus = group.joinRequests[0]?.status || null;
+        const chat = chatSummaries[group.id] || null;
+
+        return {
+          ...group,
+          isMember,
+          requestStatus,
+          conversationId: chat?.conversationId ?? group.conversationId ?? null,
+          lastMessage: chat?.lastMessage ?? null,
+          unreadCount: chat?.unreadCount ?? 0,
+          isMuted: chat?.isMuted ?? false,
+          disappearingPolicy: chat?.disappearingPolicy ?? "day_1",
+        };
+      })
+      // Announcements always pins to the top of the community home.
+      .sort((a, b) => {
+        if (a.isAnnouncement && !b.isAnnouncement) return -1;
+        if (!a.isAnnouncement && b.isAnnouncement) return 1;
+        return 0;
+      });
 
     ApiResponse.paginated(res, enriched, {
       page,
@@ -1593,6 +1836,219 @@ router.get(
       total,
       totalPages: Math.ceil(total / limit),
     });
+  }),
+);
+
+/**
+ * Resolve (lazily creating + linking) the chat conversation for a club
+ * group. This is what the mobile community home calls when a group is
+ * tapped — it returns the Mongo conversationId to open straight into chat.
+ */
+router.get(
+  "/:id/groups/:groupId/chat",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const group = await prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId: id },
+      select: { id: true, isAnnouncement: true },
+    });
+    if (!group) {
+      return ApiResponse.notFound(res, "Club group not found");
+    }
+
+    const [membership, canManage] = await Promise.all([
+      prisma.friendGroupMember.findUnique({
+        where: { groupId_userId: { groupId, userId: session.user.id } },
+        select: { userId: true },
+      }),
+      canManageClubGroup(id, groupId, session.user.id),
+    ]);
+
+    if (!membership && !canManage) {
+      return ApiResponse.forbidden(
+        res,
+        "Join this group to open its chat",
+      );
+    }
+
+    const conversationId = await ensureGroupConversation(groupId);
+    ApiResponse.success(res, { conversationId, groupId });
+  }),
+);
+
+/** Group members list — any club member can view. */
+router.get(
+  "/:id/groups/:groupId/members",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const group = await prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId: id },
+      select: { id: true, creatorId: true },
+    });
+    if (!group) return ApiResponse.notFound(res, "Club group not found");
+
+    const [members, canManage] = await Promise.all([
+      prisma.friendGroupMember.findMany({
+        where: { groupId },
+        include: {
+          user: { select: { id: true, name: true, avatar: true } },
+        },
+        orderBy: { joinedAt: "asc" },
+      }),
+      canManageClubGroup(id, groupId, session.user.id),
+    ]);
+
+    const enriched = members.map((m) => ({
+      userId: m.userId,
+      user: m.user,
+      joinedAt: m.joinedAt,
+      isCreator: m.userId === group.creatorId,
+      role: m.userId === group.creatorId ? "OWNER" : "MEMBER",
+    }));
+
+    ApiResponse.success(res, { members: enriched, canManage });
+  }),
+);
+
+/** Update a club group (admin / group creator). */
+router.patch(
+  "/:id/groups/:groupId",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const canManage = await canManageClubGroup(id, groupId, session.user.id);
+    if (!canManage) {
+      return ApiResponse.forbidden(res, "Only group admins can edit this group");
+    }
+
+    const group = await prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId: id },
+      select: { id: true, isAnnouncement: true },
+    });
+    if (!group) return ApiResponse.notFound(res, "Club group not found");
+
+    const { name, description, image, joinApprovalRequired, postPolicy } =
+      req.body as Record<string, unknown>;
+
+    const updated = await prisma.friendGroup.update({
+      where: { id: groupId },
+      data: {
+        ...(typeof name === "string" && name.trim() && { name: name.trim() }),
+        ...(description !== undefined && {
+          description: (description as string) || null,
+        }),
+        ...(image !== undefined && { image: (image as string) || null }),
+        ...(joinApprovalRequired !== undefined && {
+          joinApprovalRequired: !!joinApprovalRequired,
+        }),
+        // postPolicy is only meaningful for the announcements channel but is
+        // safe to set on any group (defaults to ALL elsewhere).
+        ...(typeof postPolicy === "string" &&
+          ["ALL", "ADMINS_ONLY"].includes(postPolicy) && { postPolicy }),
+      },
+      include: {
+        creator: { select: { id: true, name: true, avatar: true } },
+        _count: { select: { members: true, rides: true } },
+      },
+    });
+
+    await syncGroupMetadata(groupId);
+    ApiResponse.success(res, { group: updated }, "Group updated");
+  }),
+);
+
+/** Delete a club group (admin / creator). Announcements can't be deleted. */
+router.delete(
+  "/:id/groups/:groupId",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const canManage = await canManageClubGroup(id, groupId, session.user.id);
+    if (!canManage) {
+      return ApiResponse.forbidden(
+        res,
+        "Only group admins can delete this group",
+      );
+    }
+
+    const group = await prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId: id },
+      select: { id: true, isAnnouncement: true, conversationId: true },
+    });
+    if (!group) return ApiResponse.notFound(res, "Club group not found");
+    if (group.isAnnouncement) {
+      return ApiResponse.error(
+        res,
+        "The Announcements channel can't be deleted",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    await prisma.friendGroup.delete({ where: { id: groupId } });
+    if (group.conversationId) {
+      await archiveGroupConversation(group.conversationId).catch(() => {});
+    }
+
+    ApiResponse.success(res, null, "Group deleted");
+  }),
+);
+
+/** Leave a club group (self). Can't leave the Announcements channel. */
+router.delete(
+  "/:id/groups/:groupId/members/me",
+  validateParams(clubGroupParamsSchema),
+  requireClubMembership("MEMBER", "id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, groupId } = req.params;
+    const session = (req as any).session;
+
+    const group = await prisma.friendGroup.findFirst({
+      where: { id: groupId, clubId: id },
+      select: { id: true, isAnnouncement: true, creatorId: true },
+    });
+    if (!group) return ApiResponse.notFound(res, "Club group not found");
+    if (group.isAnnouncement) {
+      return ApiResponse.error(
+        res,
+        "You can't leave the Announcements channel",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+    if (group.creatorId === session.user.id) {
+      return ApiResponse.error(
+        res,
+        "Group creators can't leave their own group — delete it instead",
+        400,
+        ErrorCode.INVALID_INPUT,
+      );
+    }
+
+    await prisma.friendGroupMember.deleteMany({
+      where: { groupId, userId: session.user.id },
+    });
+    await removeGroupParticipant(groupId, session.user.id);
+    await postGroupSystemMessage(
+      groupId,
+      `${session.user.name || "A rider"} left the group`,
+    );
+
+    ApiResponse.success(res, null, "Left group");
   }),
 );
 
@@ -1663,6 +2119,15 @@ router.post(
       },
     });
 
+    // Mint + link this group's chat right away so the first tap opens
+    // straight into a working conversation.
+    let conversationId: string | null = null;
+    try {
+      conversationId = await ensureGroupConversation(group.id);
+    } catch (e) {
+      console.error("[clubs] group conversation bootstrap failed:", e);
+    }
+
     const notifyTargets = group.members
       .map((member) => member.userId)
       .filter((userId) => userId !== session.user.id);
@@ -1675,7 +2140,11 @@ router.post(
       relatedId: group.id,
     });
 
-    ApiResponse.created(res, { group }, "Club group created successfully");
+    ApiResponse.created(
+      res,
+      { group: { ...group, conversationId } },
+      "Club group created successfully",
+    );
   }),
 );
 
@@ -1720,6 +2189,12 @@ router.post(
           userId: session.user.id,
         },
       });
+
+      await addGroupParticipant(groupId, session.user.id);
+      await postGroupSystemMessage(
+        groupId,
+        `${session.user.name || "A rider"} joined the group`,
+      );
 
       if (group.creatorId !== session.user.id) {
         await createNotification({
@@ -1882,6 +2357,16 @@ router.post(
       },
       update: {},
     });
+
+    await addGroupParticipant(groupId, userId);
+    const approvedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+    await postGroupSystemMessage(
+      groupId,
+      `${approvedUser?.name || "A rider"} joined the group`,
+    );
 
     await createNotification({
       userId,

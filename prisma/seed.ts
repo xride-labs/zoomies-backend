@@ -2330,6 +2330,129 @@ async function main() {
   }
   console.log(`✅ Created ${BRANDS.length} brand profiles with ${BRANDS.reduce((s, b) => s + b.products.length, 0)} products`);
 
+  // ── Ad Campaigns ─────────────────────────────────────────────────
+  const now = new Date();
+  const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const AD_TEMPLATES = [
+    {
+      title: "Gear Up This Season — 15% Off",
+      ctaLabel: "Shop Now",
+      imageUrl: "https://images.unsplash.com/photo-1609630875171-b1321377ee65?w=1200",
+      slots: ["HOME_FEED", "MARKETPLACE_INLINE"],
+      targetTags: ["gear", "helmet", "bangalore"],
+      budgetPaise: 500000,
+      impressionCap: 10000,
+    },
+    {
+      title: "New Arrivals: Adventure Bikes 2025",
+      ctaLabel: "View Range",
+      imageUrl: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=1200",
+      slots: ["HOME_FEED", "DISCOVER_TOP"],
+      targetTags: ["adventure", "motorcycle", "touring"],
+      budgetPaise: 800000,
+      impressionCap: 20000,
+    },
+    {
+      title: "Book a Track Day — Limited Slots",
+      ctaLabel: "Register",
+      imageUrl: "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=1200",
+      slots: ["POST_RIDE_SUMMARY", "HOME_FEED"],
+      targetTags: ["track", "performance", "race"],
+      budgetPaise: 300000,
+      impressionCap: 5000,
+    },
+    {
+      title: "Free Tyre Check at Your Doorstep",
+      ctaLabel: "Book Now",
+      imageUrl: "https://images.unsplash.com/photo-1452780212940-6f5c0d14d848?w=1200",
+      slots: ["MARKETPLACE_INLINE", "CHAT_LIST_TOP"],
+      targetTags: ["service", "tyres", "maintenance"],
+      budgetPaise: 200000,
+      impressionCap: 8000,
+    },
+    {
+      title: "Premium Riding Jackets — Members Get 20% Off",
+      ctaLabel: "Claim Discount",
+      imageUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?w=1200",
+      slots: ["HOME_FEED", "MARKETPLACE_INLINE"],
+      targetTags: ["jacket", "gear", "discount"],
+      budgetPaise: 600000,
+      impressionCap: 15000,
+    },
+  ];
+
+  let adCount = 0;
+  let discountCount = 0;
+  let brandPostCount = 0;
+
+  for (let bi = 0; bi < brandProfiles.length && bi < AD_TEMPLATES.length; bi++) {
+    const bp = brandProfiles[bi];
+    const brand = BRANDS[bi];
+    const tpl = AD_TEMPLATES[bi];
+
+    await prisma.adCampaign.create({
+      data: {
+        id: `seed_ad_${bi}`,
+        businessId: bp.id,
+        title: tpl.title,
+        ctaLabel: tpl.ctaLabel,
+        ctaUrl: `https://${brand.slug}.in`,
+        deepLink: `business/${bp.id}`,
+        imageUrl: tpl.imageUrl,
+        startsAt: now,
+        endsAt: in30,
+        budgetPaise: tpl.budgetPaise,
+        status: "ACTIVE",
+        slots: tpl.slots as any[],
+        targetTags: tpl.targetTags,
+        impressionCap: tpl.impressionCap,
+      },
+    });
+    adCount++;
+
+    // One featured discount per brand
+    await prisma.discount.create({
+      data: {
+        id: `seed_disc_${bi}`,
+        businessId: bp.id,
+        code: `ZOOMIES${bi + 10}`,
+        title: `${brand.name} — Zoomies Exclusive ${10 + bi * 2}% Off`,
+        description: `Exclusive discount for Zoomies riders. Use code at checkout on ${brand.name}'s website or in-store.`,
+        imageUrl: tpl.imageUrl,
+        percentOff: 10 + bi * 2,
+        validFrom: now,
+        validUntil: in30,
+        isFeatured: bi < 3,
+      },
+    });
+    discountCount++;
+
+    // Two brand posts per brand so they appear in the community feed
+    const brandOwnerUser = await prisma.user.findFirst({
+      where: { email: brand.email },
+      select: { id: true },
+    });
+    if (brandOwnerUser) {
+      const brandPostContents = [
+        `🏍️ Introducing our latest collection for serious riders. Quality that speaks for itself. Check out ${brand.name} on Zoomies!`,
+        `We're proud to be part of the Zoomies rider community. Swing by our store or browse our listings to gear up for your next ride. #RideMore`,
+      ];
+      for (let pi = 0; pi < 2; pi++) {
+        await prisma.post.create({
+          data: {
+            type: "content",
+            content: brandPostContents[pi],
+            images: [tpl.imageUrl],
+            authorId: brandOwnerUser.id,
+          },
+        });
+        brandPostCount++;
+      }
+    }
+  }
+  console.log(`✅ Created ${adCount} ad campaigns, ${discountCount} discounts, ${brandPostCount} brand posts`);
+
   console.log("\n🎉 Development seed completed!");
   console.log("\n📊 Summary:");
   console.log(

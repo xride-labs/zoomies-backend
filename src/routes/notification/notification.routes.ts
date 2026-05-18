@@ -107,6 +107,41 @@ router.patch(
 );
 
 /**
+ * Delete a single notification. Uses deleteMany with userId guard so a user
+ * can never delete another user's notification (avoids a separate findUnique
+ * + ownership check round-trip).
+ */
+router.delete(
+  "/:id",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const { id } = req.params;
+
+    await prisma.notification.deleteMany({
+      where: { id, userId: session.user.id },
+    });
+
+    ApiResponse.success(res, { ok: true });
+  }),
+);
+
+/**
+ * Clear all notifications for the authenticated user (e.g. "Clear all" button).
+ */
+router.delete(
+  "/",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+
+    await prisma.notification.deleteMany({
+      where: { userId: session.user.id },
+    });
+
+    ApiResponse.success(res, { ok: true }, "All notifications cleared");
+  }),
+);
+
+/**
  * Register (or refresh) a device push token. Idempotent — calling repeatedly
  * with the same token from the same user just bumps `lastSeenAt`. Tokens are
  * unique across the system, so re-registering a token previously owned by

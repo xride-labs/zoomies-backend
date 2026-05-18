@@ -8,7 +8,9 @@ import { ChatService } from "../services/chat.service.js";
 import { LocationService } from "../services/location.service.js";
 import { MessageType } from "../models/chat.model.js";
 import type { IAttachment } from "../models/chat.model.js";
-import { sendPushToUsers } from "./push.js";
+import { sendPushToUsers, channelForType, categoryForType } from "./push.js";
+import prisma from "./prisma.js";
+import { NotificationType } from "@prisma/client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,12 @@ interface SendMessagePayload {
   text?: string;
   messageType?: string;
   attachments?: IAttachment[];
+  location?: {
+    latitude: number;
+    longitude: number;
+    label?: string;
+    address?: string;
+  };
   replyTo?: string;
 }
 
@@ -180,6 +188,78 @@ let ioInstance: Server | null = null;
 
 export function getIO(): Server | null {
   return ioInstance;
+}
+
+/**
+ * Real-time + push fanout for a message sent over the REST fallback
+ * (chat.controller). The socket handler does this inline for socket-sent
+ * messages; this mirrors it so a message never ends up "in-app only" just
+ * because the sender's socket was down.
+ */
+export async function fanoutNewMessage(opts: {
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  message: any;
+  text?: string;
+  messageType?: string;
+  attachments?: { type?: string }[];
+}): Promise<void> {
+  const io = getIO();
+  const { conversationId, senderId, senderName, message } = opts;
+
+  io?.to(`conversation:${conversationId}`).emit("new_message", {
+    message: typeof message?.toObject === "function" ? message.toObject() : message,
+    conversationId,
+  });
+
+  const conversation = await ChatService.getConversationById(conversationId);
+  if (!conversation) return;
+
+  const recipientsForPush: string[] = [];
+  for (const p of conversation.participants) {
+    if (p.userId === senderId) continue;
+    io?.to(`user:${p.userId}`).emit("conversation_updated", {
+      conversationId,
+      lastMessage: {
+        text: (opts.text ?? "").slice(0, 200) || "Attachment",
+        senderId,
+        senderName,
+        sentAt: message.createdAt,
+        messageType: opts.messageType ?? "text",
+      },
+    });
+    if (!isUserActiveInChat(conversationId, p.userId)) {
+      recipientsForPush.push(p.userId);
+    }
+  }
+
+  if (recipientsForPush.length) {
+    const previewText =
+      (opts.text ?? "").trim() ||
+      (opts.attachments?.length
+        ? `Sent ${opts.attachments[0].type}`
+        : "New message");
+    const convoTitle =
+      conversation.metadata?.name ||
+      (conversation.type === "direct" ? senderName : "New message");
+    await sendPushToUsers(recipientsForPush, {
+      title: convoTitle,
+      body:
+        conversation.type === "direct"
+          ? previewText.slice(0, 140)
+          : `${senderName}: ${previewText.slice(0, 140)}`,
+      channelId: "messages",
+      data: {
+        notificationType: "MESSAGE",
+        relatedType: "conversation",
+        relatedId: conversationId,
+        messageId: message._id.toString(),
+      },
+    }).catch((err) =>
+      console.error("[chat] REST message push failed:", err),
+    );
+  }
 }
 
 /**
@@ -374,8 +454,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
       "send_message",
       async (payload: SendMessagePayload, ack?: (...args: any[]) => void) => {
         try {
-          const { conversationId, text, messageType, attachments, replyTo } =
-            payload;
+          const {
+            conversationId,
+            text,
+            messageType,
+            attachments,
+            location,
+            replyTo,
+          } = payload;
 
           // Verify participation
           const allowed = await ChatService.isParticipant(
@@ -388,10 +474,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
           }
 
           // Validate content
-          if (!text?.trim() && (!attachments || !attachments.length)) {
+          if (
+            !text?.trim() &&
+            (!attachments || !attachments.length) &&
+            !location
+          ) {
             ack?.({
               success: false,
-              error: "Message must have text or attachments",
+              error: "Message must have text, attachments, or a location",
             });
             return;
           }
@@ -403,6 +493,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             text,
             messageType: (messageType as MessageType) ?? MessageType.TEXT,
             attachments,
+            location,
             replyTo,
           });
 
@@ -893,8 +984,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
     socket.on("leave-ride", handleLeaveRideTracking);
 
     // ── emergency-alert / trigger_emergency ───────────────────────────
+    // SOS is safety-critical: the socket broadcast reaches connected riders
+    // immediately, and we ALSO push to every ride participant regardless of
+    // whether they are online — a backgrounded phone must wake up for SOS.
 
-    const handleEmergencyAlert = (
+    const handleEmergencyAlert = async (
       payload: {
         rideId: string;
         latitude?: number;
@@ -925,13 +1019,82 @@ export function createSocketServer(httpServer: HttpServer): Server {
         timestamp: new Date().toISOString(),
       };
 
+      // 1. Immediate socket broadcast to everyone already in the ride room.
       socket
         .to(`ride:${payload.rideId}`)
         .emit("emergency_alert", emergencyPayload);
       socket
         .to(`ride:${payload.rideId}`)
         .emit("emergency-alert", emergencyPayload);
+
+      // Acknowledge before the async DB work so the sender's UI isn't blocked.
       ack?.({ success: true });
+
+      // 2. Persist notification records + push all participants (including offline).
+      // This runs after ack so it never blocks the socket response.
+      try {
+        const participants = await prisma.rideParticipant.findMany({
+          where: {
+            rideId: payload.rideId,
+            status: { in: ["ACCEPTED", "COMPLETED"] },
+            userId: { not: userId }, // sender already knows they triggered SOS
+          },
+          select: { userId: true },
+        });
+
+        const participantIds = participants.map((p) => p.userId);
+        if (!participantIds.length) return;
+
+        const sosTitle = `🚨 SOS: ${emergencyPayload.name} needs help!`;
+        const sosBody = emergencyPayload.message;
+
+        // Persist a Notification record for each participant so the bell
+        // shows the SOS in their history even after the ride ends.
+        const records = await prisma.notification.createManyAndReturn({
+          data: participantIds.map((uid) => ({
+            userId: uid,
+            type: NotificationType.SOS_ALERT,
+            title: sosTitle,
+            message: sosBody,
+            relatedType: "ride",
+            relatedId: payload.rideId,
+            sentViaPush: true, // push fires unconditionally below
+          })),
+        });
+
+        // Emit notification:new so open notification bells update instantly.
+        if (ioInstance) {
+          for (const record of records) {
+            ioInstance.to(`user:${record.userId}`).emit("notification:new", {
+              id: record.id,
+              type: record.type,
+              title: record.title,
+              message: record.message ?? null,
+              isRead: false,
+              createdAt: record.createdAt.toISOString(),
+              relatedId: record.relatedId ?? null,
+              relatedType: record.relatedType ?? null,
+            });
+          }
+        }
+
+        // Push ALL participants — SOS bypasses online status and user preferences.
+        sendPushToUsers(participantIds, {
+          title: sosTitle,
+          body: sosBody,
+          channelId: channelForType(NotificationType.SOS_ALERT),
+          categoryIdentifier: categoryForType(NotificationType.SOS_ALERT),
+          data: {
+            notificationType: NotificationType.SOS_ALERT,
+            relatedType: "ride",
+            relatedId: payload.rideId,
+          },
+        }).catch((err) =>
+          console.error("[socket] SOS push failed:", err),
+        );
+      } catch (err) {
+        console.error("[socket] SOS persist/push failed:", err);
+      }
     };
 
     socket.on("trigger_emergency", handleEmergencyAlert);

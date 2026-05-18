@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import prisma from "../lib/prisma.js";
+import { recordClubMessageActivity } from "./clubActivity.service.js";
 import {
   Conversation,
   Message,
@@ -13,6 +14,7 @@ import {
   IConversation,
   IMessage,
   IAttachment,
+  ILocation,
   IParticipant,
 } from "../models/chat.model.js";
 
@@ -120,6 +122,7 @@ export interface SendMessageInput {
   text?: string;
   messageType?: MessageType;
   attachments?: IAttachment[];
+  location?: ILocation | null;
   replyTo?: string;
 }
 
@@ -401,6 +404,7 @@ export class ChatService {
       text: input.text ?? null,
       messageType: input.messageType ?? MessageType.TEXT,
       attachments: input.attachments ?? [],
+      location: input.location ?? null,
       replyTo: input.replyTo ? new Types.ObjectId(input.replyTo) : null,
       readBy: [{ userId: input.senderId, readAt: new Date() }],
       deliveredTo: [{ userId: input.senderId, deliveredAt: new Date() }],
@@ -410,9 +414,11 @@ export class ChatService {
     // Update lastMessage on conversation
     const displayText =
       input.text ??
-      (input.attachments?.length
-        ? `Sent ${input.attachments[0].type}`
-        : "Message");
+      (input.location
+        ? "📍 Location"
+        : input.attachments?.length
+          ? `Sent ${input.attachments[0].type}`
+          : "Message");
 
     await Conversation.findByIdAndUpdate(conversationOid, {
       $set: {
@@ -444,6 +450,9 @@ export class ChatService {
       }));
       if (bulkOps.length) await UnreadCount.bulkWrite(bulkOps);
     }
+
+    // Fire-and-forget club activity tracking (no-op for non-club chats).
+    void recordClubMessageActivity(input.conversationId, input.senderId);
 
     return message;
   }

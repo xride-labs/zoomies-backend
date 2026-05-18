@@ -340,59 +340,6 @@ export async function startServer() {
         console.log(`[SERVER] Health: ${baseUrl}/health`);
         return;
       }
-
-      if (isProduction) {
-        console.log(`
-╔════════════════════════════════════════════════════════════╗
-║                                                            ║
-║   🚀 Zoomies Backend Server (Better Auth)
-║
-║   Server running on: ${baseUrl}
-║   Environment: ${process.env.NODE_ENV || "development"}
-║
-║   📚 API Documentation:
-║   - Swagger UI: ${baseUrl}/api-docs
-║   - ReDoc:      ${baseUrl}/redoc
-║   - OpenAPI:    ${baseUrl}/api-docs.json
-║
-║   Better Auth endpoints (handled automatically):           ║
-║   - POST /api/auth/sign-up/email                           ║
-║   - POST /api/auth/sign-in/email                           ║
-║   - POST /api/auth/sign-in/social                          ║
-║   - POST /api/auth/sign-out                                ║
-║   - GET  /api/auth/session                                 ║
-║   - POST /api/auth/phone-number/send-otp                   ║
-║   - POST /api/auth/phone-number/verify                     ║
-║                                                            ║
-║   Custom API endpoints:                                    ║
-║   - GET  /api/account/me                                   ║
-║   - POST /api/account/verify-email                         ║
-║   - POST /api/account/change-password                      ║
-║   - GET  /api/users                                        ║
-║   - GET  /api/rides                                        ║
-║   - GET  /api/clubs                                        ║
-║   - GET  /api/marketplace                                  ║
-║   - GET  /api/admin (requires admin role)                  ║
-║   - POST /api/media (file uploads)                         ║
-║                                                            ║
-║   Chat endpoints:                                          ║
-║   - GET  /api/chat/conversations                           ║
-║   - POST /api/chat/conversations                           ║
-║   - GET  /api/chat/conversations/:id/messages              ║
-║   - POST /api/chat/conversations/:id/messages              ║
-║   - GET  /api/chat/unread                                  ║
-║   - WebSocket: ws://localhost:${PORT}
-║                                                            ║
-║   Location endpoints (Snapchat-style map):                 ║
-║   - POST /api/location                                     ║
-║   - GET  /api/location/friends                             ║
-║   - GET  /api/location/settings                            ║
-║   - POST /api/location/ghost-mode                          ║
-║   - GET  /api/location/ride/:rideId                        ║
-║                                                            ║
-╚════════════════════════════════════════════════════════════╝
-      `);
-      }
     });
   } catch (error) {
     console.error("Failed to start server:", error);

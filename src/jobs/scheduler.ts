@@ -224,6 +224,32 @@ export async function updateRideStatuses(): Promise<{
 }
 
 /**
+ * Delete device tokens not seen in 90 days.
+ *
+ * Expo push tokens rotate after app reinstalls or OS upgrades. Tokens that
+ * haven't been refreshed via POST /notifications/devices/register in 90 days
+ * are almost certainly dead — the `DeviceNotRegistered` pruning in push.ts
+ * handles immediate failures, but tokens that just go silent (device factory-
+ * reset without uninstall) only get caught here. Runs daily at 3:30 AM so it
+ * doesn't overlap with the media cleanup job at 3:00 AM.
+ */
+export async function cleanupStaleDeviceTokens(): Promise<{ deleted: number }> {
+  try {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const result = await prisma.deviceToken.deleteMany({
+      where: { lastSeenAt: { lt: cutoff } },
+    });
+    if (result.count > 0) {
+      console.log(`[Token Cleanup] Pruned ${result.count} stale device tokens`);
+    }
+    return { deleted: result.count };
+  } catch (error) {
+    console.error(`[Token Cleanup] Failed: ${(error as Error).message}`);
+    return { deleted: 0 };
+  }
+}
+
+/**
  * Cleanup inactive sessions
  * Runs daily at 4 AM
  */
@@ -401,6 +427,13 @@ export function initializeScheduledJobs(): void {
     await cleanupOrphanedMedia();
   });
 
+  // Daily stale device token pruning at 3:30 AM.
+  // Tokens not seen in 90 days are silently dead — removes them so push
+  // fan-out stays lean and Expo API quotas aren't wasted on ghost devices.
+  cron.schedule("30 3 * * *", async () => {
+    await cleanupStaleDeviceTokens();
+  });
+
   console.log("[Jobs] All scheduled jobs initialized successfully");
 }
 
@@ -526,6 +559,8 @@ export async function runJobManually(jobName: string): Promise<any> {
       return await updateUserStatistics();
     case "cleanupOrphanedMedia":
       return await cleanupOrphanedMedia();
+    case "cleanupStaleDeviceTokens":
+      return await cleanupStaleDeviceTokens();
     default:
       throw new Error(`Unknown job: ${jobName}`);
   }

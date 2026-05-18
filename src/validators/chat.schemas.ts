@@ -80,7 +80,15 @@ export const messageTypeEnum = z.enum([
   "video",
   "file",
   "system",
+  "location",
 ]);
+
+export const locationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  label: z.string().max(120).optional(),
+  address: z.string().max(300).optional(),
+});
 
 export const attachmentSchema = z.object({
   url: z.string().url(),
@@ -97,17 +105,22 @@ export const sendMessageSchema = z
     text: z.string().max(5000).optional(),
     messageType: messageTypeEnum.optional().default("text"),
     attachments: z.array(attachmentSchema).max(10).optional(),
+    location: locationSchema.optional(),
     replyTo: z.string().optional(),
   })
   .refine(
     (data) => {
-      // Must have text or attachments
+      // Must have text, attachments, or a location pin
       return (
         (data.text && data.text.trim().length > 0) ||
-        (data.attachments && data.attachments.length > 0)
+        (data.attachments && data.attachments.length > 0) ||
+        !!data.location
       );
     },
-    { message: "Message must contain text or at least one attachment" },
+    {
+      message:
+        "Message must contain text, at least one attachment, or a location",
+    },
   );
 
 export const editMessageSchema = z.object({

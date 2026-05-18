@@ -28,6 +28,12 @@ export interface PushPayload {
    * device is offline (e.g. "ride starts soon" for an already-started ride).
    */
   ttl?: number;
+  /**
+   * Notification category that maps to action buttons registered on the
+   * mobile client (reply, accept, decline, SOS, etc.).
+   * Expo: "categoryId" field. iOS: UNNotificationCategory identifier.
+   */
+  categoryIdentifier?: string;
 }
 
 interface ExpoTicket {
@@ -95,6 +101,8 @@ async function deliverBatch(
     badge: payload.badge,
     ttl: payload.ttl,
     priority: "high" as const,
+    // Expo push API field for notification categories (action buttons)
+    ...(payload.categoryIdentifier ? { categoryId: payload.categoryIdentifier } : {}),
   }));
 
   const headers: Record<string, string> = {
@@ -181,4 +189,19 @@ export function channelForType(type: NotificationType): string {
   }
   if (t.includes("RIDE")) return "rides";
   return "default";
+}
+
+/**
+ * Returns the notification category identifier for the given type.
+ * Category IDs must match those registered via setNotificationCategoryAsync
+ * on the mobile client — they control which action buttons appear.
+ */
+export function categoryForType(type: NotificationType): string | undefined {
+  const t = String(type);
+  if (t === "MESSAGE") return "message";
+  if (t === "RIDE_INVITE") return "ride_invite";
+  if (t === "FRIEND_REQUEST") return "friend_request";
+  // SOS / emergency alerts get the SOS category with a direct "Call 112" button
+  if (t.includes("SOS") || t.includes("EMERGENCY")) return "sos";
+  return undefined;
 }

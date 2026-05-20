@@ -30,6 +30,7 @@ import { markRideCompleted } from "../../lib/socket.js";
 import { requirePro } from "../../lib/subscription.js";
 import { rideToGpx } from "../../lib/gpx.js";
 import { awardBadgeByTitle, awardXp } from "../../lib/xp.js";
+import { isStaff } from "../../lib/utils/permissions.js";
 import {
   normalizeExperienceLevel,
   normalizePace,
@@ -1141,7 +1142,10 @@ router.post(
       return ApiResponse.notFound(res, "Ride not found", ErrorCode.RIDE_NOT_FOUND);
     }
 
-    if (ride.creatorId !== userId) {
+    if (
+      ride.creatorId !== userId &&
+      !isStaff((req as any).session?.user?.roles)
+    ) {
       return ApiResponse.forbidden(res, "Only the ride creator can end the ride");
     }
 
@@ -1414,7 +1418,7 @@ router.post(
       );
     }
 
-    if (ride.creatorId !== session.user.id) {
+    if (ride.creatorId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(
         res,
         "Only the ride creator can send invitations",

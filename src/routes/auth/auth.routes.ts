@@ -743,4 +743,35 @@ router.delete(
   }),
 );
 
+/**
+ * Self-service account deletion — DPDP / GDPR right to erasure.
+ *
+ * Permanently removes the authenticated user. The schema's cascade rules
+ * drop the user's owned records (sessions, accounts, rides they created,
+ * clubs they own, listings, posts, etc.). This is irreversible; the client
+ * gates it behind a typed "DELETE" confirmation.
+ */
+router.delete(
+  "/me",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const userId = session.user.id as string;
+
+    try {
+      await prisma.user.delete({ where: { id: userId } });
+    } catch (err) {
+      // Surface a real failure rather than pretending the account is gone.
+      return ApiResponse.error(
+        res,
+        "Could not fully delete the account. Please contact support.",
+        500,
+        ErrorCode.INTERNAL_ERROR,
+      );
+    }
+
+    ApiResponse.success(res, null, "Account deleted");
+  }),
+);
+
 export default router;

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../../lib/prisma.js";
+import { isStaff } from "../../lib/utils/permissions.js";
 import { requireAuth } from "../../config/auth.js";
 import { ApiResponse, ErrorCode } from "../../lib/utils/apiResponse.js";
 import { asyncHandler, validateQuery } from "../../middlewares/validation.js";
@@ -251,7 +252,7 @@ router.patch(
         404,
         ErrorCode.NOT_FOUND,
       );
-    if (group.creatorId !== userId)
+    if (group.creatorId !== userId && !isStaff((req as any).session?.user?.roles))
       return ApiResponse.error(
         res,
         "Only the group creator can update it",
@@ -309,7 +310,7 @@ router.delete(
         404,
         ErrorCode.NOT_FOUND,
       );
-    if (group.creatorId !== userId)
+    if (group.creatorId !== userId && !isStaff((req as any).session?.user?.roles))
       return ApiResponse.error(
         res,
         "Only the group creator can delete it",
@@ -351,7 +352,7 @@ router.post(
         404,
         ErrorCode.NOT_FOUND,
       );
-    if (group.creatorId !== userId)
+    if (group.creatorId !== userId && !isStaff((req as any).session?.user?.roles))
       return ApiResponse.error(
         res,
         "Only the group creator can add members",

@@ -22,6 +22,7 @@ import {
   MediaValidationError,
 } from "../../lib/cloudinary.js";
 import prisma from "../../lib/prisma.js";
+import { isStaff } from "../../lib/utils/permissions.js";
 
 const router = Router();
 
@@ -585,7 +586,7 @@ router.post(
       );
     }
 
-    if (club.ownerId !== session.user.id) {
+    if (club.ownerId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(
         res,
         "You don't have permission to upload images for this club",
@@ -709,7 +710,7 @@ router.post(
       );
     }
 
-    if (club.ownerId !== session.user.id) {
+    if (club.ownerId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(
         res,
         "You don't have permission to upload images for this club",
@@ -830,7 +831,7 @@ router.post(
       return ApiResponse.notFound(res, "Bike not found", ErrorCode.NOT_FOUND);
     }
 
-    if (bike.userId !== session.user.id) {
+    if (bike.userId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(
         res,
         "You don't have permission to upload images for this bike",

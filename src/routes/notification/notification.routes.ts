@@ -179,6 +179,20 @@ router.post(
       },
     });
 
+    // Cap at 5 tokens per user. Evict the least-recently-seen tokens beyond
+    // the cap (rather than rejecting the new one) so a user's newest device
+    // always receives push — their oldest stale device loses it instead.
+    const tokens = await prisma.deviceToken.findMany({
+      where: { userId },
+      orderBy: { lastSeenAt: "desc" },
+      select: { id: true },
+    });
+    if (tokens.length > 5) {
+      await prisma.deviceToken.deleteMany({
+        where: { id: { in: tokens.slice(5).map((t) => t.id) } },
+      });
+    }
+
     ApiResponse.success(res, { ok: true }, "Device registered");
   }),
 );

@@ -10,6 +10,7 @@ import {
   asyncHandler,
 } from "../../middlewares/validation.js";
 import { requireRole, UserRole } from "../../middlewares/rbac.js";
+import { isStaff } from "../../lib/utils/permissions.js";
 
 const router = Router();
 
@@ -241,7 +242,7 @@ router.patch(
 
     const existing = await prisma.businessProfile.findUnique({ where: { id } });
     if (!existing) return ApiResponse.notFound(res, "Business not found");
-    if (existing.ownerId !== session.user.id) {
+    if (existing.ownerId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(res, "Only the owner can update this business");
     }
 
@@ -282,7 +283,7 @@ router.post(
 
     const existing = await prisma.businessProfile.findUnique({ where: { id } });
     if (!existing) return ApiResponse.notFound(res, "Business not found");
-    if (existing.ownerId !== session.user.id) {
+    if (existing.ownerId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(res, "Only the owner can attach documents");
     }
 
@@ -316,7 +317,7 @@ router.post(
 
     const existing = await prisma.businessProfile.findUnique({ where: { id } });
     if (!existing) return ApiResponse.notFound(res, "Business not found");
-    if (existing.ownerId !== session.user.id) {
+    if (existing.ownerId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(res, "Only the owner can submit for review");
     }
     if (existing.verification === "APPROVED") {
@@ -436,7 +437,10 @@ async function ensureBusinessOwner(
     ApiResponse.notFound(res, "Business not found");
     return null;
   }
-  if (business.ownerId !== session.user.id) {
+  if (
+    business.ownerId !== session.user.id &&
+    !isStaff(session.user.roles)
+  ) {
     ApiResponse.forbidden(res, "Only the owner can manage this business");
     return null;
   }
@@ -726,7 +730,7 @@ async function ensureBusinessAccess(
     return null;
   }
 
-  if (business.ownerId === session.user.id) {
+  if (business.ownerId === session.user.id || isStaff(session.user.roles)) {
     return { business };
   }
 

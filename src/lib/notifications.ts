@@ -82,6 +82,23 @@ async function getPushEnabledBatch(
   return result;
 }
 
+// ─── Unread Count Broadcast ───────────────────────────────────────────────────
+// After any notification is created, push the fresh unread count to the user's
+// personal room so the tab badge updates without the client polling
+// /notifications/unread-count. Fire-and-forget — never blocks the DB write.
+// The (userId, isRead, createdAt) composite index keeps this count cheap.
+
+function emitUnreadCount(userId: string): void {
+  const io = getIO();
+  if (!io) return;
+  prisma.notification
+    .count({ where: { userId, isRead: false } })
+    .then((unreadCount) => {
+      io.to(`user:${userId}`).emit("unread_count_changed", { unreadCount });
+    })
+    .catch(() => {});
+}
+
 // ─── Delivery ─────────────────────────────────────────────────────────────────
 
 /**
@@ -122,6 +139,8 @@ export async function createNotification(
     relatedId: record.relatedId ?? null,
     relatedType: record.relatedType ?? null,
   });
+
+  emitUnreadCount(input.userId);
 
   if (input.skipPush) return;
 
@@ -199,6 +218,11 @@ export async function createNotifications(
         relatedType: record.relatedType ?? null,
       });
     }
+  }
+
+  // One unread-count broadcast per unique recipient (not per notification).
+  for (const userId of new Set(records.map((r) => r.userId))) {
+    emitUnreadCount(userId);
   }
 
   // Build a map of userId → notificationId for sentViaPush tracking.

@@ -78,6 +78,16 @@ export function isSuperAdmin(userRoles: UserRole[]): boolean {
   return userRoles.includes(UserRole.ADMIN);
 }
 
+/**
+ * Platform staff override. Accepts the loosely-typed `roles` string array that
+ * `requireAuth` attaches to `req.session.user`. ADMIN and CO_ADMIN can manage
+ * any resource regardless of ownership ("admins can change anything").
+ */
+export function isStaff(roles: readonly string[] | null | undefined): boolean {
+  if (!roles) return false;
+  return roles.includes(UserRole.ADMIN) || roles.includes(UserRole.CO_ADMIN);
+}
+
 /** Can the user access the web portal? */
 export function canAccessWeb(userRoles: UserRole[]): boolean {
   return hasAnyRole(userRoles, WEB_ACCESS_ROLES);

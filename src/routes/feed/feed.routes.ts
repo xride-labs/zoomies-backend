@@ -15,6 +15,7 @@ import {
 import { z } from "zod";
 import { validateQuery } from "../../middlewares/validation.js";
 import { awardXp } from "../../lib/xp.js";
+import { isStaff } from "../../lib/utils/permissions.js";
 
 const router = Router();
 
@@ -435,7 +436,7 @@ router.patch(
       return ApiResponse.notFound(res, "Post not found");
     }
 
-    if (post.authorId !== session.user.id) {
+    if (post.authorId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(res, "You can only edit your own posts");
     }
 
@@ -481,7 +482,7 @@ router.delete(
       return ApiResponse.notFound(res, "Post not found");
     }
 
-    if (post.authorId !== session.user.id) {
+    if (post.authorId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(res, "You can only delete your own posts");
     }
 
@@ -660,7 +661,7 @@ router.delete(
       return ApiResponse.notFound(res, "Comment not found");
     }
 
-    if (comment.authorId !== session.user.id) {
+    if (comment.authorId !== session.user.id && !isStaff(session.user.roles)) {
       return ApiResponse.forbidden(
         res,
         "You can only delete your own comments",

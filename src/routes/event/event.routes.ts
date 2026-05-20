@@ -4,6 +4,7 @@ import { ApiResponse } from "../../lib/utils/apiResponse.js";
 import { requireAuth } from "../../config/auth.js";
 import { validateBody, validateParams, asyncHandler } from "../../middlewares/validation.js";
 import prisma from "../../lib/prisma.js";
+import { isStaff } from "../../lib/utils/permissions.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -66,7 +67,9 @@ router.post(
 
       if (
         !club ||
-        (club.ownerId !== req.session!.user.id && clubMember?.role !== "OFFICER")
+        (club.ownerId !== req.session!.user.id &&
+          clubMember?.role !== "OFFICER" &&
+          !isStaff(req.session?.user?.roles))
       ) {
         return ApiResponse.forbidden(
           res,

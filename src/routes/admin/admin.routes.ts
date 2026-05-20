@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import prisma from "../../lib/prisma.js";
 import bcrypt from "bcryptjs";
 import { requireAuth } from "../../config/auth.js";
@@ -2239,4 +2240,103 @@ router.post(
   }),
 );
 
+// ─── Bulk Approval Routes ─────────────────────────────────────────────────────
+// Single request handles N approvals — avoids N round trips from the UI.
+
+const bulkIdsSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(200),
+});
+
+router.post(
+  "/bulk/clubs/verify",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return ApiResponse.validationError(res, parsed.error);
+    const { ids } = parsed.data;
+    const result = await prisma.club.updateMany({
+      where: { id: { in: ids } },
+      data: { verified: true },
+    });
+    ApiResponse.success(res, { updated: result.count }, `${result.count} clubs verified`);
+  }),
+);
+
+router.post(
+  "/bulk/club-join-requests/approve",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return ApiResponse.validationError(res, parsed.error);
+    const { ids } = parsed.data;
+
+    const requests = await prisma.clubJoinRequest.findMany({
+      where: { id: { in: ids }, status: "PENDING" },
+      select: { id: true, clubId: true, userId: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.clubJoinRequest.updateMany({
+        where: { id: { in: requests.map((r) => r.id) } },
+        data: { status: "APPROVED" },
+      });
+      for (const r of requests) {
+        await tx.clubMember.upsert({
+          where: { clubId_userId: { clubId: r.clubId, userId: r.userId } },
+          create: { userId: r.userId, clubId: r.clubId, role: "MEMBER" },
+          update: {},
+        });
+      }
+    });
+
+    ApiResponse.success(res, { updated: requests.length }, `${requests.length} club join requests approved`);
+  }),
+);
+
+router.post(
+  "/bulk/ride-participants/accept",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return ApiResponse.validationError(res, parsed.error);
+    const { ids } = parsed.data;
+    const result = await prisma.rideParticipant.updateMany({
+      where: { id: { in: ids }, status: "REQUESTED" },
+      data: { status: "ACCEPTED" },
+    });
+    ApiResponse.success(res, { updated: result.count }, `${result.count} ride participants accepted`);
+  }),
+);
+
+router.post(
+  "/bulk/businesses/approve",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return ApiResponse.validationError(res, parsed.error);
+    const { ids } = parsed.data;
+    const result = await prisma.businessProfile.updateMany({
+      where: { id: { in: ids }, verification: "SUBMITTED" },
+      data: { verification: "APPROVED" },
+    });
+    ApiResponse.success(res, { updated: result.count }, `${result.count} businesses approved`);
+  }),
+);
+
+router.post(
+  "/bulk/ad-campaigns/approve",
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return ApiResponse.validationError(res, parsed.error);
+    const { ids } = parsed.data;
+    const result = await prisma.adCampaign.updateMany({
+      where: { id: { in: ids }, status: "PENDING_APPROVAL" },
+      data: { status: "ACTIVE" },
+    });
+    ApiResponse.success(res, { updated: result.count }, `${result.count} ad campaigns approved`);
+  }),
+);
+
 export default router;
+

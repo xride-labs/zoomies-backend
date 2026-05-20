@@ -471,6 +471,7 @@ export const adminSettingsUpdateSchema = z
     siteUrl: z.string().url().optional(),
     supportEmail: z.string().email().optional(),
     timezone: z.string().max(64).optional(),
+    defaultCurrency: z.string().length(3).toUpperCase().optional(),
     maintenanceMode: z.boolean().optional(),
     allowRegistration: z.boolean().optional(),
     marketplaceEnabled: z.boolean().optional(),

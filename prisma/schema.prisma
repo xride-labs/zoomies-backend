@@ -219,6 +219,8 @@ model AdminSettings {
   supportEmail String @default("support@zoomies.app") @map("support_email")
   timezone     String @default("America/Phoenix")
 
+  defaultCurrency String @default("INR") @map("default_currency")
+
   maintenanceMode     Boolean @default(false) @map("maintenance_mode")
   allowRegistration   Boolean @default(true) @map("allow_registration")
   marketplaceEnabled  Boolean @default(true) @map("marketplace_enabled")

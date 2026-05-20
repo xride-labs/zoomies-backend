@@ -26,10 +26,14 @@ router.use(requireAuth);
 const createPostSchema = z.object({
   content: z.string().min(1).max(2000),
   type: z
-    .enum(["ride", "content", "listing", "club-activity"])
+    .enum(["ride", "content", "listing", "club-activity", "announcement"])
     .optional()
     .default("content"),
   images: z.array(z.string().url()).optional().default([]),
+  clubId: z.string().optional().nullable(),
+  isAnnouncement: z.boolean().optional().default(false),
+  isPinned: z.boolean().optional().default(false),
+  expiresAt: z.string().datetime().optional().nullable(),
 });
 
 const createCommentSchema = z.object({
@@ -152,18 +156,29 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
     const { page, limit, search, type, authorId } = req.query as any;
+    const clubId = req.query.clubId as string | undefined;
     const skip = (page - 1) * limit;
 
-    // Get posts from users the current user follows + their own posts
-    const following = await prisma.follow.findMany({
-      where: { followerId: session.user.id },
-      select: { followingId: true },
-    });
+    // Always filter out expired posts
+    const now = new Date();
+    const where: any = {
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    };
 
-    const followingIds = following.map((f) => f.followingId);
-    const userIds = authorId ? [authorId] : [session.user.id, ...followingIds];
+    if (clubId) {
+      // Club-scoped feed: show all posts tagged to this club
+      where.clubId = clubId;
+    } else {
+      // Global feed: posts from users the current user follows + own posts
+      const following = await prisma.follow.findMany({
+        where: { followerId: session.user.id },
+        select: { followingId: true },
+      });
+      const followingIds = following.map((f: any) => f.followingId);
+      const userIds = authorId ? [authorId] : [session.user.id, ...followingIds];
+      where.authorId = { in: userIds };
+    }
 
-    const where: any = { authorId: { in: userIds } };
     if (search) {
       where.content = { contains: search, mode: "insensitive" };
     }
@@ -217,6 +232,10 @@ router.get(
       },
       content: post.content,
       images: post.images,
+      clubId: (post as any).clubId ?? null,
+      isAnnouncement: (post as any).isAnnouncement ?? false,
+      isPinned: (post as any).isPinned ?? false,
+      expiresAt: (post as any).expiresAt ? (post as any).expiresAt.toISOString() : null,
       likesCount: post._count.likes,
       commentsCount: post._count.comments,
       isLiked: likedPostIds.has(post.id),
@@ -263,7 +282,21 @@ router.post(
   validateBody(createPostSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const session = (req as any).session;
-    const { content, type, images } = req.body;
+    const { content, type, images, clubId, isAnnouncement, isPinned, expiresAt } = req.body;
+
+    // If posting as announcement, verify user is club admin/owner
+    if (isAnnouncement && clubId) {
+      const member = await prisma.clubMember.findUnique({
+        where: { clubId_userId: { clubId, userId: session.user.id } },
+        select: { role: true },
+      });
+      const club = await prisma.club.findUnique({ where: { id: clubId }, select: { ownerId: true } });
+      const isClubAdmin = club?.ownerId === session.user.id ||
+        (member && ["ADMIN", "OFFICER", "FOUNDER"].includes(member.role));
+      if (!isClubAdmin) {
+        return ApiResponse.forbidden(res, "Only club admins can post announcements");
+      }
+    }
 
     const post = await prisma.post.create({
       data: {
@@ -271,6 +304,10 @@ router.post(
         type,
         images,
         authorId: session.user.id,
+        clubId: clubId ?? null,
+        isAnnouncement: isAnnouncement ?? false,
+        isPinned: isPinned ?? false,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
       include: {
         author: {

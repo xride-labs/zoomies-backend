@@ -11,11 +11,7 @@ import {
 } from "../../middlewares/validation.js";
 import { requireAdmin } from "../../middlewares/rbac.js";
 
-/**
- * Admin CRUD for the new Phase 5/6/7 entities — businesses, ad campaigns,
- * and discounts. Mounted under /api/admin from admin.routes.ts so all
- * admin endpoints share the same prefix.
- *
+/**.
  * These give the admin panel full read/write access without forcing each
  * action to go through the user-facing endpoints (which gate by ownership
  * and verification status).
@@ -27,6 +23,17 @@ router.use(requireAuth);
 router.use(requireAdmin);
 
 const idParamSchema = z.object({ id: z.string().min(1) });
+
+const websiteUrlSchema = z
+  .preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }, z.string().url())
+  .optional()
+  .nullable();
 
 // ─── Businesses ─────────────────────────────────────────────────────────────
 
@@ -59,7 +66,7 @@ const adminBusinessUpdateSchema = z.object({
   bannerUrl: z.string().url().optional().nullable(),
   phone: z.string().max(40).optional().nullable(),
   email: z.string().email().optional().nullable(),
-  websiteUrl: z.string().url().optional().nullable(),
+  websiteUrl: websiteUrlSchema,
   addressLine1: z.string().max(200).optional().nullable(),
   addressLine2: z.string().max(200).optional().nullable(),
   city: z.string().max(100).optional().nullable(),
@@ -68,6 +75,7 @@ const adminBusinessUpdateSchema = z.object({
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   pricingTier: z.enum(["BASIC", "PRO", "ENTERPRISE"]).optional().nullable(),
+  onboardingCompleted: z.boolean().optional(),
   verification: businessQuerySchema.shape.status.optional(),
   verificationNotes: z.string().max(1000).optional().nullable(),
 });
@@ -157,7 +165,14 @@ router.delete(
 
 const adQuerySchema = z.object({
   status: z
-    .enum(["DRAFT", "PENDING_APPROVAL", "ACTIVE", "PAUSED", "COMPLETED", "REJECTED"])
+    .enum([
+      "DRAFT",
+      "PENDING_APPROVAL",
+      "ACTIVE",
+      "PAUSED",
+      "COMPLETED",
+      "REJECTED",
+    ])
     .optional(),
   businessId: z.string().optional(),
   search: z.string().max(100).optional(),

@@ -36,6 +36,17 @@ const createBusinessSchema = z.object({
   tagline: z.string().max(200).optional(),
 });
 
+const websiteUrlSchema = z
+  .preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }, z.string().url())
+  .optional()
+  .nullable();
+
 // All fields optional — the wizard saves partial drafts on every step.
 const updateBusinessSchema = z.object({
   categories: z.array(businessCategoryEnum).min(1).max(5).optional(),
@@ -46,7 +57,7 @@ const updateBusinessSchema = z.object({
   bannerUrl: z.string().url().optional().nullable(),
   phone: z.string().max(40).optional().nullable(),
   email: z.string().email().optional().nullable(),
-  websiteUrl: z.string().url().optional().nullable(),
+  websiteUrl: websiteUrlSchema,
   addressLine1: z.string().max(200).optional().nullable(),
   addressLine2: z.string().max(200).optional().nullable(),
   city: z.string().max(100).optional().nullable(),
@@ -55,16 +66,20 @@ const updateBusinessSchema = z.object({
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   pricingTier: z.enum(["BASIC", "PRO", "ENTERPRISE"]).optional().nullable(),
+  onboardingCompleted: z.boolean().optional(),
 });
 
 const documentsSchema = z.object({
-  documents: z.array(
-    z.object({
-      type: z.string().min(1).max(60),
-      url: z.string().url(),
-      uploadedAt: z.string().datetime().optional(),
-    }),
-  ).min(1).max(10),
+  documents: z
+    .array(
+      z.object({
+        type: z.string().min(1).max(60),
+        url: z.string().url(),
+        uploadedAt: z.string().datetime().optional(),
+      }),
+    )
+    .min(1)
+    .max(10),
 });
 
 const listQuerySchema = z.object({
@@ -194,7 +209,9 @@ router.post(
 
     const assignBrandOwnerRole = async () => {
       await prisma.userRoleAssignment.upsert({
-        where: { userId_role: { userId: session.user.id, role: "BRAND_OWNER" } },
+        where: {
+          userId_role: { userId: session.user.id, role: "BRAND_OWNER" },
+        },
         create: { userId: session.user.id, role: "BRAND_OWNER" },
         update: {},
       });
@@ -203,7 +220,13 @@ router.post(
     let slug = slugify(displayName);
     try {
       const business = await prisma.businessProfile.create({
-        data: { ownerId: session.user.id, categories, displayName, slug, tagline },
+        data: {
+          ownerId: session.user.id,
+          categories,
+          displayName,
+          slug,
+          tagline,
+        },
       });
 
       if (!categories.includes("CLUB")) {
@@ -215,7 +238,13 @@ router.post(
       if (err?.code === "P2002") {
         slug = slugify(displayName);
         const business = await prisma.businessProfile.create({
-          data: { ownerId: session.user.id, categories, displayName, slug, tagline },
+          data: {
+            ownerId: session.user.id,
+            categories,
+            displayName,
+            slug,
+            tagline,
+          },
         });
 
         if (!categories.includes("CLUB")) {
@@ -243,7 +272,10 @@ router.patch(
     const existing = await prisma.businessProfile.findUnique({ where: { id } });
     if (!existing) return ApiResponse.notFound(res, "Business not found");
     if (existing.ownerId !== session.user.id && !isStaff(session.user.roles)) {
-      return ApiResponse.forbidden(res, "Only the owner can update this business");
+      return ApiResponse.forbidden(
+        res,
+        "Only the owner can update this business",
+      );
     }
 
     // Once approved, owners can still edit content (logo, description, etc.)
@@ -251,7 +283,9 @@ router.patch(
     if (existing.verification === "APPROVED" && req.body.categories) {
       const existingSet = new Set(existing.categories);
       const newSet = new Set(req.body.categories as string[]);
-      const changed = [...newSet].some((c) => !existingSet.has(c as any)) || existingSet.size !== newSet.size;
+      const changed =
+        [...newSet].some((c) => !existingSet.has(c as any)) ||
+        existingSet.size !== newSet.size;
       if (changed) {
         return ApiResponse.error(
           res,
@@ -292,10 +326,7 @@ router.post(
       uploadedAt: d.uploadedAt ?? new Date().toISOString(),
     }));
 
-    const merged = [
-      ...((existing.documents as any[]) ?? []),
-      ...incoming,
-    ];
+    const merged = [...((existing.documents as any[]) ?? []), ...incoming];
 
     const updated = await prisma.businessProfile.update({
       where: { id },
@@ -437,10 +468,7 @@ async function ensureBusinessOwner(
     ApiResponse.notFound(res, "Business not found");
     return null;
   }
-  if (
-    business.ownerId !== session.user.id &&
-    !isStaff(session.user.roles)
-  ) {
+  if (business.ownerId !== session.user.id && !isStaff(session.user.roles)) {
     ApiResponse.forbidden(res, "Only the owner can manage this business");
     return null;
   }
@@ -508,7 +536,10 @@ router.patch(
       // Editing a live campaign re-enters review.
       data.status = "PENDING_APPROVAL";
     }
-    const updated = await prisma.adCampaign.update({ where: { id: cid }, data });
+    const updated = await prisma.adCampaign.update({
+      where: { id: cid },
+      data,
+    });
     ApiResponse.success(res, updated, "Campaign updated");
   }),
 );
@@ -549,19 +580,18 @@ const createDiscountSchema = z
     message: "Provide either percentOff or amountOffPaise",
   });
 
-const updateDiscountSchema = z
-  .object({
-    code: z.string().max(40).optional().nullable(),
-    title: z.string().min(2).max(120).optional(),
-    description: z.string().max(2000).optional().nullable(),
-    imageUrl: z.string().url().optional().nullable(),
-    percentOff: z.number().int().min(1).max(100).optional().nullable(),
-    amountOffPaise: z.number().int().min(1).optional().nullable(),
-    validFrom: z.string().datetime().optional(),
-    validUntil: z.string().datetime().optional(),
-    appliesTo: z.any().optional().nullable(),
-    isFeatured: z.boolean().optional(),
-  });
+const updateDiscountSchema = z.object({
+  code: z.string().max(40).optional().nullable(),
+  title: z.string().min(2).max(120).optional(),
+  description: z.string().max(2000).optional().nullable(),
+  imageUrl: z.string().url().optional().nullable(),
+  percentOff: z.number().int().min(1).max(100).optional().nullable(),
+  amountOffPaise: z.number().int().min(1).optional().nullable(),
+  validFrom: z.string().datetime().optional(),
+  validUntil: z.string().datetime().optional(),
+  appliesTo: z.any().optional().nullable(),
+  isFeatured: z.boolean().optional(),
+});
 
 const didParamSchema = z.object({
   id: z.string().min(1),
@@ -717,7 +747,9 @@ async function ensureBusinessAccess(
   req: Request,
   res: Response,
   minRole: "ADMIN" | null = null,
-): Promise<{ business: { id: string; ownerId: string; verification: string } } | null> {
+): Promise<{
+  business: { id: string; ownerId: string; verification: string };
+} | null> {
   const session = (req as any).session;
   const { id } = req.params;
 
@@ -809,7 +841,9 @@ router.post(
     }
 
     const member = await prisma.brandMember.upsert({
-      where: { businessId_userId: { businessId: ctx.business.id, userId: target.id } },
+      where: {
+        businessId_userId: { businessId: ctx.business.id, userId: target.id },
+      },
       create: {
         businessId: ctx.business.id,
         userId: target.id,
@@ -817,14 +851,23 @@ router.post(
         invitedBy: session.user.id,
       },
       update: { role },
-      include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatar: true } },
+      },
     });
 
     // Grant the appropriate platform role so the portal works for them.
-    const platformRole = role === "ADMIN" ? "BRAND_ADMIN" : role === "MODERATOR" ? "BRAND_MODERATOR" : null;
+    const platformRole =
+      role === "ADMIN"
+        ? "BRAND_ADMIN"
+        : role === "MODERATOR"
+          ? "BRAND_MODERATOR"
+          : null;
     if (platformRole) {
       await prisma.userRoleAssignment.upsert({
-        where: { userId_role: { userId: target.id, role: platformRole as any } },
+        where: {
+          userId_role: { userId: target.id, role: platformRole as any },
+        },
         create: { userId: target.id, role: platformRole as any },
         update: {},
       });
@@ -844,14 +887,20 @@ router.patch(
     if (!ctx) return;
     const { uid } = req.params;
     const existing = await prisma.brandMember.findUnique({
-      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+      where: {
+        businessId_userId: { businessId: ctx.business.id, userId: uid },
+      },
     });
     if (!existing) return ApiResponse.notFound(res, "Member not found");
 
     const updated = await prisma.brandMember.update({
-      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+      where: {
+        businessId_userId: { businessId: ctx.business.id, userId: uid },
+      },
       data: { role: req.body.role },
-      include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatar: true } },
+      },
     });
     ApiResponse.success(res, updated, "Role updated");
   }),
@@ -869,11 +918,15 @@ router.delete(
       return ApiResponse.forbidden(res, "Cannot remove the owner");
     }
     const existing = await prisma.brandMember.findUnique({
-      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+      where: {
+        businessId_userId: { businessId: ctx.business.id, userId: uid },
+      },
     });
     if (!existing) return ApiResponse.notFound(res, "Member not found");
     await prisma.brandMember.delete({
-      where: { businessId_userId: { businessId: ctx.business.id, userId: uid } },
+      where: {
+        businessId_userId: { businessId: ctx.business.id, userId: uid },
+      },
     });
     ApiResponse.success(res, null, "Member removed");
   }),
@@ -929,12 +982,15 @@ router.get(
     const isOwnerOrMember =
       business.ownerId === session.user.id ||
       !!(await prisma.brandMember.findUnique({
-        where: { businessId_userId: { businessId: id, userId: session.user.id } },
+        where: {
+          businessId_userId: { businessId: id, userId: session.user.id },
+        },
       }));
 
     const where: any = { businessId: id };
     if (!isOwnerOrMember) {
-      if (business.verification !== "APPROVED") return ApiResponse.notFound(res, "Business not found");
+      if (business.verification !== "APPROVED")
+        return ApiResponse.notFound(res, "Business not found");
       where.isActive = true;
     }
 
@@ -970,7 +1026,9 @@ router.patch(
     const ctx = await ensureBusinessAccess(req, res);
     if (!ctx) return;
     const { sid } = req.params;
-    const existing = await prisma.serviceListing.findUnique({ where: { id: sid } });
+    const existing = await prisma.serviceListing.findUnique({
+      where: { id: sid },
+    });
     if (!existing || existing.businessId !== ctx.business.id) {
       return ApiResponse.notFound(res, "Service not found");
     }
@@ -990,12 +1048,160 @@ router.delete(
     const ctx = await ensureBusinessAccess(req, res);
     if (!ctx) return;
     const { sid } = req.params;
-    const existing = await prisma.serviceListing.findUnique({ where: { id: sid } });
+    const existing = await prisma.serviceListing.findUnique({
+      where: { id: sid },
+    });
     if (!existing || existing.businessId !== ctx.business.id) {
       return ApiResponse.notFound(res, "Service not found");
     }
     await prisma.serviceListing.delete({ where: { id: sid } });
     ApiResponse.success(res, null, "Service deleted");
+  }),
+);
+
+// ─── Brand Products (Phase 9) ─────────────────────────────────────────────
+
+const brandProductCategoryEnum = z.enum([
+  "MOTORCYCLE",
+  "GEAR",
+  "HELMET",
+  "JACKET",
+  "GLOVES",
+  "BOOTS",
+  "PANTS",
+  "PARTS",
+  "ACCESSORIES",
+  "ELECTRONICS",
+  "TOOLS",
+  "LUBRICANTS",
+  "TYRES",
+  "LIGHTING",
+  "APPAREL",
+  "MEMORABILIA",
+  "OTHER",
+]);
+
+const productAvailabilityEnum = z.enum([
+  "IN_STOCK",
+  "OUT_OF_STOCK",
+  "PRE_ORDER",
+  "DISCONTINUED",
+]);
+
+const createProductSchema = z.object({
+  title: z.string().min(2).max(200),
+  description: z.string().max(5000).optional().nullable(),
+  sku: z.string().max(80).optional().nullable(),
+  category: brandProductCategoryEnum.default("OTHER"),
+  price: z.number().positive().optional().nullable(),
+  currency: z.string().max(10).default("INR"),
+  images: z.array(z.string().url()).max(10).default([]),
+  availability: productAvailabilityEnum.default("IN_STOCK"),
+  tags: z.array(z.string().max(40)).max(20).default([]),
+  specs: z.record(z.unknown()).optional().nullable(),
+  isActive: z.boolean().default(true),
+  isFeatured: z.boolean().default(false),
+});
+
+const updateProductSchema = createProductSchema.partial();
+
+const pidParamSchema = z.object({
+  id: z.string().min(1),
+  pid: z.string().min(1),
+});
+
+router.get(
+  "/:id/products",
+  requireAuth,
+  validateParams(idParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const session = (req as any).session;
+
+    const business = await prisma.businessProfile.findUnique({
+      where: { id },
+      select: { ownerId: true, verification: true },
+    });
+    if (!business) return ApiResponse.notFound(res, "Business not found");
+
+    const isOwnerOrMember =
+      business.ownerId === session.user.id ||
+      !!(await prisma.brandMember.findUnique({
+        where: {
+          businessId_userId: { businessId: id, userId: session.user.id },
+        },
+      })) ||
+      isStaff(session.user.roles);
+
+    const where: any = { businessId: id };
+    if (!isOwnerOrMember) {
+      if (business.verification !== "APPROVED")
+        return ApiResponse.notFound(res, "Business not found");
+      where.isActive = true;
+    }
+
+    const products = await prisma.brandProduct.findMany({
+      where,
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+    });
+    ApiResponse.success(res, products);
+  }),
+);
+
+router.post(
+  "/:id/products",
+  requireAuth,
+  validateParams(idParamSchema),
+  validateBody(createProductSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const created = await prisma.brandProduct.create({
+      data: { businessId: ctx.business.id, ...req.body },
+    });
+    ApiResponse.success(res, created, "Product created");
+  }),
+);
+
+router.patch(
+  "/:id/products/:pid",
+  requireAuth,
+  validateParams(pidParamSchema),
+  validateBody(updateProductSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const { pid } = req.params;
+    const existing = await prisma.brandProduct.findUnique({
+      where: { id: pid },
+    });
+    if (!existing || existing.businessId !== ctx.business.id) {
+      return ApiResponse.notFound(res, "Product not found");
+    }
+    const updated = await prisma.brandProduct.update({
+      where: { id: pid },
+      data: req.body,
+    });
+    ApiResponse.success(res, updated, "Product updated");
+  }),
+);
+
+router.delete(
+  "/:id/products/:pid",
+  requireAuth,
+  validateParams(pidParamSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const ctx = await ensureBusinessAccess(req, res);
+    if (!ctx) return;
+    const { pid } = req.params;
+    const existing = await prisma.brandProduct.findUnique({
+      where: { id: pid },
+    });
+    if (!existing || existing.businessId !== ctx.business.id) {
+      return ApiResponse.notFound(res, "Product not found");
+    }
+    await prisma.brandProduct.delete({ where: { id: pid } });
+    ApiResponse.success(res, null, "Product deleted");
   }),
 );
 
@@ -1026,7 +1232,9 @@ router.get(
     const inquiries = await prisma.businessInquiry.findMany({
       where: { businessId: ctx.business.id },
       include: {
-        fromUser: { select: { id: true, name: true, email: true, avatar: true } },
+        fromUser: {
+          select: { id: true, name: true, email: true, avatar: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -1052,7 +1260,12 @@ router.post(
       return ApiResponse.notFound(res, "Business not found");
     }
     if (business.ownerId === session.user.id) {
-      return ApiResponse.error(res, "Cannot inquire to your own business", 400, ErrorCode.VALIDATION_ERROR);
+      return ApiResponse.error(
+        res,
+        "Cannot inquire to your own business",
+        400,
+        ErrorCode.VALIDATION_ERROR,
+      );
     }
 
     const inquiry = await prisma.businessInquiry.create({
@@ -1063,7 +1276,9 @@ router.post(
         message: req.body.message,
       },
       include: {
-        fromUser: { select: { id: true, name: true, email: true, avatar: true } },
+        fromUser: {
+          select: { id: true, name: true, email: true, avatar: true },
+        },
       },
     });
     ApiResponse.success(res, inquiry, "Inquiry sent");
@@ -1080,7 +1295,9 @@ router.patch(
     const ctx = await ensureBusinessAccess(req, res);
     if (!ctx) return;
     const { iid } = req.params;
-    const existing = await prisma.businessInquiry.findUnique({ where: { id: iid } });
+    const existing = await prisma.businessInquiry.findUnique({
+      where: { id: iid },
+    });
     if (!existing || existing.businessId !== ctx.business.id) {
       return ApiResponse.notFound(res, "Inquiry not found");
     }
@@ -1088,7 +1305,9 @@ router.patch(
       where: { id: iid },
       data: { status: req.body.status },
       include: {
-        fromUser: { select: { id: true, name: true, email: true, avatar: true } },
+        fromUser: {
+          select: { id: true, name: true, email: true, avatar: true },
+        },
       },
     });
     ApiResponse.success(res, updated, "Inquiry updated");

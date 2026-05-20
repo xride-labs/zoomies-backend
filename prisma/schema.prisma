@@ -335,39 +335,40 @@ enum BusinessVerificationStatus {
  * in discovery — admins approve via the admin portal.
  */
 model BusinessProfile {
-  id                String                     @id @default(cuid())
-  ownerId           String                     @map("owner_id")
-  categories        BusinessCategory[]
-  displayName       String                     @map("display_name")
+  id                  String                     @id @default(cuid())
+  ownerId             String                     @map("owner_id")
+  categories          BusinessCategory[]
+  displayName         String                     @map("display_name")
   // URL-safe slug used in deep links (zoomies://business/<slug>) and the
   // public web mirror. Generated from displayName at create time; uniqueness
   // is enforced so two businesses can't share a slug.
-  slug              String                     @unique
-  tagline           String?
-  description       String?                    @db.Text
-  logoUrl           String?                    @map("logo_url")
-  bannerUrl         String?                    @map("banner_url")
+  slug                String                     @unique
+  tagline             String?
+  description         String?                    @db.Text
+  logoUrl             String?                    @map("logo_url")
+  bannerUrl           String?                    @map("banner_url")
   // Contact + location. All optional so the wizard can save partial drafts.
-  phone             String?
-  email             String?
-  websiteUrl        String?                    @map("website_url")
-  addressLine1      String?                    @map("address_line1")
-  addressLine2      String?                    @map("address_line2")
-  city              String?
-  region            String?
-  country           String?
-  latitude          Float?
-  longitude         Float?
-  pricingTier       String?                    @map("pricing_tier") // BASIC | PRO | ENTERPRISE
+  phone               String?
+  email               String?
+  websiteUrl          String?                    @map("website_url")
+  addressLine1        String?                    @map("address_line1")
+  addressLine2        String?                    @map("address_line2")
+  city                String?
+  region              String?
+  country             String?
+  latitude            Float?
+  longitude           Float?
+  pricingTier         String?                    @map("pricing_tier") // BASIC | PRO | ENTERPRISE
   // Brand portal subscription — FREE (default) or PRO (paid via Dodo).
-  brandTier         String                     @default("FREE") @map("brand_tier")
-  brandProExpiresAt DateTime?                  @map("brand_pro_expires_at")
+  brandTier           String                     @default("FREE") @map("brand_tier")
+  brandProExpiresAt   DateTime?                  @map("brand_pro_expires_at")
+  onboardingCompleted Boolean                    @default(false) @map("onboarding_completed")
   // Verification state machine. Only APPROVED profiles surface in discovery.
-  verification      BusinessVerificationStatus @default(PENDING)
-  verificationNotes String?                    @map("verification_notes") @db.Text
+  verification        BusinessVerificationStatus @default(PENDING)
+  verificationNotes   String?                    @map("verification_notes") @db.Text
   // Free-form list of uploaded verification docs:
   // [{ type: "GST" | "TRADE_LICENSE" | "ID_PROOF", url, uploadedAt }]
-  documents         Json?
+  documents           Json?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -381,6 +382,8 @@ model BusinessProfile {
   members   BrandMember[]
   services  ServiceListing[]
   inquiries BusinessInquiry[]
+  // Phase 9: first-party product catalog
+  products  BrandProduct[]
 
   @@index([verification], map: "business_category_status_idx")
   @@index([latitude, longitude], map: "business_geo_idx")
@@ -1013,7 +1016,7 @@ model RideParticipant {
 // Post model for the feed system
 model Post {
   id      String   @id @default(cuid())
-  type    String // "ride", "content", "listing", "club-activity"
+  type    String // "ride", "content", "listing", "club-activity", "announcement"
   content String?
   images  String[] // Array of image URLs
 
@@ -1025,6 +1028,11 @@ model Post {
   listingId String? @map("listing_id")
   clubId    String? @map("club_id")
 
+  // Announcement / disappearing post support
+  isAnnouncement Boolean   @default(false) @map("is_announcement")
+  isPinned       Boolean   @default(false) @map("is_pinned")
+  expiresAt      DateTime? @map("expires_at") // null = permanent
+
   // Interactions
   likes    Like[]
   comments Comment[]
@@ -1032,6 +1040,8 @@ model Post {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@index([clubId, createdAt(sort: Desc)], map: "posts_club_feed_idx")
+  @@index([expiresAt], map: "posts_expires_idx")
   @@map("posts")
 }
 
@@ -1510,6 +1520,60 @@ model ListingInterest {
 // (Add to the MarketplaceListing model manually)
 // offers ListingOffer[]
 // interests ListingInterest[]
+
+// ─── Phase 9: Brand Products (first-party catalog, separate from P2P marketplace)
+
+enum BrandProductCategory {
+  MOTORCYCLE
+  GEAR
+  HELMET
+  JACKET
+  GLOVES
+  BOOTS
+  PANTS
+  PARTS
+  ACCESSORIES
+  ELECTRONICS
+  TOOLS
+  LUBRICANTS
+  TYRES
+  LIGHTING
+  APPAREL
+  MEMORABILIA
+  OTHER
+}
+
+enum ProductAvailability {
+  IN_STOCK
+  OUT_OF_STOCK
+  PRE_ORDER
+  DISCONTINUED
+}
+
+model BrandProduct {
+  id           String               @id @default(cuid())
+  businessId   String               @map("business_id")
+  title        String
+  description  String?              @db.Text
+  sku          String?
+  category     BrandProductCategory @default(OTHER)
+  price        Float?
+  currency     String               @default("INR")
+  images       String[]
+  availability ProductAvailability  @default(IN_STOCK)
+  tags         String[]             @default([])
+  specs        Json?
+  isActive     Boolean              @default(true) @map("is_active")
+  isFeatured   Boolean              @default(false) @map("is_featured")
+
+  business BusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([businessId, isActive], map: "brand_product_business_idx")
+  @@map("brand_products")
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTIFICATIONS - Track notifications sent to users

@@ -201,6 +201,14 @@ export const auth = betterAuth({
     },
   },
 
+  // Share auth cookies across subdomains in production.
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: process.env.NODE_ENV === "production",
+      domain: ".xride-labs.in",
+    },
+  },
+
   // Custom user fields
   user: {
     modelName: "User",
@@ -266,10 +274,12 @@ export const auth = betterAuth({
           console.log(`==================================\n`);
           return;
         }
-        const existing = await prisma.user.findFirst({
-          where: { email },
-          select: { id: true, name: true },
-        }).catch(() => null);
+        const existing = await prisma.user
+          .findFirst({
+            where: { email },
+            select: { id: true, name: true },
+          })
+          .catch(() => null);
         const sent = await sendOtpEmail({
           to: email,
           otp,

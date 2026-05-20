@@ -1098,7 +1098,7 @@ const createProductSchema = z.object({
   images: z.array(z.string().url()).max(10).default([]),
   availability: productAvailabilityEnum.default("IN_STOCK"),
   tags: z.array(z.string().max(40)).max(20).default([]),
-  specs: z.record(z.unknown()).optional().nullable(),
+  specs: z.record(z.string(), z.unknown()).optional().nullable(),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
 });

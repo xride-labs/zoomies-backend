@@ -1232,4 +1232,56 @@ router.delete(
   }),
 );
 
+/**
+ * @swagger
+ * /api/users/me/ghost-mode:
+ *   patch:
+ *     summary: Toggle Ghost Mode for the current user
+ *     description: |
+ *       When enabled, the user is omitted from public feeds, presence
+ *       broadcasts, and discoverability lists. Active-ride participants and
+ *       emergency contacts still see live location — safety always wins
+ *       over privacy. Returns the new enabled state and the timestamp
+ *       ghost mode was activated (or null).
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               enabled:
+ *                 type: boolean
+ */
+router.patch(
+  "/me/ghost-mode",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = (req as any).session;
+    const enabled = req.body?.enabled === true;
+    const user = await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        ghostModeEnabled: enabled,
+        ghostModeSince: enabled ? new Date() : null,
+      },
+      select: {
+        id: true,
+        ghostModeEnabled: true,
+        ghostModeSince: true,
+      },
+    });
+    ApiResponse.success(
+      res,
+      {
+        ghostModeEnabled: user.ghostModeEnabled,
+        ghostModeSince: user.ghostModeSince,
+      },
+      enabled ? "Ghost mode enabled" : "Ghost mode disabled",
+    );
+  }),
+);
+
 export default router;

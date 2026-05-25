@@ -77,6 +77,12 @@ model User {
   helmetVerified  Boolean   @default(false) @map("helmet_verified")
   lastSafetyCheck DateTime? @map("last_safety_check")
 
+  // Privacy / Ghost Mode — when true, the user is omitted from public feeds,
+  // map presence broadcasts, and discoverability lists. Emergency contacts and
+  // active-ride participants still see live location (safety > privacy).
+  ghostModeEnabled Boolean   @default(false) @map("ghost_mode_enabled")
+  ghostModeSince   DateTime? @map("ghost_mode_since")
+
   // Timestamps
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -582,6 +588,17 @@ enum RideStatus {
   CANCELLED
 }
 
+// Per-ride privacy level. PUBLIC mirrors today's behaviour (feed-visible,
+// discoverable). FRIENDS_ONLY hides from the public feed but keeps live
+// location flowing inside the ride. INCOGNITO suppresses feed posts and
+// non-participant live-broadcasts entirely — emergency-contact + active
+// participant visibility is preserved for rider safety.
+enum RidePrivacyLevel {
+  PUBLIC
+  FRIENDS_ONLY
+  INCOGNITO
+}
+
 enum RideBreakType {
   REST
   FUEL
@@ -699,6 +716,12 @@ model Ride {
 
   // Pause/resume tracking — set when an active ride is paused, cleared on resume.
   pausedAt DateTime? @map("paused_at")
+
+  // Per-ride privacy override. PUBLIC mirrors current behaviour; FRIENDS_ONLY
+  // hides from the feed but keeps live-location sharing inside the ride;
+  // INCOGNITO suppresses feed posts, live-broadcasts, and post-ride summary
+  // visibility for non-participants. Defaults to PUBLIC for backward-compat.
+  privacyLevel RidePrivacyLevel @default(PUBLIC) @map("privacy_level")
 
   // Effective ride metrics — computed once at end-of-ride from
   // actualStartTime/actualEndTime minus break and detour overhead. The

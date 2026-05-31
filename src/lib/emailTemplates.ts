@@ -62,7 +62,7 @@ function getAssetBaseUrl(): string {
   return raw.replace(/\/+$/, "");
 }
 
-const ICON_URL = `${getAssetBaseUrl()}/email-assets/zoomies-icon.png`;
+const ICON_URL = `${getAssetBaseUrl()}/email-assets/revvie-icon.png`;
 const CURRENT_YEAR = new Date().getFullYear();
 
 function escapeHtml(value: string): string {
@@ -218,10 +218,10 @@ function buildHtml(params: LayoutParams): string {
                             <table cellpadding="0" cellspacing="0" role="presentation">
                               <tr>
                                 <td valign="middle" style="padding-right:12px;">
-                                  <img src="${ICON_URL}" alt="Zoomies" width="32" height="32" style="display:block;width:32px;height:32px;border:0;outline:none;border-radius:8px;" />
+                                  <img src="${ICON_URL}" alt="Revvie" width="32" height="32" style="display:block;width:32px;height:32px;border:0;outline:none;border-radius:8px;" />
                                 </td>
                                 <td valign="middle">
-                                  <div style="font-family:${FONT_STACK};font-size:16px;font-weight:700;color:#FFFFFF;letter-spacing:-0.01em;line-height:1;">ZOOMIES</div>
+                                  <div style="font-family:${FONT_STACK};font-size:16px;font-weight:700;color:#FFFFFF;letter-spacing:-0.01em;line-height:1;">REVVIE</div>
                                 </td>
                               </tr>
                             </table>
@@ -283,7 +283,7 @@ function buildHtml(params: LayoutParams): string {
                   <tr>
                     <td align="center" style="font-family:${FONT_STACK};font-size:12px;line-height:1.6;color:${BRAND.mutedSoft};">
                       <div style="margin-bottom:8px;">
-                        <strong style="color:${BRAND.muted};">Zoomies</strong> &middot; by Xride Labs
+                        <strong style="color:${BRAND.muted};">Revvie</strong> &middot; by Xride Labs
                       </div>
                       <div style="margin-bottom:8px;">
                         Questions? Contact <a href="mailto:hello@xride-labs.in" style="color:${BRAND.muted};text-decoration:underline;">hello@xride-labs.in</a>
@@ -348,7 +348,7 @@ function buildText(params: {
     params.legal || "",
     "",
     "---",
-    "Zoomies by Xride Labs",
+    "Revvie by Xride Labs",
     "Questions? hello@xride-labs.in",
   ]
     .filter((line) => line !== undefined && line !== null)
@@ -383,13 +383,13 @@ export function buildWelcomeTemplate(params: {
   ];
 
   const html = buildHtml({
-    preheader: "Your Zoomies account is ready. Here's how to get started.",
-    heading: "Welcome to Zoomies",
+    preheader: "Your Revvie account is ready. Here's how to get started.",
+    heading: "Welcome to Revvie",
     greeting,
     intro:
-      "Your rider account is officially active. Zoomies is the home for motorcycle riders to discover routes, join clubs, and connect with the community. Here are a few ways to hit the ground running:",
+      "Your rider account is officially active. Revvie is the home for motorcycle riders to discover routes, join clubs, and connect with the community. Here are a few ways to hit the ground running:",
     sections,
-    ctaLabel: "Open Zoomies",
+    ctaLabel: "Open Revvie",
     ctaUrl: params.appUrl,
     outro:
       "If you have any questions, just reply to this email — we read every message.",
@@ -397,17 +397,17 @@ export function buildWelcomeTemplate(params: {
 
   const text = buildText({
     greeting,
-    heading: "Welcome to Zoomies",
+    heading: "Welcome to Revvie",
     intro:
-      "Your rider account is officially active. Zoomies is the home for motorcycle riders to discover routes, join clubs, and connect with the community. Here are a few ways to hit the ground running:",
+      "Your rider account is officially active. Revvie is the home for motorcycle riders to discover routes, join clubs, and connect with the community. Here are a few ways to hit the ground running:",
     sections,
-    ctaLabel: "Open Zoomies",
+    ctaLabel: "Open Revvie",
     ctaUrl: params.appUrl,
     outro: "If you have any questions, just reply to this email.",
   });
 
   return {
-    subject: "Welcome to Zoomies 🏍️",
+    subject: "Welcome to Revvie 🏍️",
     html,
     text,
     tags: ["onboarding", "welcome"],
@@ -422,7 +422,7 @@ export function buildVerificationTemplate(params: {
   const greeting = firstName ? `Hi ${firstName},` : "Hi there,";
 
   const html = buildHtml({
-    preheader: "Confirm your email address to activate your Zoomies account.",
+    preheader: "Confirm your email address to activate your Revvie account.",
     heading: "Confirm your email address",
     greeting,
     intro:
@@ -430,7 +430,7 @@ export function buildVerificationTemplate(params: {
     ctaLabel: "Verify Email",
     ctaUrl: params.verifyUrl,
     legal:
-      "If you did not create a Zoomies account, you can safely ignore this email.",
+      "If you did not create a Revvie account, you can safely ignore this email.",
   });
 
   const text = buildText({
@@ -441,7 +441,7 @@ export function buildVerificationTemplate(params: {
     ctaLabel: "Verify Email",
     ctaUrl: params.verifyUrl,
     legal:
-      "If you did not create a Zoomies account, you can safely ignore this email.",
+      "If you did not create a Revvie account, you can safely ignore this email.",
   });
 
   return {
@@ -462,28 +462,28 @@ export function buildOtpTemplate(params: {
   const ttl = params.expiresInMinutes || 10;
 
   const html = buildHtml({
-    preheader: `Your Zoomies verification code is ${params.otp}.`,
+    preheader: `Your Revvie verification code is ${params.otp}.`,
     heading: "Your sign-in code",
     greeting,
     intro:
-      "Use the verification code below to finish signing in to your Zoomies account.",
+      "Use the verification code below to finish signing in to your Revvie account.",
     codeLabel: "Verification Code",
     codeValue: params.otp,
-    legal: `This code expires in ${ttl} minutes. Zoomies will never ask you for this code by phone, email, or chat. If you did not request it, you can safely ignore this message.`,
+    legal: `This code expires in ${ttl} minutes. Revvie will never ask you for this code by phone, email, or chat. If you did not request it, you can safely ignore this message.`,
   });
 
   const text = buildText({
     greeting,
     heading: "Your sign-in code",
     intro:
-      "Use the verification code below to finish signing in to your Zoomies account.",
+      "Use the verification code below to finish signing in to your Revvie account.",
     codeLabel: "Verification Code",
     codeValue: params.otp,
     legal: `This code expires in ${ttl} minutes. Never share this code with anyone.`,
   });
 
   return {
-    subject: `${params.otp} — your Zoomies code`,
+    subject: `${params.otp} — your Revvie code`,
     html,
     text,
     tags: ["otp"],
@@ -510,7 +510,7 @@ export function buildWelcomeOtpTemplate(params: {
   ];
 
   const html = buildHtml({
-    preheader: `Welcome to Zoomies! Your verification code is ${params.otp}.`,
+    preheader: `Welcome to Revvie! Your verification code is ${params.otp}.`,
     heading: "You're almost in",
     greeting: "Welcome aboard,",
     intro:
@@ -533,7 +533,7 @@ export function buildWelcomeOtpTemplate(params: {
   });
 
   return {
-    subject: `${params.otp} — welcome to Zoomies 🏍️`,
+    subject: `${params.otp} — welcome to Revvie 🏍️`,
     html,
     text,
     tags: ["otp", "welcome"],
@@ -548,11 +548,11 @@ export function buildResetPasswordTemplate(params: {
   const greeting = firstName ? `Hi ${firstName},` : "Hi there,";
 
   const html = buildHtml({
-    preheader: "Reset your Zoomies account password.",
+    preheader: "Reset your Revvie account password.",
     heading: "Reset your password",
     greeting,
     intro:
-      "We received a request to reset the password for your Zoomies account. Click the button below to choose a new password. This link will expire soon.",
+      "We received a request to reset the password for your Revvie account. Click the button below to choose a new password. This link will expire soon.",
     ctaLabel: "Reset Password",
     ctaUrl: params.resetUrl,
     legal:
@@ -563,7 +563,7 @@ export function buildResetPasswordTemplate(params: {
     greeting,
     heading: "Reset your password",
     intro:
-      "We received a request to reset the password for your Zoomies account. Click the link below to choose a new password.",
+      "We received a request to reset the password for your Revvie account. Click the link below to choose a new password.",
     ctaLabel: "Reset Password",
     ctaUrl: params.resetUrl,
     legal:
@@ -571,7 +571,7 @@ export function buildResetPasswordTemplate(params: {
   });
 
   return {
-    subject: "Reset your Zoomies password",
+    subject: "Reset your Revvie password",
     html,
     text,
     tags: ["reset-password"],
@@ -632,7 +632,7 @@ export function buildClubJoinTemplate(params: {
     heading: "Your club is growing",
     greeting: "Hi there,",
     intro:
-      "A new rider just joined your club on Zoomies. You can manage your members and community directly from your club dashboard.",
+      "A new rider just joined your club on Revvie. You can manage your members and community directly from your club dashboard.",
     sections,
     ctaLabel: "Open Club Dashboard",
     ctaUrl: params.clubsUrl,
@@ -642,7 +642,7 @@ export function buildClubJoinTemplate(params: {
     greeting: "Hi there,",
     heading: "Your club is growing",
     intro:
-      "A new rider just joined your club on Zoomies. Manage your members from your club dashboard.",
+      "A new rider just joined your club on Revvie. Manage your members from your club dashboard.",
     sections,
     ctaLabel: "Open Club Dashboard",
     ctaUrl: params.clubsUrl,
@@ -666,14 +666,14 @@ export function buildAlertTemplate(params: {
     greeting: "Hi there,",
     intro: params.message,
     legal:
-      "This is an automated system notice from Zoomies. If you believe you received it in error, please reply and let us know.",
+      "This is an automated system notice from Revvie. If you believe you received it in error, please reply and let us know.",
   });
 
   const text = buildText({
     greeting: "Hi there,",
     heading: params.subject,
     intro: params.message,
-    legal: "This is an automated system notice from Zoomies.",
+    legal: "This is an automated system notice from Revvie.",
   });
 
   return {

@@ -45,8 +45,8 @@ const MOBILE_ORIGINS = [
 
 // Production origins
 const PRODUCTION_ORIGINS = [
-  "https://zoomies.xride-labs.in",
-  "https://api.zoomies.xride-labs.in",
+  "https://revvie.xride-labs.in",
+  "https://api.revvie.xride-labs.in",
   process.env.FRONTEND_URL || "",
   process.env.MOBILE_APP_URL || "",
 ].filter(Boolean);

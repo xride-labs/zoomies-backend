@@ -1811,7 +1811,7 @@ router.get(
       routeGeoJson: ride.trackingData.routeGeoJson,
     });
 
-    const filename = `zoomies-ride-${ride.id}.gpx`;
+    const filename = `revvie-ride-${ride.id}.gpx`;
     res.setHeader("Content-Type", "application/gpx+xml; charset=utf-8");
     res.setHeader(
       "Content-Disposition",

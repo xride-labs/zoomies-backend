@@ -1,5 +1,5 @@
 /**
- * Multi-role permission utilities for Zoomies platform.
+ * Multi-role permission utilities for Revvie platform.
  *
  * Users can hold multiple roles simultaneously (e.g. CLUB_OWNER + SELLER).
  */

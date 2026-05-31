@@ -1,7 +1,7 @@
 {
-  "name": "zoomies-backend",
+  "name": "revvie-backend",
   "version": "1.0.0",
-  "description": "Zoomies Backend API with Express, Prisma, and Better Auth",
+  "description": "Revvie Backend API with Express, Prisma, and Better Auth",
   "type": "module",
   "main": "dist/src/server.js",
   "scripts": {
@@ -66,7 +66,6 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.1",
     "pg": "^8.18.0",
-    "prom-client": "^15.1.3",
     "socket.io": "^4.8.3",
     "standardwebhooks": "^1.0.0",
     "swagger-jsdoc": "^6.2.8",

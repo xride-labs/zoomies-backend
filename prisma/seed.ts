@@ -22,7 +22,7 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 const IS_PROD = process.env.NODE_ENV === "production";
-const PRIMARY_ADMIN_EMAIL = "admin@zoomies.com";
+const PRIMARY_ADMIN_EMAIL = "admin@revvie.com";
 const GOOGLE_ADMIN_EMAIL = "krithikm923@gmail.com";
 
 // ──────────────────────────────────────────────────────────────────
@@ -217,9 +217,9 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
       dob: new Date("1992-02-01"),
       bloodType: "O+",
       avatar:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/zoomies/rides/avatar_hgoxkz.jpg",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/revvie/rides/avatar_hgoxkz.jpg",
       coverImage:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/zoomies/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/revvie/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
       xpPoints: 5200,
       level: 12,
       levelTitle: "Road Commander",
@@ -240,9 +240,9 @@ async function seedProductionAdmin(passwordHash: string): Promise<void> {
       dob: new Date("1992-02-01"),
       bloodType: "O+",
       avatar:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/zoomies/rides/avatar_hgoxkz.jpg",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/revvie/rides/avatar_hgoxkz.jpg",
       coverImage:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/zoomies/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/revvie/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
       xpPoints: 5200,
       level: 12,
       levelTitle: "Road Commander",
@@ -379,9 +379,9 @@ async function main() {
       dob: new Date("1992-02-01"),
       bloodType: "O+",
       avatar:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/zoomies/rides/avatar_hgoxkz.jpg",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772386875/revvie/rides/avatar_hgoxkz.jpg",
       coverImage:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/zoomies/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772387502/revvie/rides/bannerBackgroundImage_o8qnzwji8ckd1_rynbjl.png",
       xpPoints: 5200,
       level: 12,
       levelTitle: "Road Commander",
@@ -415,9 +415,9 @@ async function main() {
       dob: new Date("1996-04-11"),
       bloodType: "B+",
       avatar:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772560334/zoomies/rides/male_doctor_njjg5j.png",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772560334/revvie/rides/male_doctor_njjg5j.png",
       coverImage:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772560334/zoomies/rides/119419735_udtbgq.webp",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772560334/revvie/rides/119419735_udtbgq.webp",
       xpPoints: 1200,
       level: 5,
       levelTitle: "Weekend Runner",
@@ -437,9 +437,9 @@ async function main() {
       dob: new Date("1998-09-23"),
       bloodType: "A+",
       avatar:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772560335/zoomies/rides/Police_Woman_h2lvlq.png",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772560335/revvie/rides/Police_Woman_h2lvlq.png",
       coverImage:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772560336/zoomies/rides/IMG_6600_t57x4d.webp",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772560336/revvie/rides/IMG_6600_t57x4d.webp",
       xpPoints: 2500,
       level: 8,
       levelTitle: "Track Chaser",
@@ -479,7 +479,7 @@ async function main() {
       dob: new Date("2000-06-14"),
       bloodType: "AB+",
       avatar:
-        "https://res.cloudinary.com/xride-labs/image/upload/v1772560334/zoomies/rides/male_doctor_njjg5j.png",
+        "https://res.cloudinary.com/xride-labs/image/upload/v1772560334/revvie/rides/male_doctor_njjg5j.png",
       xpPoints: 800,
       level: 3,
       levelTitle: "Starter",
@@ -2416,9 +2416,9 @@ async function main() {
       data: {
         id: `seed_disc_${bi}`,
         businessId: bp.id,
-        code: `ZOOMIES${bi + 10}`,
-        title: `${brand.name} — Zoomies Exclusive ${10 + bi * 2}% Off`,
-        description: `Exclusive discount for Zoomies riders. Use code at checkout on ${brand.name}'s website or in-store.`,
+        code: `REVVIE${bi + 10}`,
+        title: `${brand.name} — Revvie Exclusive ${10 + bi * 2}% Off`,
+        description: `Exclusive discount for Revvie riders. Use code at checkout on ${brand.name}'s website or in-store.`,
         imageUrl: tpl.imageUrl,
         percentOff: 10 + bi * 2,
         validFrom: now,
@@ -2435,8 +2435,8 @@ async function main() {
     });
     if (brandOwnerUser) {
       const brandPostContents = [
-        `🏍️ Introducing our latest collection for serious riders. Quality that speaks for itself. Check out ${brand.name} on Zoomies!`,
-        `We're proud to be part of the Zoomies rider community. Swing by our store or browse our listings to gear up for your next ride. #RideMore`,
+        `🏍️ Introducing our latest collection for serious riders. Quality that speaks for itself. Check out ${brand.name} on Revvie!`,
+        `We're proud to be part of the Revvie rider community. Swing by our store or browse our listings to gear up for your next ride. #RideMore`,
       ];
       for (let pi = 0; pi < 2; pi++) {
         await prisma.post.create({
@@ -2467,7 +2467,7 @@ async function main() {
   console.log(`   - Reports: ${reportData.length}`);
   console.log(`   - Brands: ${brandProfiles.length}`);
   console.log("\n🔑 Credentials (password: password123):");
-  console.log("   admin@zoomies.com      → ADMIN + CLUB_OWNER");
+  console.log("   admin@revvie.com      → ADMIN + CLUB_OWNER");
   for (const u of devUsers)
     console.log(`   ${u.email.padEnd(24)} → ${u.roles.join(", ")}`);
 }

@@ -467,7 +467,7 @@ async function pingServer(url: string): Promise<void> {
       method: "GET",
       signal: controller.signal,
       headers: {
-        "User-Agent": "zoomies-backend-self-ping/1.0",
+        "User-Agent": "revvie-backend-self-ping/1.0",
       },
     });
 

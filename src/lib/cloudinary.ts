@@ -52,16 +52,16 @@ export enum MediaType {
  * Media folder paths for organization
  */
 export enum MediaFolder {
-  PROFILES = "zoomies/profiles",
-  PROFILE_COVERS = "zoomies/profiles/covers",
-  PROFILE_GALLERIES = "zoomies/profiles/galleries",
-  BIKES = "zoomies/bikes",
-  CLUBS = "zoomies/clubs",
-  CLUB_COVERS = "zoomies/clubs/covers",
-  CLUB_GALLERIES = "zoomies/clubs/galleries",
-  RIDES = "zoomies/rides",
-  LISTINGS = "zoomies/marketplace",
-  POSTS = "zoomies/posts",
+  PROFILES = "revvie/profiles",
+  PROFILE_COVERS = "revvie/profiles/covers",
+  PROFILE_GALLERIES = "revvie/profiles/galleries",
+  BIKES = "revvie/bikes",
+  CLUBS = "revvie/clubs",
+  CLUB_COVERS = "revvie/clubs/covers",
+  CLUB_GALLERIES = "revvie/clubs/galleries",
+  RIDES = "revvie/rides",
+  LISTINGS = "revvie/marketplace",
+  POSTS = "revvie/posts",
 }
 
 /**

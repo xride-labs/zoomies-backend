@@ -56,7 +56,7 @@ router.get(
       });
 
       if (!session?.session?.token) {
-        return res.redirect("zoomies://auth/callback?error=no_session");
+        return res.redirect("revvie://auth/callback?error=no_session");
       }
 
       // Ensure RIDER role exists for the user (may be a brand new Google signup)
@@ -72,11 +72,11 @@ router.get(
       const userId = session.user.id;
 
       return res.redirect(
-        `zoomies://auth/callback?token=${token}&userId=${userId}&name=${userName}&email=${userEmail}`,
+        `revvie://auth/callback?token=${token}&userId=${userId}&name=${userName}&email=${userEmail}`,
       );
     } catch (error) {
       console.error("[AUTH] Mobile OAuth callback error:", error);
-      return res.redirect("zoomies://auth/callback?error=auth_failed");
+      return res.redirect("revvie://auth/callback?error=auth_failed");
     }
   }),
 );

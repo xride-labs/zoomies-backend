@@ -24,7 +24,7 @@ const brevoApiUrl = "https://api.brevo.com/v3/smtp/email";
 function getRuntimeEmailConfig() {
   const brevoApiKey = process.env.BREVO_API_KEY?.trim();
   const senderEmail = process.env.BREVO_SENDER_EMAIL?.trim();
-  const senderName = process.env.BREVO_SENDER_NAME?.trim() || "Zoomies";
+  const senderName = process.env.BREVO_SENDER_NAME?.trim() || "Revvie";
   const fallbackReplyTo = process.env.BREVO_REPLY_TO?.trim();
   const appUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 

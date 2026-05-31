@@ -284,7 +284,7 @@ router.post(
       );
     }
 
-    const webUrl = process.env.EXPO_PUBLIC_WEB_URL || process.env.WEB_URL || "https://zoomies.app";
+    const webUrl = process.env.EXPO_PUBLIC_WEB_URL || process.env.WEB_URL || "https://revvie.app";
     const checkout = await createDodoCheckoutSession({
       productId,
       customer: { email: session.user.email, name: session.user.name },

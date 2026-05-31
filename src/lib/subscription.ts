@@ -262,8 +262,8 @@ export function requirePro(featureName?: string) {
       return ApiResponse.forbidden(
         res,
         featureName
-          ? `${featureName} requires Zoomies Pro. Upgrade to unlock this feature.`
-          : "This feature requires Zoomies Pro.",
+          ? `${featureName} requires Revvie Pro. Upgrade to unlock this feature.`
+          : "This feature requires Revvie Pro.",
         ErrorCode.SUBSCRIPTION_REQUIRED,
       );
     }

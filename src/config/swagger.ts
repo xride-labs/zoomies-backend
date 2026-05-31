@@ -8,12 +8,12 @@ const CONFIG_DIR = path.resolve(process.cwd(), "src/config");
 const swaggerDefinition = {
   openapi: "3.0.0",
   info: {
-    title: "Zoomies API",
+    title: "Revvie API",
     version: "1.0.0",
     description: `
-## Zoomies Backend API Documentation
+## Revvie Backend API Documentation
 
-A comprehensive REST API for the Zoomies cycling community platform.
+A comprehensive REST API for the Revvie cycling community platform.
 
 ### Authentication
 This API uses **Better Auth** for authentication with multiple providers:
@@ -26,7 +26,7 @@ This API uses **Better Auth** for authentication with multiple providers:
 
 ### Base URL
 - Development: \`http://localhost:5000\`
-- Production: \`https://api.zoomies.xride-labs.in\`
+- Production: \`https://api.revvie.xride-labs.in\`
 
 ### Authentication Flows
 
@@ -44,8 +44,8 @@ This API uses **Better Auth** for authentication with multiple providers:
 3. **Sign Out**: \`POST /api/auth/sign-out\`
     `,
     contact: {
-      name: "Zoomies Support",
-      email: "support@zoomies.app",
+      name: "Revvie Support",
+      email: "support@revvie.app",
     },
     license: {
       name: "MIT",
@@ -58,7 +58,7 @@ This API uses **Better Auth** for authentication with multiple providers:
       description: "Development server",
     },
     {
-      url: "https://api.zoomies.xride-labs.in",
+      url: "https://api.revvie.xride-labs.in",
       description: "Production server",
     },
   ],
@@ -436,7 +436,7 @@ This API uses **Better Auth** for authentication with multiple providers:
           publicId: {
             type: "string",
             description: "Cloudinary public ID",
-            example: "zoomies/profiles/profile_123",
+            example: "revvie/profiles/profile_123",
           },
           url: {
             type: "string",
@@ -585,7 +585,7 @@ export function setupSwagger(app: Express): void {
         .swagger-ui .topbar { display: none }
         .swagger-ui .info .title { color: #3b82f6 }
       `,
-      customSiteTitle: "Zoomies API Documentation",
+      customSiteTitle: "Revvie API Documentation",
       customfavIcon: "/favicon.ico",
     }),
   );
@@ -602,7 +602,7 @@ export function setupSwagger(app: Express): void {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Zoomies API Documentation - ReDoc</title>
+          <title>Revvie API Documentation - ReDoc</title>
           <meta charset="utf-8"/>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">

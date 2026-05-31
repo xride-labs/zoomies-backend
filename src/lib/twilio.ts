@@ -47,7 +47,7 @@ export async function sendOTPViaSMS(
 
   try {
     await twilioClient.messages.create({
-      body: `Your Zoomies verification code is: ${otp}. This code expires in 10 minutes.`,
+      body: `Your Revvie verification code is: ${otp}. This code expires in 10 minutes.`,
       from: twilioPhoneNumber,
       to: phoneNumber,
     });

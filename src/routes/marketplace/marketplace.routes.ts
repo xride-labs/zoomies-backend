@@ -513,7 +513,7 @@ router.post(
       if (activeListingCount >= FREE_MARKETPLACE_LISTING_LIMIT) {
         return ApiResponse.error(
           res,
-          `Free users can only keep ${FREE_MARKETPLACE_LISTING_LIMIT} active marketplace listings. Upgrade to Zoomies Pro for unlimited listings.`,
+          `Free users can only keep ${FREE_MARKETPLACE_LISTING_LIMIT} active marketplace listings. Upgrade to Revvie Pro for unlimited listings.`,
           403,
           ErrorCode.SUBSCRIPTION_REQUIRED,
         );
@@ -753,7 +753,7 @@ router.post(
     if (!hasPro) {
       return ApiResponse.error(
         res,
-        "Featuring listings is a Zoomies Pro perk. Upgrade to boost your listings.",
+        "Featuring listings is a Revvie Pro perk. Upgrade to boost your listings.",
         403,
         ErrorCode.SUBSCRIPTION_REQUIRED,
       );

@@ -674,7 +674,7 @@ router.post(
       if (ownedClubCount >= 1) {
         return ApiResponse.error(
           res,
-          "Zoomies Pro is required to create more clubs",
+          "Revvie Pro is required to create more clubs",
           403,
           ErrorCode.SUBSCRIPTION_REQUIRED,
         );

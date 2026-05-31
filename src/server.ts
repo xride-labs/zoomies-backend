@@ -39,8 +39,6 @@ import {
   initializeSelfPing,
 } from "./jobs/scheduler.js";
 import { ApiResponse, ErrorCode } from "./lib/utils/apiResponse.js";
-import { metricsHandler, metricsMiddleware } from "./lib/metrics.js";
-import { requireMonitoringAccess } from "./middlewares/monitoring.js";
 import { createSocketServer } from "./lib/socket.js";
 import { connectPostgres } from "./lib/prisma.js";
 import { healthHandler } from "./routes/health.js";
@@ -108,9 +106,6 @@ const apiLimiter = rateLimit({
 
 app.use("/api/auth", authLimiter);
 app.use("/api", apiLimiter);
-
-// Metrics middleware
-app.use(metricsMiddleware);
 
 // Log auth origin headers in dev to diagnose Better Auth origin checks
 app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
@@ -234,9 +229,6 @@ setupSwagger(app);
  */
 app.get("/health", healthHandler);
 
-// Monitoring endpoint (Prometheus scrape target)
-app.get("/api/admin/metrics", requireMonitoringAccess, metricsHandler);
-
 // Account routes (profile, verify-email, change-password)
 app.use("/api/account", accountRoutes);
 app.use("/api/users", userRoutes);
@@ -286,7 +278,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // Start server
 export async function startServer() {
   try {
-    console.log("[SERVER] Starting Zoomies Backend Server...");
+    console.log("[SERVER] Starting Revvie Backend Server...");
     registerDevelopmentErrorConsole();
 
     // Validate required production env vars
@@ -334,7 +326,7 @@ export async function startServer() {
       const isProduction = process.env.NODE_ENV === "production";
 
       if (isProduction) {
-        console.log("[SERVER] Zoomies backend started successfully");
+        console.log("[SERVER] Revvie backend started successfully");
         console.log(`[SERVER] Environment: production`);
         console.log(`[SERVER] Base URL: ${baseUrl}`);
         console.log(`[SERVER] Health: ${baseUrl}/health`);

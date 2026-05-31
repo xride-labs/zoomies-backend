@@ -68,7 +68,7 @@ export function isCloudinaryStorageLimitError(error: unknown): boolean {
  * Used only as a fallback when Cloudinary's storage limit is hit.
  *
  * @param dataUrl  - Normalised "data:<mime>;base64,<payload>" string
- * @param folder   - Mirrors the Cloudinary MediaFolder path (e.g. "zoomies/marketplace")
+ * @param folder   - Mirrors the Cloudinary MediaFolder path (e.g. "revvie/marketplace")
  * @param mimeType - e.g. "image/jpeg"
  */
 export async function uploadToR2(

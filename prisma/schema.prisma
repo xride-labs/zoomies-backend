@@ -220,9 +220,9 @@ enum UserRole {
 model AdminSettings {
   id           String @id @default(cuid())
   scope        String @unique @default("global")
-  siteName     String @default("Zoomies") @map("site_name")
-  siteUrl      String @default("https://zoomies.app") @map("site_url")
-  supportEmail String @default("support@zoomies.app") @map("support_email")
+  siteName     String @default("Revvie") @map("site_name")
+  siteUrl      String @default("https://revvie.app") @map("site_url")
+  supportEmail String @default("support@revvie.app") @map("support_email")
   timezone     String @default("America/Phoenix")
 
   defaultCurrency String @default("INR") @map("default_currency")
@@ -247,10 +247,10 @@ model AdminSettings {
   smtpPort            Int    @default(587) @map("smtp_port")
   smtpUser            String @default("apikey") @map("smtp_user")
   smtpPass            String @default("") @map("smtp_pass")
-  fromEmail           String @default("noreply@zoomies.app") @map("from_email")
-  fromName            String @default("Zoomies") @map("from_name")
-  welcomeEmailSubject String @default("Welcome to Zoomies!") @map("welcome_email_subject")
-  welcomeEmailBody    String @default("Hi {{name}}, Welcome to Zoomies!") @map("welcome_email_body")
+  fromEmail           String @default("noreply@revvie.app") @map("from_email")
+  fromName            String @default("Revvie") @map("from_name")
+  welcomeEmailSubject String @default("Welcome to Revvie!") @map("welcome_email_subject")
+  welcomeEmailBody    String @default("Hi {{name}}, Welcome to Revvie!") @map("welcome_email_body")
 
   primaryColor    String  @default("#f97316") @map("primary_color")
   darkModeDefault Boolean @default(false) @map("dark_mode_default")
@@ -347,7 +347,7 @@ model BusinessProfile {
   ownerId             String                     @map("owner_id")
   categories          BusinessCategory[]
   displayName         String                     @map("display_name")
-  // URL-safe slug used in deep links (zoomies://business/<slug>) and the
+  // URL-safe slug used in deep links (revvie://business/<slug>) and the
   // public web mirror. Generated from displayName at create time; uniqueness
   // is enforced so two businesses can't share a slug.
   slug                String                     @unique

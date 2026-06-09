@@ -33,8 +33,15 @@ describe("Club Routes", () => {
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      assertValidPaginatedResponse(res.body);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      // ApiResponse.paginated nests under data: { items, pagination }.
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+      expect(res.body.data.pagination).toEqual({
+        page: expect.any(Number),
+        limit: expect.any(Number),
+        total: expect.any(Number),
+        totalPages: expect.any(Number),
+      });
     });
 
     it("should search clubs by name", async () => {
@@ -51,18 +58,27 @@ describe("Club Routes", () => {
     });
   });
 
-  describe("GET /api/clubs/my-clubs", () => {
+  describe("GET /api/clubs/my", () => {
     it("should return user's clubs", async () => {
       const { user, token } = await createTestUser();
       const club1 = await createTestClub(user.id);
       const club2 = await createTestClub(user.id);
 
+      // Real route is GET /api/clubs/my (not /my-clubs).
       const res = await request(app)
-        .get("/api/clubs/my-clubs")
+        .get("/api/clubs/my")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      assertValidPaginatedResponse(res.body);
+      // ApiResponse.paginated nests under data: { items, pagination }.
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+      expect(res.body.data.pagination).toEqual({
+        page: expect.any(Number),
+        limit: expect.any(Number),
+        total: expect.any(Number),
+        totalPages: expect.any(Number),
+      });
     });
   });
 
@@ -84,8 +100,11 @@ describe("Club Routes", () => {
     it("should return 404 for non-existent club", async () => {
       const { token } = await createTestUser();
 
+      // idParamSchema requires a 20-36 char id; use a well-formed but
+      // non-existent id so we reach the handler's notFound (404) rather than
+      // a 400 param-validation error.
       const res = await request(app)
-        .get("/api/clubs/invalid-id")
+        .get("/api/clubs/clnonexistent000000000000")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(404);

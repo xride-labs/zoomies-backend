@@ -27,12 +27,12 @@
     "postinstall": "bun run prisma:generate",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
-    "test": "bun run test:routes",
-    "test:all": "cross-env NODE_ENV=test jest --runInBand --detectOpenHandles",
-    "test:routes": "cross-env NODE_ENV=test jest --runInBand --detectOpenHandles src/routes",
-    "test:smoke": "cross-env NODE_ENV=test jest --runInBand --detectOpenHandles src/http.contract.test.ts",
-    "test:watch": "cross-env NODE_ENV=test jest --watch",
-    "test:coverage": "cross-env NODE_ENV=test jest --coverage"
+    "test": "vitest run",
+    "test:all": "vitest run",
+    "test:routes": "vitest run src/routes",
+    "test:smoke": "vitest run src/http.contract.test.ts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "express",
@@ -84,6 +84,7 @@
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.57.1",
+    "@vitest/coverage-v8": "^4.1.8",
     "cross-env": "^7.0.3",
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
@@ -93,6 +94,7 @@
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.3.2"
+    "typescript": "^5.3.2",
+    "vitest": "^4.1.8"
   }
 }

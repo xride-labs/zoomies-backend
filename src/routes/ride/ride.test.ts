@@ -33,8 +33,9 @@ describe("Ride Routes", () => {
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      assertValidPaginatedResponse(res.body);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      // ApiResponse.paginated nests under data: { items, pagination }
+      expect(res.body.data).toHaveProperty("pagination");
+      expect(Array.isArray(res.body.data.items)).toBe(true);
     });
 
     it("should filter rides by status", async () => {
@@ -48,8 +49,9 @@ describe("Ride Routes", () => {
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      assertValidPaginatedResponse(res.body);
-      res.body.data.forEach((ride: any) => {
+      // ApiResponse.paginated nests under data: { items, pagination }
+      expect(res.body.data).toHaveProperty("pagination");
+      res.body.data.items.forEach((ride: any) => {
         expect(ride.status).toBe("PLANNED");
       });
     });
@@ -91,8 +93,9 @@ describe("Ride Routes", () => {
     it("should return 404 for non-existent ride", async () => {
       const { token } = await createTestUser();
 
+      // idParamSchema requires 20-36 chars; use a valid-format but nonexistent id
       const res = await request(app)
-        .get("/api/rides/invalid-id")
+        .get("/api/rides/nonexistentride000000000")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(404);

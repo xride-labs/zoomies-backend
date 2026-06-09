@@ -3,6 +3,7 @@
  * Tests for media upload endpoints: profiles, clubs, rides, listings, posts
  */
 
+import { vi } from "vitest";
 import request from "supertest";
 import { app } from "../../server";
 import {
@@ -13,6 +14,41 @@ import {
   cleanupTestData,
   assertValidSuccessResponse,
 } from "../../test/utils";
+
+// Replace the Cloudinary network calls with fakes so uploads/deletes are
+// deterministic and offline. importActual keeps the real enums, the
+// MediaValidationError class, and generateUploadSignature intact.
+vi.mock("../../lib/cloudinary.js", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../lib/cloudinary.js")>();
+  const fakeResult = {
+    publicId: "test/fake-public-id",
+    url: "http://res.cloudinary.com/test/image/upload/fake.png",
+    secureUrl: "https://res.cloudinary.com/test/image/upload/fake.png",
+    format: "png",
+    bytes: 123,
+    resourceType: "image",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const upload = vi.fn(async () => fakeResult);
+  return {
+    ...actual,
+    uploadMedia: upload,
+    uploadProfileImage: upload,
+    uploadProfileCover: upload,
+    uploadProfileGallery: upload,
+    uploadBikeImage: upload,
+    uploadClubLogo: upload,
+    uploadClubCover: upload,
+    uploadClubGallery: upload,
+    uploadRideMedia: upload,
+    uploadListingImage: upload,
+    uploadListingMedia: upload,
+    uploadPostMedia: upload,
+    deleteMedia: vi.fn(async () => true),
+    deleteMultipleMedia: vi.fn(async () => true),
+  };
+});
 
 describe("Media Routes", () => {
   afterEach(async () => {
@@ -28,11 +64,11 @@ describe("Media Routes", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({
           file: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-          type: "profile",
-          targetId: null,
+          type: "image",
+          folder: "profiles",
         });
 
-      expect([200, 201, 404]).toContain(res.status);
+      expect([200, 201]).toContain(res.status);
     });
 
     it("should upload club image", async () => {
@@ -44,11 +80,12 @@ describe("Media Routes", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({
           file: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-          type: "club",
-          targetId: club.id,
+          type: "image",
+          folder: "clubs",
+          resourceId: club.id,
         });
 
-      expect([200, 201, 404]).toContain(res.status);
+      expect([200, 201]).toContain(res.status);
     });
 
     it("should upload ride image", async () => {
@@ -60,11 +97,12 @@ describe("Media Routes", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({
           file: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-          type: "ride",
-          targetId: ride.id,
+          type: "image",
+          folder: "rides",
+          resourceId: ride.id,
         });
 
-      expect([200, 201, 404]).toContain(res.status);
+      expect([200, 201]).toContain(res.status);
     });
 
     it("should upload listing image", async () => {
@@ -76,11 +114,12 @@ describe("Media Routes", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({
           file: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-          type: "listing",
-          targetId: listing.id,
+          type: "image",
+          folder: "listings",
+          resourceId: listing.id,
         });
 
-      expect([200, 201, 404]).toContain(res.status);
+      expect([200, 201]).toContain(res.status);
     });
 
     it("should reject invalid file type", async () => {

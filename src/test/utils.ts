@@ -29,16 +29,30 @@ export function createMockToken(userId: string, expiresIn = "7d") {
   );
 }
 
+// Monotonic counter so concurrently-created users (e.g. Promise.all in load
+// tests) never collide. Date.now() alone repeats within the same millisecond
+// and tripped the unique constraint on username/email.
+let userSeq = 0;
+
+function uniqueSuffix() {
+  return `${Date.now().toString(36)}_${(userSeq++).toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
 /**
  * Create a test user and return authenticated request helper
  */
 export async function createTestUser(userData?: Partial<any>) {
+  const suffix = uniqueSuffix();
   const defaultUser = {
-    username: `testuser_${Date.now()}`,
-    email: `test_${Date.now()}@example.com`,
+    username: `testuser_${suffix}`,
+    email: `test_${suffix}@example.com`,
     name: "Test User",
     emailVerified: true,
-    phone: `+1${Math.random().toString().slice(2, 12)}`,
+    phone: `+1${Math.floor(Math.random() * 1e10)
+      .toString()
+      .padStart(10, "0")}`,
     phoneVerified: true,
   };
 
@@ -240,12 +254,18 @@ export function assertValidSuccessResponse(body: any, expectedDataKey: string) {
 }
 
 /**
- * Assert valid error response
+ * Assert valid error response.
+ *
+ * The HTTP status lives on the response (res.status), NOT in the JSON body — the
+ * ApiResponse error envelope is { success: false, message, error: { code } }.
+ * Callers still pass the expected status for readability; assert it via
+ * res.status separately. `_expectedStatus` is accepted for call-site
+ * compatibility but not matched against the body (it never carried statusCode).
  */
-export function assertValidErrorResponse(body: any, expectedStatus: number) {
+export function assertValidErrorResponse(body: any, _expectedStatus?: number) {
   expect(body).toHaveProperty("success", false);
   expect(body).toHaveProperty("error");
-  expect(body).toHaveProperty("statusCode", expectedStatus);
+  expect(typeof body.error?.code).toBe("string");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

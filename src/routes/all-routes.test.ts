@@ -16,11 +16,12 @@ import {
   friendshipRoutes,
 } from "./index.js";
 import { ApiResponse, ErrorCode } from "../lib/utils/apiResponse.js";
+import { vi } from "vitest";
 
-jest.mock("../config/auth.js", () => ({
+vi.mock("../config/auth.js", () => ({
   auth: {
     api: {
-      getSession: jest.fn(),
+      getSession: vi.fn(),
     },
   },
   requireAuth: (req: any, _res: any, next: any) => {
@@ -43,8 +44,8 @@ jest.mock("../config/auth.js", () => ({
   },
 }));
 
-jest.mock("better-auth/node", () => ({
-  fromNodeHeaders: jest.fn(() => ({})),
+vi.mock("better-auth/node", () => ({
+  fromNodeHeaders: vi.fn(() => ({})),
 }));
 
 describe("all route groups are wired", () => {

@@ -296,6 +296,31 @@ export async function startServer() {
       }
     }
 
+    // Bind the port first so Render detects it immediately.
+    // All initialisation (migrations, DB connections) happens after.
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(PORT, () => resolve());
+      httpServer.once("error", reject);
+    });
+
+    const baseUrl =
+      process.env.BETTER_AUTH_BASE_URL || `http://localhost:${PORT}`;
+    if (isProduction) {
+      console.log("[SERVER] Revvie backend started successfully");
+      console.log(`[SERVER] Environment: production`);
+      console.log(`[SERVER] Base URL: ${baseUrl}`);
+      console.log(`[SERVER] Health: ${baseUrl}/health`);
+    }
+
+    // Run pending migrations in production (replaces the shell-level
+    // prisma:deploy step so the port is already bound when they run).
+    if (isProduction) {
+      const { execSync } = await import("child_process");
+      console.log("[SERVER] Running database migrations...");
+      execSync("bunx prisma migrate deploy", { stdio: "inherit" });
+      console.log("[SERVER] Migrations complete");
+    }
+
     // Connect to PostgreSQL (required for auth and core APIs)
     await connectPostgres();
 
@@ -319,20 +344,6 @@ export async function startServer() {
 
     // Keep the backend warm on free-tier hosts with periodic self-pings.
     initializeSelfPing(Number(PORT));
-
-    httpServer.listen(PORT, () => {
-      const baseUrl =
-        process.env.BETTER_AUTH_BASE_URL || `http://localhost:${PORT}`;
-      const isProduction = process.env.NODE_ENV === "production";
-
-      if (isProduction) {
-        console.log("[SERVER] Revvie backend started successfully");
-        console.log(`[SERVER] Environment: production`);
-        console.log(`[SERVER] Base URL: ${baseUrl}`);
-        console.log(`[SERVER] Health: ${baseUrl}/health`);
-        return;
-      }
-    });
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);
